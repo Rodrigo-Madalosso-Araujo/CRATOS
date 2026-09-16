@@ -1,0 +1,134 @@
+/*
+ * painel.css — estilo do painel sobreposto.
+ * Usamos a tag inventada <cratos-painel> como raiz: nenhuma regra do PJe casa
+ * com um elemento que não existe no HTML dele, então o estilo não vaza nos dois sentidos.
+ * Tema escuro; vermelho (#e11d1d, do ícone) reservado só para ação/perigo.
+ */
+
+/* Quadrado de cantos arredondados, no formato do ChatJT, e SEM a moldura
+   vermelha (Rodrigo, 19/08). O vermelho fica reservado para ação e perigo
+   dentro do painel — num botão que fica sobre o PJe o dia inteiro, ele gritava.
+   A chapa escura fica: o ícone é escuro e, sem ela, some em página clara. */
+cratos-botao {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 2147483000;
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  background: #141414;
+  border: none;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+  transition: transform 0.12s ease;
+}
+cratos-botao:active { cursor: grabbing; }
+cratos-botao:hover { transform: scale(1.06); }
+/* A imagem sai do arquivo de 128 e é REDUZIDA até aqui. Antes vinha do de 32 e
+   era ampliada para 34 — em tela de alta densidade, 68 pixels reais tirados de
+   32, o que deixava o ícone embaçado. Reduzir é sempre nítido; ampliar nunca é.
+   Sem moldura, o ícone pode ocupar quase toda a chapa. */
+cratos-botao img { width: 46px; height: 46px; pointer-events: none; }
+
+cratos-painel {
+  position: fixed;
+  right: 18px;
+  bottom: 86px;   /* acompanha o botão de 56px + folga */
+  z-index: 2147483000;
+  width: 360px;
+  max-height: 70vh;
+  overflow-y: auto;
+  background: #141414;
+  color: #e8e8e8;
+  border: 1px solid #333;
+  border-radius: 10px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.6);
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 13px;
+  line-height: 1.45;
+  display: none;
+}
+cratos-painel[aberto] { display: block; }
+
+cratos-painel .cx-cabecalho {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border-bottom: 1px solid #2a2a2a;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+cratos-painel .cx-corpo { padding: 12px 14px; }
+
+cratos-painel .cx-parte {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 6px 0;
+  border-bottom: 1px solid #232323;
+}
+cratos-painel .cx-parte:last-child { border-bottom: none; }
+cratos-painel .cx-parte .cx-nome { font-weight: 500; }
+cratos-painel .cx-parte .cx-doc { color: #9a9a9a; font-variant-numeric: tabular-nums; }
+cratos-painel .cx-parte .cx-polo {
+  font-size: 11px;
+  color: #7a7a7a;
+  text-transform: uppercase;
+}
+
+cratos-painel .cx-vazio { color: #8a8a8a; padding: 8px 0; }
+cratos-painel .cx-erro { color: #ff6b6b; padding: 8px 0; }
+
+cratos-painel .cx-acao {
+  width: 100%;
+  margin-top: 12px;
+  padding: 9px;
+  background: #e11d1d;
+  color: #fff;
+  border: none;
+  border-radius: 7px;
+  font-weight: 600;
+  cursor: pointer;
+}
+cratos-painel .cx-acao:disabled { background: #4a1010; color: #b98; cursor: not-allowed; }
+
+/* Estado DESLIGADO do botão flutuante (liga/desliga da extensão): esmaecido e com
+   um ícone de energia no canto, deixando claro que foi opção do usuário — não
+   defeito. O botão nunca some: é a porta de volta pra religar. */
+cratos-botao[desligado] { filter: grayscale(1); opacity: 0.5; }
+cratos-botao[desligado]::after {
+  content: "";
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  /* Ícone de energia em SVG (branco), no lugar do antigo caractere de energia
+     U+23FB que a fonte do sistema podia não ter (virava "tofu"). */
+  background: #e11d1d url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23fff' stroke-width='2.4' stroke-linecap='round'%3E%3Cline x1='12' y1='4.5' x2='12' y2='11.5'/%3E%3Cpath d='M7 7a7 7 0 1 0 10 0'/%3E%3C/svg%3E") center / 12px 12px no-repeat;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+}
+
+/* Interruptor de energia no cabeçalho do painel: ícone SVG + rótulo. */
+cratos-painel .cx-power {
+  cursor: pointer;
+  margin-left: auto;
+  margin-right: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  line-height: 1;
+  user-select: none;
+}
+cratos-painel .cx-power-ico { width: 15px; height: 15px; display: block; }
+cratos-painel .cx-power-txt { font-size: 11px; font-weight: 600; }
+cratos-painel .cx-power-grande .cx-power-ico { width: 28px; height: 28px; margin: 0 auto; }

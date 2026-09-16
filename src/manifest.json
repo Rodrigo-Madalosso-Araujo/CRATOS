@@ -1,0 +1,163 @@
+{
+  "manifest_version": 2,
+  "name": "CRATOS",
+  "version": "1.4.2",
+  "description": "Captura dados do processo no PJe e automatiza parcialmente a execução de convênios (consultas e registro) para o processo em tela. Quem confirma, assina e envia é sempre você.",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "cratos@trt18.local",
+      "strict_min_version": "115.0",
+      "data_collection_permissions": {
+        "required": [
+          "none"
+        ]
+      }
+    }
+  },
+  "icons": {
+    "16": "icones/cratos-16.png",
+    "32": "icones/cratos-32.png",
+    "48": "icones/cratos-48.png",
+    "96": "icones/cratos-96.png",
+    "128": "icones/cratos-128.png"
+  },
+  "permissions": [
+    "storage",
+    "tabs",
+    "downloads",
+    "*://*.trt18.jus.br/*",
+    "*://*.receita.fazenda.gov.br/*",
+    "*://renajud.pdpj.jus.br/*",
+    "*://indisponibilidade.onr.org.br/*",
+    "*://*.censec.org.br/*",
+    "*://serasa-judicial.serasaexperian.com.br/*"
+  ],
+  "background": {
+    "scripts": [
+      "comum/storage.js",
+      "comum/api-pje.js",
+      "comum/api-caixa-postal.js",
+      "modulos/registro.js",
+      "modulos/infojud.js",
+      "modulos/sab.js",
+      "modulos/renajud.js",
+      "modulos/cnib.js",
+      "modulos/censec.js",
+      "modulos/serasajud.js",
+      "modulos/juntada.js",
+      "background.js"
+    ]
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://pje.trt18.jus.br/*"
+      ],
+      "js": [
+        "comum/storage.js",
+        "comum/relatorio.js",
+        "comum/faixa.js",
+        "conteudo/painel.js"
+      ],
+      "css": [
+        "conteudo/painel.css"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "*://pje.trt18.jus.br/sab/*"
+      ],
+      "js": [
+        "comum/storage.js",
+        "comum/relatorio.js",
+        "comum/faixa.js",
+        "conteudo/sab.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "*://*.receita.fazenda.gov.br/*"
+      ],
+      "all_frames": true,
+      "js": [
+        "comum/storage.js",
+        "comum/relatorio.js",
+        "comum/faixa.js",
+        "conteudo/ecac-infojud.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "*://renajud.pdpj.jus.br/*"
+      ],
+      "js": [
+        "comum/storage.js",
+        "comum/relatorio.js",
+        "comum/faixa.js",
+        "conteudo/renajud.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "*://indisponibilidade.onr.org.br/*"
+      ],
+      "js": [
+        "comum/storage.js",
+        "comum/relatorio.js",
+        "comum/faixa.js",
+        "conteudo/cnib.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "*://*.censec.org.br/*"
+      ],
+      "js": [
+        "comum/storage.js",
+        "comum/relatorio.js",
+        "comum/faixa.js",
+        "conteudo/censec.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "*://serasa-judicial.serasaexperian.com.br/*"
+      ],
+      "js": [
+        "comum/storage.js",
+        "comum/relatorio.js",
+        "comum/faixa.js",
+        "conteudo/serasajud.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "browser_action": {
+    "default_icon": {
+      "16": "icones/cratos-16.png",
+      "32": "icones/cratos-32.png"
+    },
+    "default_title": "CRATOS"
+  },
+  "options_ui": {
+    "page": "opcoes/opcoes.html",
+    "open_in_tab": true
+  },
+  "web_accessible_resources": [
+    "icones/cratos-16.png",
+    "icones/cratos-32.png",
+    "icones/cratos-48.png",
+    "icones/cratos-96.png",
+    "icones/cratos-128.png",
+    "conteudo/censec-api.js",
+    "conteudo/serasajud-api.js",
+    "conteudo/renajud-api.js",
+    "conteudo/ecac-grampo.js"
+  ]
+}

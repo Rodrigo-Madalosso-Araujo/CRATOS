@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8">
+  <title>CRATOS — Configurações</title>
+  <style>
+    :root { --vermelho: #e11d1d; --borda: #2a2a2a; --nota: #7a7a7a; }
+    body {
+      font-family: system-ui, sans-serif; background: #141414; color: #e8e8e8;
+      max-width: 900px; margin: 0 auto 48px; padding: 0 20px;
+    }
+
+    /* ── Capa ───────────────────────────────────────────────────────────────
+       O banner é arquivo da própria extensão. Página de opções é página de
+       extensão: carrega icones/ direto, SEM precisar de web_accessible_resources
+       (isso só vale para content script, que roda no mundo da página). */
+    .capa {
+      margin: 0 -20px 8px; background: #000;   /* o preto do próprio banner: sem emenda visível */
+      border-bottom: 1px solid var(--borda);
+    }
+    .capa img {
+      display: block; margin: 0 auto; width: 100%; max-width: 720px; height: auto;
+    }
+
+    h1 { font-size: 20px; letter-spacing: 0.04em; border-bottom: 1px solid var(--borda); padding-bottom: 10px; }
+    .modulo { border: 1px solid var(--borda); border-radius: 8px; padding: 14px; margin: 16px 0; }
+    .modulo h2 { font-size: 15px; margin: 0 0 8px; }
+    .campo { margin: 8px 0; }
+    label { display: block; color: #b0b0b0; font-size: 13px; margin-bottom: 4px; }
+    .nota { color: var(--nota); font-size: 12px; }
+
+    /* ── Grupos lado a lado (INFOJUD: CPF | CNPJ) ───────────────────────────
+       Duas colunas de largura igual. Abaixo de 720px de janela vira uma coluna
+       só — a tela de opções abre em aba, e o usuário pode estreitá-la. */
+    .grupos { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 12px 0; }
+    @media (max-width: 720px) { .grupos { grid-template-columns: 1fr; } }
+    .grupo { border: 1px solid #333; border-radius: 8px; padding: 12px; margin: 0; }
+    .grupo h3 { margin: 0 0 10px; font-size: 14px; color: var(--vermelho); }
+
+    /* ── Cartão "Sobre o CRATOS" ────────────────────────────────────────────── */
+    .sobre { border: 1px solid var(--borda); border-radius: 10px; margin: 28px 0 0; overflow: hidden; }
+    .sobre header {
+      display: flex; align-items: center; gap: 10px;
+      background: #1a1a1a; border-bottom: 1px solid var(--borda); padding: 12px 16px;
+      font-size: 15px; font-weight: 600;
+    }
+    .sobre header img { width: 22px; height: 22px; }
+    .sobre dl { margin: 0; padding: 4px 16px 12px; }
+    .sobre .linha {
+      display: grid; grid-template-columns: 150px 1fr; gap: 16px; align-items: baseline;
+      padding: 12px 0; border-bottom: 1px solid #232323;
+    }
+    .sobre .linha:last-child { border-bottom: none; }
+    .sobre dt { color: #b0b0b0; font-size: 13px; }
+    .sobre dd { margin: 0; font-size: 13px; text-align: right; line-height: 1.5; }
+    .sobre dd.esq { text-align: left; }
+    .sobre .pessoa { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin: 3px 0; }
+    .sobre .iniciais {
+      width: 26px; height: 26px; border-radius: 50%; background: #2b2b2b; color: #e8e8e8;
+      font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center;
+      flex: 0 0 26px;
+    }
+    @media (max-width: 720px) {
+      .sobre .linha { grid-template-columns: 1fr; gap: 4px; }
+      .sobre dd, .sobre .pessoa { text-align: left; justify-content: flex-start; }
+    }
+  </style>
+</head>
+<body>
+  <div class="capa"><img src="../icones/cratos-banner.jpg" alt="CRATOS — Central de Recursos para Automação de Tarefas e Operações Sistêmicas"></div>
+  <p class="nota">As configurações de cada convênio (o "como") aparecem aqui. O que é ato — confirmar e registrar — fica sempre no fluxo, nunca aqui.</p>
+  <div id="modulos"></div>
+  <div id="sobre"></div>
+  <script src="../comum/storage.js"></script>
+  <script src="opcoes.js"></script>
+</body>
+</html>
