@@ -348,11 +348,15 @@ const botaoPular = (w) => {
   checar(P.idx === 1, "⛔ pulso terminal ok:true conclui a baixa e AVANÇA (sem depender do botão)");
   checar(amb.msgs.some((m) => m && m.tipo === "orq_fechar_aba" && m.convenioId === "CNIB"),
     "⛔ e manda fechar a aba do CNIB — o que faltava na baixa");
-  // fonte: o cnib.js emite no concluido e NÃO no sem_ordens
+  // fonte: o cnib.js emite o pulso só quando a baixa fecha LIMPA. 1.6.2: "nada a
+  // cancelar" e "já canceladas" também (há certidão); "sem_resposta" e
+  // "outra_instituicao" NÃO (faixa e aba aberta para conferir).
   const cn = fs.readFileSync(path.join(SRC, "conteudo", "cnib.js"), "utf8");
-  const enc = cn.slice(cn.indexOf("async function encerrar"), cn.indexOf("async function encerrar") + 900);
-  checar(/fase === "concluido"/.test(enc) && /orq_conv_feito/.test(enc),
-    "o encerrar do CNIB emite o pulso terminal só no 'concluido'");
+  const enc = cn.slice(cn.indexOf("async function encerrar"), cn.indexOf("async function encerrar") + 1800);
+  const cond = (enc.match(/if \(\((fase === [^)]*)\)/) || [])[1] || "";
+  checar(/orq_conv_feito/.test(enc) && /"concluido"/.test(cond) && /"nada_a_cancelar"/.test(cond) &&
+    /"ja_canceladas"/.test(cond) && !/sem_resposta|outra_instituicao|sem_certidao/.test(cond),
+    "o encerrar do CNIB emite o pulso terminal só quando fecha limpo (concluído / nada a cancelar / já canceladas)");
 }
 
 /* ── 7. ERRO NO DISPATCH → PULA E SINALIZA (agora no relatório) ───────────── */

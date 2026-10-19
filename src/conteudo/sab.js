@@ -62,10 +62,18 @@
   }
 
   async function iniciarAutoConclusao(idDeterminacao) {
-    // Evita rodar duas vezes para a mesma determinação (navegações do Angular).
+    /* ⚠ REIVINDICA O GUARDA DE FORMA SÍNCRONA, ANTES DE QUALQUER await.
+       O MutationObserver do SPA dispara verificarAutoConclusao() a cada mutação do
+       DOM (o Angular mexe muito). Se houver um await ENTRE o "checar" e o "marcar",
+       vários disparos passam pela checagem antes de qualquer um marcar o guarda —
+       todos cedem a vez no await e, ao voltar, cada um inicia um timer de polling.
+       O efeito era N conclusões → N `sab_concluido_auto` → N atividades repetidas
+       no GIGS (regressão introduzida na 1.4.0, quando entrou o `await Store.ligada`
+       aqui no meio). A marcação tem de ser a PRIMEIRA coisa após a checagem. */
     if (window.__cratosSabPolling === idDeterminacao) return;
-    if (!(await Store.ligada())) return;   // extensão desligada
     window.__cratosSabPolling = idDeterminacao;
+    // Desligado: solta o guarda para que reativar a extensão possa reivindicar de novo.
+    if (!(await Store.ligada())) { window.__cratosSabPolling = null; return; }
 
     // Só auto-conclui se esta ordem foi aberta pelo CRATOS (evita agir em ordens
     // que o usuário abriu manualmente para revisar).
@@ -107,13 +115,21 @@
         if (situacao && situacao !== "MINUTA") {
           clearInterval(timer);
           console.log("CRATOS/SAB: determinação", idDeterminacao, "->", situacao, "(concluída).");
-          await concluirSab(est, det);
+          await concluirSab(est, det, idDeterminacao);
         }
       } catch (e) { /* silencioso — tenta de novo no próximo tick */ }
     }, INTERVALO);
   }
 
-  async function concluirSab(est, det) {
+  async function concluirSab(est, det, idDeterminacao) {
+    /* Segunda trava (defesa em profundidade): conclui — e portanto gera a certidão
+       e dispara `sab_concluido_auto` (chip + GIGS) — UMA ÚNICA vez por determinação,
+       mesmo que dois timers escapem por qualquer outro caminho. GIGS repetido suja
+       o painel de atividades da secretaria, então vale a redundância. */
+    if (idDeterminacao != null) {
+      if (window.__cratosSabConcluido === idDeterminacao) return;
+      window.__cratosSabConcluido = idDeterminacao;
+    }
     // 1) gera a certidão
     try {
       await browser.runtime.sendMessage({
@@ -527,6 +543,9 @@
    * Retorna o valor confirmado (string formatada) ou null se pulou.
    */
   function mostrarPopupConfirmacao(calc, atualizacao) {
+    /* 1.5.5: montado com html`` (comum/storage.js) — interpolação sempre escapada.
+       A data do cálculo (dataLabel) vinha do PJe-Calc e entrava crua. */
+    const html = CratosHTML.html;
     return new Promise((resolve) => {
       // Remove popup anterior se existir
       document.getElementById("cratos-sab-popup")?.remove();
@@ -545,23 +564,23 @@
          a pessoa confirmaria um valor velho achando que era o de hoje. */
       let avisoHtml = "";
       if (usarAtualizado) {
-        avisoHtml = `<div style="font-size:12px;color:#4ade80;margin-bottom:14px;
+        avisoHtml = html`<div style="font-size:12px;color:#4ade80;margin-bottom:14px;
             border-left:3px solid #4ade80;padding-left:8px;line-height:1.5">
-            <b>Valores atualizados para hoje (${_escHtml(atualizacao.dataFinalBR)}).</b><br>
-            <span style="color:#9a9a9a">Cálculo de ${_escHtml(atualizacao.dataInicialBR)}:
-            ${_escHtml(atualizacao.originalFormatado)} · fator do PJe
-            ${_escHtml(String(atualizacao.fator))}</span></div>`;
+            <b>Valores atualizados para hoje (${atualizacao.dataFinalBR}).</b><br>
+            <span style="color:#9a9a9a">Cálculo de ${atualizacao.dataInicialBR}:
+            ${atualizacao.originalFormatado} · fator do PJe
+            ${String(atualizacao.fator)}</span></div>`;
       } else if (atualizacao && atualizacao.semDefasagem) {
-        avisoHtml = `<div style="font-size:12px;color:#9a9a9a;margin-bottom:14px;
+        avisoHtml = html`<div style="font-size:12px;color:#9a9a9a;margin-bottom:14px;
             border-left:3px solid #555;padding-left:8px">
             O cálculo já está atualizado até hoje — nada a corrigir.</div>`;
       } else if (atualizacao) {
-        avisoHtml = `<div style="font-size:12px;color:#facc15;margin-bottom:14px;
+        avisoHtml = html`<div style="font-size:12px;color:#facc15;margin-bottom:14px;
             border-left:3px solid #facc15;padding-left:8px;line-height:1.5">
             <b>NÃO consegui atualizar o valor para hoje</b>
-            (${_escHtml(atualizacao.motivo)}).<br>
+            (${atualizacao.motivo}).<br>
             <span style="color:#9a9a9a">O campo está com o valor do cálculo de
-            ${_escHtml(calc ? calc.dataFormatada : "?")}, sem atualização.</span></div>`;
+            ${calc ? calc.dataFormatada : "?"}, sem atualização.</span></div>`;
       }
 
       const overlay = document.createElement("div");
@@ -572,7 +591,7 @@
         display: flex; align-items: center; justify-content: center;
       `;
 
-      overlay.innerHTML = `
+      CratosHTML.definir(overlay, html`
         <div style="
           background: #1a1a1a; border: 2px solid #e11d1d; border-radius: 10px;
           padding: 28px 32px; min-width: 360px; max-width: 480px;
@@ -595,7 +614,7 @@
               background: #2a2a2a; border: 1px solid #555; border-radius:6px;
               color: #fff; font-size: 16px; padding: 8px 12px; margin-bottom: 18px;
             "
-            value="${_escHtml(valorInicial)}"
+            value="${valorInicial}"
             placeholder="Ex.: 28.000,00"
           />
           <div style="display:flex; gap:10px; justify-content:flex-end;">
@@ -609,7 +628,7 @@
             ">Confirmar</button>
           </div>
         </div>
-      `;
+      `);
 
       document.body.appendChild(overlay);
 
@@ -672,11 +691,7 @@
 
   function _sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
 
-  function _escHtml(s) {
-    return String(s || "")
-      .replace(/&/g, "&amp;").replace(/"/g, "&quot;")
-      .replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  }
+  /* (1.5.5) _escHtml() saiu: o popup passou para html`` (comum/storage.js). */
 
 
   /* ═══════════════════════════════════════════════════════════════════════════
@@ -742,6 +757,8 @@
   window.__cratosSab = {
     atualizarValorParaHoje, buscarFatorAtualizacao,
     marcarTodasAsPartes, injetarBotaoMarcarPartes,
+    iniciarAutoConclusao, concluirSab,
+    mostrarPopupConfirmacao,   // 1.5.5: teste de escape do popup
   };
 
 })();

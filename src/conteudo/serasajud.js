@@ -85,7 +85,10 @@
     if (!(await Store.ligada())) { console.log("CRATOS/SERASAJUD: extensão desligada."); return; }
     if (!est || !est.ativo) return;
     const idade = Date.now() - new Date(est.abertoEm || 0).getTime();
-    if (idade > VALIDADE_ESTADO_MS) {
+    /* Estado com pendência de lançamento manual (valor/data) NÃO expira: a espera é
+       proposital e sem prazo — o usuário pode levar tempo buscando o dado. */
+    const temPendencia = est.valorPendente || est.dataPendente;
+    if (idade > VALIDADE_ESTADO_MS && !temPendencia) {
       console.log("CRATOS/SERASAJUD: estado antigo — ignorando.");
       return;
     }
@@ -166,6 +169,11 @@
     }
 
     if (!(await preencherProcesso(est))) return;
+
+    /* Sem cálculo nos autos, o valor (e, na baixa, a data da dívida) pode ter vindo
+       pendente. Antes de preencher, pede o que falta num popup e espera SEM PRAZO. */
+    if (!(await garantirDadosManuais(est))) return;
+
     if (ehBaixa) { if (!(await fluxoBaixa(est))) return; }
     else { if (!(await fluxoInclusao(est))) return; }
 
@@ -336,6 +344,17 @@
         if (c.numeroContrato) det.push(`contrato ${c.numeroContrato}`);
         if (det.length) linhas.push(`     ${det.join(" · ")}`);
       });
+    }
+
+    /* Rastreabilidade: se valor/data foram lançados à mão (sem cálculo nos autos), a
+       certidão DIZ isso — não atribui ao PJe-Calc uma origem que não houve. */
+    if (est.origemManual) {
+      const frase = est.valorManual && est.dataManual
+        ? "o valor e a data da dívida foram lançados manualmente"
+        : est.dataManual ? "a data da dívida foi lançada manualmente"
+        : "o valor foi lançado manualmente";
+      linhas.push("", `Observo que ${frase} pelo(a) responsável por este ato, por não haver ` +
+        `cálculo disponível nos autos no momento da diligência.`);
     }
 
     linhas.push("", "Era o que me cumpria certificar.", "", "");
@@ -509,11 +528,21 @@
     }
 
     // Autor e Réu são mat-select alimentados pelas tabelas
-    if (!(await escolherNoSelect(0, est.credor.nome))) {
+    /* 1.6.3 (campo, 19/10): o nome entra no SerasaJUD com hífen ("… LTDA - ME") e a
+       lista de Réu o mostra SEM ("… LTDA ME") — a comparação exata não casava e o
+       CRATOS parava. Agora: ignora pontuação e, em último caso, usa a grafia que o
+       PRÓPRIO site pôs na tabela (titulares pelo documento; credor pela linha). Nunca
+       "o primeiro da lista" às cegas: réu errado numa baixa é pior que parar. */
+    const grafiaCredor = (() => {
+      const tr = linhasCredores()[0];
+      const td = tr && tr.querySelector("td, mat-cell");
+      return td ? (td.textContent || "").trim() : null;
+    })();
+    if (!(await escolherNoSelect(0, est.credor.nome, [grafiaCredor]))) {
       falhar(new Error(`não consegui escolher "${est.credor.nome}" na lista de Autor. Escolha na ` +
         `tela e siga a partir daí.`)); return false;
     }
-    if (!(await escolherNoSelect(1, est.titulares[0].nome))) {
+    if (!(await escolherNoSelect(1, est.titulares[0].nome, [grafiaNaTabela(linhasTitulares(), est.titulares[0].cpfcnpj)]))) {
       falhar(new Error(`não consegui escolher "${est.titulares[0].nome}" na lista de Réu. Escolha ` +
         `na tela e siga a partir daí.`)); return false;
     }
@@ -604,14 +633,19 @@
 
   /* mat-select: abrir, esperar o painel, escolher a opção pelo texto.
      Índice 0 = Autor, 1 = Réu (a ordem em que aparecem na tela). */
-  async function escolherNoSelect(indice, textoOpcao) {
+  async function escolherNoSelect(indice, textoOpcao, alternativas) {
     const selects = document.querySelectorAll("mat-select");
     const sel = selects[indice];
     if (!sel) return false;
     sel.click();
+    const alvosAlfa = [textoOpcao].concat(alternativas || []).filter(Boolean).map(soAlfanum).filter(Boolean);
     const opcao = await esperar(() => {
-      for (const o of document.querySelectorAll("mat-option")) {
-        if (norm(o.textContent) === norm(textoOpcao)) return o;
+      const opcoes = Array.from(document.querySelectorAll("mat-option"));
+      for (const o of opcoes) {
+        if (norm(o.textContent) === norm(textoOpcao)) return o;          // exato (como sempre)
+      }
+      for (const o of opcoes) {
+        if (alvosAlfa.indexOf(soAlfanum(o.textContent)) >= 0) return o;  // sem pontuação / grafia do site
       }
       return null;
     }, 5000);
@@ -713,6 +747,18 @@
   }
 
   function linhasTitulares() { return linhasDeTabelaCom(["nome", "documento", "acoes"]); }
+
+  /* Nome como o SITE o gravou, na linha da tabela cujo documento é `doc`. */
+  function grafiaNaTabela(linhas, doc) {
+    const d = digitos(doc);
+    if (!d) return null;
+    for (const tr of linhas || []) {
+      if (digitos(tr.textContent).indexOf(d) < 0) continue;
+      const td = tr.querySelector("td, mat-cell");
+      if (td) return (td.textContent || "").trim();
+    }
+    return null;
+  }
   function linhasCredores() { return linhasDeTabelaCom(["nome", "valor", "data da divida"]); }
 
   /* Lê as linhas de uma mat-table identificada pelos cabeçalhos. Descarta as
@@ -900,9 +946,153 @@
     }).catch(() => {});
   }
 
-  /* Gancho de teste (jsdom): expõe o preenchimento da data para o harness, sem
-     dirigir o fluxo inteiro. Não afeta produção. */
+  /* ═══════════════════════════════════════════════════════════════════════════
+   * LANÇAMENTO MANUAL DE VALOR/DATA — quando não há cálculo nos autos
+   * ═══════════════════════════════════════════════════════════════════════════
+   * O módulo de fundo, sem PJe-Calc, marcou est.valorPendente / est.dataPendente e
+   * abriu a aba assim mesmo. Aqui, na hora de preencher, um popup pede SÓ o que falta
+   * e espera SEM PRAZO — o usuário pode ter de buscar o número em outra fonte e
+   * demorar. Confirmar preenche o estado e segue; cancelar encerra limpo (faixa
+   * vermelha), para o usuário fazer à mão. Você digitando o dado é você AFIRMANDO o
+   * dado (a certidão marca origem manual) — o oposto de a extensão inventar.
+   */
+  async function garantirDadosManuais(est) {
+    const precisaValor = est.valorPendente || !est.valor;
+    const precisaData = est.operacao === "baixa" && (est.dataPendente || !est.dataLiquidacao);
+    if (!precisaValor && !precisaData) return true;
+
+    const r = await mostrarPopupValorData({
+      operacao: est.operacao,
+      pedirValor: precisaValor,
+      pedirData: precisaData,
+      valorAtual: est.valor || "",
+    });
+    if (!r) {   // cancelou — faz à mão
+      falhar(new Error("valor/data não informados — encerrei para você lançar esta " +
+        (est.operacao === "baixa" ? "baixa" : "inclusão") + " à mão. Quando tiver o dado, execute de novo."));
+      return false;
+    }
+    if (precisaValor) { est.valor = r.valor; est.valorPendente = false; est.valorManual = true; }
+    if (precisaData) { est.dataLiquidacao = r.data; est.dataPendente = false; est.dataManual = true; }
+    est.origemManual = true;
+    /* Renova abertoEm (a espera pode ter sido longa) e persiste, para o dado não se
+       perder se a página recarregar. */
+    est.abertoEm = new Date().toISOString();
+    try { await Store.set("serasajud_estado", est); } catch (e) {}
+    avisar("valor/data lançados manualmente por você — vou preencher, e a certidão registra a origem.", "#4ade80");
+    return true;
+  }
+
+  /* Popup no estilo do SAB: pede só o que falta, valida, e ESPERA SEM TIMEOUT.
+     Resolve {valor, data} no Confirmar (valores já normalizados) ou null no Cancelar. */
+  function mostrarPopupValorData(opts) {
+    /* 1.5.5: montado com html`` (comum/storage.js) — interpolação sempre escapada. */
+    const html = CratosHTML.html;
+    return new Promise((resolve) => {
+      const ehBaixa = opts.operacao === "baixa";
+      const oQueFalta = opts.pedirValor && opts.pedirData ? "o valor e a data da dívida"
+        : opts.pedirData ? "a data da dívida" : "o valor da dívida";
+      const est = (s) => `background:#2a2a2a;border:1px solid #555;border-radius:6px;color:#fff;` +
+        `font-size:16px;padding:8px 12px;width:100%;box-sizing:border-box;margin-bottom:14px;${s || ""}`;
+      const lbl = "display:block;font-size:12px;color:#9a9a9a;margin-bottom:4px;";
+
+      const blocoValor = opts.pedirValor
+        ? html`<label style="${lbl}">Valor da dívida (R$)</label>
+           <input id="cratos-sj-valor" style="${est()}" placeholder="Ex.: 12.550,51" inputmode="decimal" />`
+        : (opts.valorAtual
+            ? html`<div style="font-size:12px;color:#9a9a9a;margin-bottom:14px;border-left:3px solid #555;padding-left:8px">
+                 Valor do cálculo: <b style="color:#e8e8e8">${opts.valorAtual}</b></div>`
+            : "");
+      const blocoData = opts.pedirData
+        ? html`<label style="${lbl}">Data da dívida (dd/mm/aaaa)</label>
+           <input id="cratos-sj-data" style="${est()}" placeholder="Ex.: 31/12/2024" inputmode="numeric" />`
+        : "";
+
+      const overlay = document.createElement("div");
+      overlay.id = "cratos-serasajud-popup";
+      overlay.style.cssText = "position:fixed;inset:0;z-index:2147483600;background:rgba(0,0,0,.65);" +
+        "display:flex;align-items:center;justify-content:center";
+      CratosHTML.definir(overlay, html`<div style="background:#1a1a1a;border:2px solid #e11d1d;border-radius:10px;padding:26px 30px;min-width:340px;max-width:460px;color:#f0f0f0;font-family:system-ui,sans-serif;box-shadow:0 8px 32px rgba(0,0,0,.7)">
+          <div style="font-weight:700;font-size:15px;margin-bottom:6px;color:#e11d1d">CRATOS — SerasaJUD</div>
+          <div style="font-size:13px;color:#9a9a9a;margin-bottom:16px;line-height:1.5">
+            ${ehBaixa ? "Esta BAIXA" : "Esta inclusão"} precisa de ${oQueFalta}, e não havia cálculo nos autos.<br>
+            Lance abaixo — sem pressa, o CRATOS espera o quanto for preciso.</div>
+          <div id="cratos-sj-erro" style="display:none;font-size:12px;color:#ff6b6b;margin-bottom:12px;
+            border-left:3px solid #ff6b6b;padding-left:8px"></div>
+          ${blocoValor}
+          ${blocoData}
+          <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:4px">
+            <button id="cratos-sj-cancelar" style="background:transparent;border:1px solid #555;border-radius:6px;
+              color:#9a9a9a;padding:8px 16px;cursor:pointer;font-size:13px">Cancelar (faço à mão)</button>
+            <button id="cratos-sj-confirmar" style="background:#e11d1d;border:none;border-radius:6px;
+              color:#fff;padding:8px 20px;cursor:pointer;font-size:13px;font-weight:700">Confirmar</button>
+          </div>
+        </div>`);
+      (document.body || document.documentElement).appendChild(overlay);
+
+      const inpValor = overlay.querySelector("#cratos-sj-valor");
+      const inpData = overlay.querySelector("#cratos-sj-data");
+      const caixaErro = overlay.querySelector("#cratos-sj-erro");
+      const erro = (m) => { caixaErro.textContent = m; caixaErro.style.display = "block"; };
+      setTimeout(() => { const f = inpValor || inpData; if (f) { f.focus(); f.select(); } }, 80);
+
+      const confirmar = () => {
+        let valor = null, data = null;
+        if (opts.pedirValor) {
+          valor = _normalizarValorBRL(inpValor.value);
+          if (!valor) { erro("Valor inválido. Use o formato 12.550,51."); inpValor.focus(); return; }
+        }
+        if (opts.pedirData) {
+          data = _normalizarDataBR(inpData.value);
+          if (!data) { erro("Data inválida. Use dd/mm/aaaa, uma data real e não futura."); inpData.focus(); return; }
+        }
+        overlay.remove();
+        resolve({ valor, data });
+      };
+      overlay.querySelector("#cratos-sj-confirmar").onclick = confirmar;
+      overlay.querySelector("#cratos-sj-cancelar").onclick = () => { overlay.remove(); resolve(null); };
+      /* Enter confirma. NÃO ligamos Escape a cancelar: numa espera longa, um Esc
+         acidental jogaria fora a diligência. Cancelar é só pelo botão. */
+      const onKey = (e) => { if (e.key === "Enter") confirmar(); };
+      if (inpValor) inpValor.addEventListener("keydown", onKey);
+      if (inpData) inpData.addEventListener("keydown", onKey);
+      // SEM setTimeout de fechamento: a Promise só resolve no Confirmar/Cancelar.
+    });
+  }
+
+  /* "1.234,56" | "1234,56" | "1234.56" | "1234" -> "R$ 1.234,56". null se inválido. */
+  function _normalizarValorBRL(s) {
+    let t = String(s == null ? "" : s).replace(/r\$/i, "").replace(/\s/g, "").trim();
+    if (!t) return null;
+    if (/,\d{1,2}$/.test(t)) t = t.replace(/\./g, "").replace(",", ".");   // vírgula decimal (pt-BR)
+    else if (/\.\d{1,2}$/.test(t) && !/,/.test(t)) { /* ponto decimal já ok */ }
+    else t = t.replace(/[.,]/g, "");                                        // só milhares / inteiro
+    const n = Number(t);
+    if (!isFinite(n) || n <= 0) return null;
+    return "R$ " + n.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  /* "d/m/aaaa" -> "dd/mm/aaaa" se for data real e não futura; senão null. */
+  function _normalizarDataBR(s) {
+    const m = String(s == null ? "" : s).trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (!m) return null;
+    const dd = +m[1], mm = +m[2], aaaa = +m[3];
+    const d = new Date(aaaa, mm - 1, dd);
+    if (d.getFullYear() !== aaaa || d.getMonth() !== mm - 1 || d.getDate() !== dd) return null;
+    const hoje = new Date(); hoje.setHours(23, 59, 59, 999);
+    if (d.getTime() > hoje.getTime()) return null;   // dívida com data futura não faz sentido
+    return `${String(dd).padStart(2, "0")}/${String(mm).padStart(2, "0")}/${aaaa}`;
+  }
+
+  /* (1.5.5) _esc() saiu: o popup passou para html`` (comum/storage.js). */
+
+  /* Gancho de teste (jsdom): expõe o preenchimento da data e o lançamento manual
+     para o harness, sem dirigir o fluxo inteiro. Não afeta produção. */
   if (typeof window !== "undefined") {
-    window.__cratosSerasajud = { preencherData, dataNoModelo };
+    window.__cratosSerasajud = {
+      preencherData, dataNoModelo,
+      garantirDadosManuais, mostrarPopupValorData, escolherNoSelect, grafiaNaTabela,
+      _normalizarValorBRL, _normalizarDataBR,
+    };
   }
 })();

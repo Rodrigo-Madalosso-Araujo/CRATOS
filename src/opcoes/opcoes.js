@@ -9,12 +9,18 @@
  *   texto        -> string
  *   multiselect  -> string[]
  *   escolha      -> string (radio)
+ *   select       -> string (dropdown compacto, opções fixas, com padrão)
  *   lista        -> string (select)
  *   aviso        -> NÃO é campo: só texto de orientação. Não entra no config
  *                   salvo (não tem data-tipo, então o salvar() nem o vê).
  */
 
 (async function () {
+  /* 1.5.5: todo HTML desta tela é montado com html`` (comum/storage.js): cada
+     interpolação é escapada; só fragmentos html`` entram crus. Os AVISOS dos
+     módulos têm <b>/<i> de propósito — passam por marcacaoLimitada(), que só
+     deixa essas tags simples, sem atributo. */
+  const html = CratosHTML.html;
   const alvo = document.getElementById("modulos");
   const { modulos } = await browser.runtime.sendMessage({ tipo: "catalogo" });
   const configSalva = (await Store.get(CHAVES.config)) || {};
@@ -29,7 +35,7 @@
     const div = document.createElement("div");
     div.className = "modulo";
     div.dataset.modulo = mod.nome;
-    div.innerHTML = `<h2>${mod.rotulo}</h2>`;
+    CratosHTML.definir(div, html`<h2>${mod.rotulo}</h2>`);
     const cfgMod = configSalva[mod.nome] || {};
 
     for (const [chave, esp] of Object.entries(mod.config || {})) {
@@ -45,13 +51,13 @@
           const sub = document.createElement("div");
           sub.className = "grupo";
           sub.dataset.grupo = nomeGrupo;
-          sub.innerHTML = `<h3>${grupo.rotulo}</h3>`;
+          CratosHTML.definir(sub, html`<h3>${grupo.rotulo}</h3>`);
           const cfgGrupo = (cfgMod[nomeGrupo]) || {};
           for (const [ck, cesp] of Object.entries(grupo.campos)) {
             const campo = document.createElement("div");
             campo.className = "campo";
             const valor = cfgGrupo[ck] ?? cesp.padrao;
-            campo.innerHTML = `<label>${cesp.rotulo || ck}</label>` + renderControle(ck, cesp, valor);
+            CratosHTML.definir(campo, html`<label>${cesp.rotulo || ck}</label>${renderControle(ck, cesp, valor)}`);
             sub.appendChild(campo);
           }
           faixa.appendChild(sub);
@@ -63,7 +69,7 @@
       if (esp.tipo === "aviso") {
         const nota = document.createElement("div");
         nota.className = "campo";
-        nota.innerHTML = renderAviso(esp);
+        CratosHTML.definir(nota, renderAviso(esp));
         div.appendChild(nota);
         continue;
       }
@@ -76,9 +82,9 @@
            vira o texto AO LADO do checkbox, sem duplicar num <label> acima. Antes,
            o checkbox mostrava um "Consultar" fixo e o rótulo aparecia por cima:
            "Aplicar o chip..." em cima, "Consultar" do lado. */
-        campo.innerHTML = renderControle(chave, esp, valor, { rotuloNoCheckbox: true });
+        CratosHTML.definir(campo, renderControle(chave, esp, valor, { rotuloNoCheckbox: true }));
       } else {
-        campo.innerHTML = `<label>${esp.rotulo || chave}</label>` + renderControle(chave, esp, valor);
+        CratosHTML.definir(campo, html`<label>${esp.rotulo || chave}</label>${renderControle(chave, esp, valor)}`);
       }
       div.appendChild(campo);
     }
@@ -126,10 +132,9 @@
       ["Versão", versao],
       ["Compatibilidade", "Firefox 115 ou superior"],
       ["Desenvolvimento", pessoas.map((p) =>
-        `<div class="pessoa"><span class="iniciais">${p.iniciais}</span><span>${p.texto}</span></div>`).join("")],
+        html`<div class="pessoa"><span class="iniciais">${p.iniciais}</span><span>${p.texto}</span></div>`)],
       ["Convênios", "INFOJUD (eCAC), SAB/BacenJud, RENAJUD, CNIB, CENSEC (CEP) e SerasaJUD."],
-      ["Escopo", "O CRATOS <b>prepara</b>. Confirmar, assinar e enviar é sempre ato seu — em " +
-        "todos os convênios, sem exceção."],
+      ["Escopo", html`O CRATOS <b>prepara</b>. Confirmar, assinar e enviar é sempre ato seu — em todos os convênios, sem exceção.`],
       ["Uso", "Exclusivo para servidores do Poder Judiciário, dentro dos sistemas em que você " +
         "já está autenticado. Dados protegidos pela LGPD."],
       ["Privacidade", "🔒 Tudo acontece no seu navegador. Os dados do processo ficam no " +
@@ -138,20 +143,17 @@
         "mesmas que você faria à mão, nos sistemas oficiais."],
     ];
 
-    caixa.innerHTML =
-      `<div class="sobre">
+    const dl = linhas.map(([rotulo, valor]) =>
+      html`<div class="linha"><dt>${rotulo}</dt><dd>${valor}</dd></div>`);
+    CratosHTML.definir(caixa, html`<div class="sobre">
          <header><img src="../icones/cratos-48.png" alt="">Sobre o CRATOS</header>
-         <dl>` +
-      linhas.map(([rotulo, valor]) =>
-        `<div class="linha"><dt>${rotulo}</dt><dd>${valor}</dd></div>`
-      ).join("") +
-      `  </dl>
-       </div>`;
+         <dl>${dl}  </dl>
+       </div>`);
   }
 
   function anosOptions(sel) {
-    let out = "";
-    for (let n = 1; n <= 5; n++) out += `<option value="${n}" ${n === sel ? "selected" : ""}>${n}</option>`;
+    const out = [];
+    for (let n = 1; n <= 5; n++) out.push(html`<option value="${n}" ${n === sel ? "selected" : ""}>${n}</option>`);
     return out;
   }
 
@@ -161,13 +163,13 @@
     const cores = { atencao: "#facc15", info: "#9a9a9a", risco: "#e11d1d" };
     const cor = cores[esp.nivel] || cores.atencao;
     const itens = Array.isArray(esp.itens) ? esp.itens : null;
+    const marc = CratosHTML.marcacaoLimitada;
     const corpo = itens
-      ? "<ul style='margin:6px 0 0;padding-left:18px'>" +
-        itens.map((i) => `<li style="margin:3px 0">${i}</li>`).join("") + "</ul>"
-      : `<div style="margin-top:4px">${esp.texto || ""}</div>`;
-    return `<div style="border-left:4px solid ${cor};background:#1a1a1a;border-radius:6px;
+      ? html`<ul style='margin:6px 0 0;padding-left:18px'>${itens.map((i) => html`<li style="margin:3px 0">${marc(i)}</li>`)}</ul>`
+      : html`<div style="margin-top:4px">${marc(esp.texto || "")}</div>`;
+    return html`<div style="border-left:4px solid ${cor};background:#1a1a1a;border-radius:6px;
                  padding:10px 12px;margin:6px 0;color:#e8e8e8;font-size:13px;line-height:1.5">
-              ${esp.rotulo ? `<b style="color:${cor}">${esp.rotulo}</b>` : ""}
+              ${esp.rotulo ? html`<b style="color:${cor}">${esp.rotulo}</b>` : ""}
               ${corpo}
             </div>`;
   }
@@ -181,13 +183,13 @@
          descreve a ação. Em campos soltos (SAB, CENSEC) o chamador pede
          rotuloNoCheckbox: aí o próprio rótulo vira o texto, sem repetir acima. */
       const texto = (opts && opts.rotuloNoCheckbox) ? (esp.rotulo || chave) : "Consultar";
-      return `<label style="display:flex;gap:8px;align-items:center;color:#e8e8e8">
+      return html`<label style="display:flex;gap:8px;align-items:center;color:#e8e8e8">
         <input type="checkbox" data-chave="${chave}" data-tipo="toggle" ${ativo ? "checked" : ""}> ${texto}</label>`;
     }
     if (esp.tipo === "toggle_anos") {
       const ativo = !!(valor && valor.ativo);
       const anos = (valor && valor.anos) || 3;
-      return `<div style="display:flex;gap:14px;align-items:center;color:#e8e8e8" data-chave="${chave}" data-tipo="toggle_anos">
+      return html`<div style="display:flex;gap:14px;align-items:center;color:#e8e8e8" data-chave="${chave}" data-tipo="toggle_anos">
         <label style="display:flex;gap:8px;align-items:center">
           <input type="checkbox" class="cx-ativo" ${ativo ? "checked" : ""}> Consultar</label>
         <label style="display:flex;gap:6px;align-items:center;color:#b0b0b0">
@@ -195,22 +197,34 @@
       </div>`;
     }
     if (esp.tipo === "numero") {
-      return `<input type="number" min="${esp.min ?? ""}" max="${esp.max ?? ""}" value="${valor}" data-chave="${chave}" data-tipo="numero">`;
+      return html`<input type="number" min="${esp.min ?? ""}" max="${esp.max ?? ""}" value="${valor}" data-chave="${chave}" data-tipo="numero">`;
     }
     if (esp.tipo === "multiselect") {
-      return esp.opcoes.map((o) =>
-        `<label style="display:inline-flex;gap:6px;margin-right:12px;color:#e8e8e8">
+      return html`${esp.opcoes.map((o) =>
+        html`<label style="display:inline-flex;gap:6px;margin-right:12px;color:#e8e8e8">
            <input type="checkbox" value="${o}" ${(valor || []).includes(o) ? "checked" : ""} data-chave="${chave}" data-tipo="multiselect"> ${o}
-         </label>`).join("");
+         </label>`)}`;
     }
     if (esp.tipo === "escolha") {
       const atual = valor ?? esp.padrao;
-      return `<div data-chave="${chave}" data-tipo="escolha" style="display:flex;gap:16px;flex-wrap:wrap;color:#e8e8e8">` +
-        esp.opcoes.map((o) =>
-          `<label style="display:inline-flex;gap:6px;align-items:center;cursor:pointer">
+      const radios = esp.opcoes.map((o) =>
+          html`<label style="display:inline-flex;gap:6px;align-items:center;cursor:pointer">
              <input type="radio" name="rad_${chave}" value="${o.valor}" ${atual === o.valor ? "checked" : ""}> ${o.rotulo}
-           </label>`).join("") +
-        `</div>`;
+           </label>`);
+      return html`<div data-chave="${chave}" data-tipo="escolha" style="display:flex;gap:16px;flex-wrap:wrap;color:#e8e8e8">${radios}</div>`;
+    }
+    if (esp.tipo === "select") {
+      /* Dropdown compacto de opções fixas, com padrão (sem "— selecione —" nem
+         migração): usado pelas opções finas do eFinanceira. O VALOR guardado é o
+         próprio texto da opção, porque o incluirPedido casa por texto na tela do
+         eCAC. Aceita string[] ou {valor, rotulo}. */
+      const atual = valor ?? esp.padrao ?? "";
+      const opc = (esp.opcoes || []).map((o) => {
+        const v = (o && typeof o === "object") ? o.valor : o;
+        const r = (o && typeof o === "object") ? o.rotulo : o;
+        return html`<option value="${v}" ${String(atual) === String(v) ? "selected" : ""}>${r}</option>`;
+      });
+      return html`<select data-chave="${chave}" data-tipo="select" style="width:100%;max-width:320px">${opc}</select>`;
     }
     if (esp.tipo === "lista") {
       const bruto = valor ?? esp.padrao ?? "";
@@ -228,15 +242,15 @@
          se GUARDA é o código ("001"), o que se MOSTRA é o nome. Guardar o nome
          seria guardar algo que a Receita reescreve (duas varas já vêm em CAIXA
          ALTA) e que no `option value` vem com espaços à direita. */
-      const opts = ['<option value="">\u2014 selecione \u2014</option>'].concat(
+      const opts = [html`<option value="">\u2014 selecione \u2014</option>`].concat(
         (esp.opcoes || []).map((o) => {
           const v = (o && typeof o === "object") ? o.valor : o;
           const r = (o && typeof o === "object") ? o.rotulo : o;
-          return `<option value="${escapeAttr(v)}" ${atual === v ? "selected" : ""}>${r}</option>`;
+          return html`<option value="${v}" ${atual === v ? "selected" : ""}>${r}</option>`;
         }));
-      return `<select data-chave="${chave}" data-tipo="lista" style="width:100%;max-width:420px">${opts.join("")}</select>`;
+      return html`<select data-chave="${chave}" data-tipo="lista" style="width:100%;max-width:420px">${opts}</select>`;
     }
-    return `<input type="text" value="${escapeAttr(valor)}" data-chave="${chave}" data-tipo="texto" style="width:100%;max-width:420px">`;
+    return html`<input type="text" value="${valor}" data-chave="${chave}" data-tipo="texto" style="width:100%;max-width:420px">`;
   }
 
   async function salvar() {
@@ -257,6 +271,9 @@
             ativo: grp.querySelector(".cx-ativo").checked,
             anos: parseInt(grp.querySelector(".cx-anos").value) || 1,
           };
+        }
+        for (const el of grupoEl.querySelectorAll('[data-tipo="select"]')) {
+          config[nome][g][el.dataset.chave] = el.value;
         }
       }
 
@@ -286,6 +303,10 @@
         config[nome][el.dataset.chave] = marcado ? marcado.value : null;
       }
       for (const el of divMod.querySelectorAll('[data-tipo="lista"]')) {
+        if (el.closest(".grupo")) continue;
+        config[nome][el.dataset.chave] = el.value;
+      }
+      for (const el of divMod.querySelectorAll('[data-tipo="select"]')) {
         if (el.closest(".grupo")) continue;
         config[nome][el.dataset.chave] = el.value;
       }
@@ -329,5 +350,5 @@
     return cand.length === 1 ? cand[0].valor : "";
   }
 
-  function escapeAttr(s) { return String(s ?? "").replace(/"/g, "&quot;"); }
+  /* (1.5.5) escapeAttr() saiu: só escapava aspas. html`` escapa tudo. */
 })();

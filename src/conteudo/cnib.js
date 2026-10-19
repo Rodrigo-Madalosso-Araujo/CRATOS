@@ -544,14 +544,14 @@
         "número do processo. Confira o campo na tela; nada foi pesquisado."));
     }
 
+    /* A mensagem de "não localizado" fica presa ao campo: se já estava na tela
+       antes do clique, ela não prova nada sobre ESTA pesquisa. */
+    const naoLocalizadoAntes = processoNaoLocalizado();
     btnPesquisar.click();
-    await esperar(() => lerOrdens().length > 0, 25000);
+    const desfecho = await esperar(() => desfechoPesquisaBaixa(naoLocalizadoAntes), 25000);
+    if (desfecho !== "ordens") return concluirPesquisaSemOrdens(est, desfecho, naoLocalizadoAntes);
 
     const ordens = lerOrdens();
-    if (!ordens.length) {
-      avisar("pesquisei e o CNIB não devolveu nenhuma ordem para este processo.", "#ff6b6b");
-      return encerrar(est, "sem_ordens");
-    }
 
     const feitos = est.protocolosFeitos || [];
     const pendentes = ordens.filter((o) => !feitos.includes(o.protocolo));
@@ -586,10 +586,15 @@
     const selecionaveis = daVara.filter((o) => o.check && !o.check.disabled);
     if (!selecionaveis.length) {
       const travadas = daVara.length;
+      /* 1.6.2 (Rodrigo, 19/10): "já cancelada" também é "não há restrição ativa" —
+         vira certidão, com os protocolos como prova. */
+      const certidao = await fabricarCertidaoNadaACancelar(est, daVara.map((o) => o.protocolo));
       avisar(`nada a cancelar: ${travadas === 1 ? "a ordem deste processo já foi cancelada" :
         `as ${travadas} ordens deste processo já foram canceladas`} ` +
-        `(o CNIB devolve com a caixa marcada e travada).`, "#4ade80");
-      return encerrar(est, "ja_canceladas");
+        `(o CNIB devolve com a caixa marcada e travada).` +
+        (certidao.ok ? `\nCertidão gerada: ${certidao.filename}` : `\nNão consegui gerar a certidão (${certidao.motivo}).`),
+        certidao.ok ? "#4ade80" : "#facc15");
+      return encerrar(est, feitos.length ? "concluido" : (certidao.ok ? "ja_canceladas" : "ja_canceladas_sem_certidao"));
     }
 
     const alvo = selecionaveis[0];
@@ -1205,6 +1210,113 @@
     return n(a) === n(b);
   }
 
+  /* ═══ PESQUISA DA BAIXA SEM ORDENS (1.6.2) ═══
+   * Prints do Rodrigo (19/10): quando o processo não tem ordem, o CNIB mostra um
+   * popup "Atenção! A ordem de indisponibilidade pesquisada não pertence a esta
+   * instituição. Instituição de origem: Não identificada." e, embaixo do campo do
+   * processo, "O número de processo informado não foi localizado em nossa base de
+   * dados". O que DECIDE é a origem: "Não identificada" = não há ordem; uma
+   * instituição COM NOME = há ordem ativa de outro órgão, e certificar "nada a
+   * cancelar" seria falso. Regra de ferro: só a mensagem do campo (com o popup, se
+   * houver, em "Não identificada") vira certidão; o resto é faixa. */
+  function processoNaoLocalizado() {
+    return /numero de processo informado nao foi localizado/.test(norm(textoDaTela()));
+  }
+
+  /* null = popup ausente; { naoIdentificada, origem } = popup na tela. */
+  function popupOutraInstituicao() {
+    const bruto = norm2(textoDaTela());
+    if (!/nao pertence a esta instituicao/.test(norm(bruto))) return null;
+    const m = bruto.match(/Institui[çc][ãa]o de origem:?\s*(.+?)\s*(?:\.\s|\.$|O cancelamento|Fechar|$)/i);
+    const origem = m ? m[1].replace(/\.$/, "").trim() : "";
+    return { naoIdentificada: !origem || /nao identificad/.test(norm(origem)), origem };
+  }
+
+  function desfechoPesquisaBaixa(naoLocalizadoAntes) {
+    if (lerOrdens().length) return "ordens";
+    if (popupOutraInstituicao()) return "popup";
+    if (!naoLocalizadoAntes && processoNaoLocalizado()) return "nao_localizado";
+    return null;
+  }
+
+  function fecharPopupCnib() {
+    const b = Array.from(document.querySelectorAll('button, a, input[type=button], [role="button"]'))
+      .find((c) => norm(c.textContent || c.value) === "fechar");
+    if (b) { try { b.click(); } catch (e) {} }
+    return !!b;
+  }
+
+  async function concluirPesquisaSemOrdens(est, desfecho, naoLocalizadoAntes) {
+    if (!desfecho) {
+      avisar("pesquisei e o CNIB não deu resposta que eu reconheça em 25 segundos (nem ordens, nem " +
+        "“não localizado”). NADA foi certificado — confira a tela.", "#ff6b6b");
+      return encerrar(est, "sem_resposta");
+    }
+    await sleep(500);                       // popup e mensagem do campo chegam juntos
+    const pop = popupOutraInstituicao();
+    if (pop && !pop.naoIdentificada) {
+      fecharPopupCnib();
+      avisar(`a ordem deste processo pertence a outra instituição (${pop.origem}). O cancelamento tem ` +
+        "de ser feito por ela. Não certifiquei nada.", "#facc15");
+      return encerrar(est, "outra_instituicao");
+    }
+    if (pop) fecharPopupCnib();
+    const confirmado = await esperar(() => (!naoLocalizadoAntes && processoNaoLocalizado()) ? true : null, 3000);
+    if (!confirmado) {
+      avisar("o CNIB mostrou um aviso, mas não a mensagem “número de processo não localizado”. " +
+        "NADA foi certificado — confira a tela.", "#ff6b6b");
+      return encerrar(est, "sem_resposta");
+    }
+    const certidao = await fabricarCertidaoNadaACancelar(est, null);
+    if (!certidao.ok) {
+      avisar(`o CNIB não localizou o processo, mas não consegui gerar a certidão (${certidao.motivo}).`, "#facc15");
+      return encerrar(est, "nada_a_cancelar_sem_certidao");
+    }
+    avisar("o CNIB não localizou ordem para este processo — nada a cancelar.\nCertidão gerada: " +
+      certidao.filename, "#4ade80");
+    return encerrar(est, "nada_a_cancelar");
+  }
+
+  /* Certidão de "não há ordem ativa a cancelar". `protocolos` = ordens que o CNIB
+     devolveu já canceladas (caixa travada); null = processo não localizado. Vai ao
+     diário como baixa/"nada_a_cancelar" — a consolidada separa esses convênios dos
+     que cancelaram de fato. */
+  async function fabricarCertidaoNadaACancelar(est, protocolos) {
+    try {
+      const nomeParte = doisPrimeiros(((est.executados || [])[0] || {}).nome);
+      const filename = "CRATOS/" + digitos(est.numProcesso) + (nomeParte ? "_" + nomeParte : "") +
+        " CNIB Baixa (nada a cancelar).pdf";
+      const d = new Date(), p = (n) => String(n).padStart(2, "0");
+      const hoje = `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()}`;
+      const abertura = `Certifico e dou fé que, nesta data (${hoje}), procedi à pesquisa, na Central ` +
+        `Nacional de Indisponibilidade de Bens (CNIB), de ordens de indisponibilidade vinculadas ao ` +
+        `processo nº ${est.numProcesso}, para fins de cancelamento, e que `;
+      const lista = (protocolos || []).filter(Boolean);
+      const linhas = lista.length
+        ? ["", abertura + (lista.length === 1
+            ? "a ordem localizada consta como já cancelada no sistema, não havendo ordem de indisponibilidade ativa a cancelar:"
+            : "as ordens localizadas constam como já canceladas no sistema, não havendo ordem de indisponibilidade ativa a cancelar:"),
+           ""].concat(lista.map((pr, i) => `${i + 1}) Protocolo ${pr}`))
+        : ["", abertura + "o sistema informou: “O número de processo informado não foi localizado em " +
+            "nossa base de dados”. Não há, portanto, ordem de indisponibilidade ativa a cancelar."];
+      linhas.push("", "Era o que me cumpria certificar.");
+      const r = await browser.runtime.sendMessage({
+        tipo: "fabricar_pdf",
+        titulo: "CERTIDÃO DE PESQUISA NO CNIB — NADA A CANCELAR",
+        linhas,
+        filename,
+        numProcesso: est.numProcesso,
+        convenio: "CNIB",
+        operacao: "baixa",
+        detalhe: "nada_a_cancelar",
+      });
+      if (r && r.ok) return { ok: true, filename };
+      return { ok: false, motivo: (r && r.erro) || "o background não gerou o PDF" };
+    } catch (e) {
+      return { ok: false, motivo: String(e.message || e) };
+    }
+  }
+
   async function encerrar(est, fase) {
     try { await Store.set("cnib_estado", Object.assign({}, est, { ativo: false, fase })); } catch (e) {}
     console.log("CRATOS/CNIB: encerrado —", fase);
@@ -1212,10 +1324,12 @@
        pendente = tudo cancelado nesta execução). O CNIB baixa tem nº de
        comprovantes desconhecido, então não conta certidões — sem este sinal, o
        painel só conclui pelo botão e a aba não fecha (campo, 03/09). "concluido"
-       → ok:true → o painel avança e manda fechar a aba. "sem_ordens" NÃO emite:
-       a faixa fica e a aba aberta, para o usuário ver que não havia o que cancelar.
-       Aborto de verdade sai por `falhar` (ok:false → o painel TRAVA). */
-    if (fase === "concluido" && est && est.numProcesso) {
+       → ok:true → o painel avança e manda fechar a aba. "sem_resposta" e
+       "outra_instituicao" NÃO emitem: a faixa fica e a aba aberta, para o usuário
+       conferir. Aborto de verdade sai por `falhar` (ok:false → o painel TRAVA). */
+    /* 1.6.2: "nada a cancelar" e "já canceladas" também fecham LIMPO — a certidão
+       foi gerada, a fila pode seguir. Sem certidão (falha do PDF) não avança. */
+    if ((fase === "concluido" || fase === "nada_a_cancelar" || fase === "ja_canceladas") && est && est.numProcesso) {
       try {
         await Store.set("orq_conv_feito", {
           convenio: "CNIB", numProcesso: est.numProcesso,
@@ -1540,5 +1654,7 @@
     lerDetalhesCancelamento, linhasCertidaoCancelamento, formatarProcesso,
     ordemDoProtocolo,
     _secao, _campoEm, _executadosCancelamento,
+    processoNaoLocalizado, popupOutraInstituicao, desfechoPesquisaBaixa,
+    concluirPesquisaSemOrdens, fabricarCertidaoNadaACancelar, encerrar,
   };
 })();

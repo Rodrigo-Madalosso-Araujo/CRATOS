@@ -100,10 +100,13 @@ function montar(estado, corpo) {
     },
     downloads: { download: async () => 1 },
   };
+  /* Assinatura REAL da faixa: (módulo, texto). Até a 1.6.1 este mock aceitava só
+     (texto) — imitava o defeito do _faixa do RENAJUD, que mandava o texto no lugar
+     do módulo, e por isso o teste passava com a faixa saindo "CRATOS — undefined". */
   w.CratosFaixa = {
-    parar: (t) => faixas.push(["parar", t]),
-    alertar: (t) => faixas.push(["alertar", t]),
-    dizer: (t) => faixas.push(["dizer", t]),
+    parar: (m, t) => faixas.push(["parar", t, m]),
+    alertar: (m, t) => faixas.push(["alertar", t, m]),
+    dizer: (m, t) => faixas.push(["dizer", t, m]),
   };
   w.console.log = () => {}; w.console.warn = () => {}; w.console.debug = () => {};
   w.eval(fs.readFileSync(path.join(SRC, "comum", "storage.js"), "utf8"));

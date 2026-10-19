@@ -5,7 +5,7 @@ Extensão Firefox (Manifest V2) que captura os dados do processo no PJe e
 **prepara** a execução de convênios (consultas e registro) para o processo em
 tela, no âmbito do TRT da 18ª Região.
 
-> Versão: **1.4.2** · Compatibilidade: Firefox 115+ · Este repositório é
+> Versão: **1.6.4** · Compatibilidade: Firefox 115+ · Este repositório é
 > disponibilizado para fins de **homologação** pelo Tribunal.
 
 ---
@@ -18,6 +18,13 @@ os convênios, sem exceção. A extensão automatiza o trabalho repetitivo
 de qualquer ato irreversível** — não clica em "Assinar", não confirma bloqueios,
 não envia. O ato definitivo é sempre uma ação humana consciente.
 
+> **Ressalva (CCS, desde a 1.6.1).** Duas Preferências do CCS — aceitar o Termo
+> de Uso e enviar o pedido de detalhamento — podem ser **ligadas pelo próprio
+> usuário**; vêm **desligadas** de fábrica. Ligadas, o envio só ocorre com a
+> marcação conferida (todas as linhas pretendidas e nenhuma fora do critério), e
+> a certidão de envio registra que o ato foi automático, por configuração do
+> usuário, com a hora — para rastreabilidade.
+
 ## Convênios cobertos
 
 - **INFOJUD** (eCAC / Receita Federal) — registro de solicitações e coleta das
@@ -27,6 +34,13 @@ não envia. O ato definitivo é sempre uma ação humana consciente.
 - **CNIB** (indisponibilidade.onr.org.br) — inclusão e cancelamento total.
 - **CENSEC / CEP** — consulta de escrituras e procurações.
 - **SerasaJUD** — inclusão e baixa.
+- **CCS** (Cadastro de Clientes do SFN / Banco Central) — requisição de
+  relacionamentos, pedido de detalhamento e coleta das respostas (PDF do BCB +
+  certidão do estado: quem respondeu e quem falta). Os anexos nascem sigilosos
+  (LC 105/2001).
+
+Na **baixa**, quando o convênio não tem restrição ativa a retirar (RENAJUD, CNIB),
+o CRATOS gera certidão desse fato em vez de terminar calado.
 
 ## Como funciona (arquitetura, em resumo)
 
@@ -48,6 +62,9 @@ não envia. O ato definitivo é sempre uma ação humana consciente.
   e são **sobrescritos a cada nova operação**.
 - A extensão **não manuseia senhas, tokens ou certificados**: o login (inclusive
   certificado digital e token por e-mail) é sempre feito pelo usuário.
+- Todo HTML montado com dado externo passa por `CratosHTML` (escape
+  automático); `testes/teste-seguranca-html.js` varre o código-fonte e reprova
+  `innerHTML` com dado.
 - Dados protegidos pela **LGPD**. As permissões de host no `manifest.json`
   existem só para os domínios dos sistemas oficiais usados:
 
@@ -59,6 +76,7 @@ não envia. O ato definitivo é sempre uma ação humana consciente.
   | `indisponibilidade.onr.org.br` | CNIB |
   | `*.censec.org.br` | CENSEC / CEP |
   | `serasa-judicial.serasaexperian.com.br` | SerasaJUD |
+  | `www3.bcb.gov.br` | CCS (Banco Central) |
 
 ## Nota normativa (para a área avaliar)
 
@@ -89,7 +107,7 @@ cd testes
 node teste-<nome>.js # roda uma suíte
 ```
 
-Há **21 suítes / 533 asserções**. A `teste-cnib.js` é lenta (~5 min, usa relógio
+Há **36 suítes / 836 asserções**. A `teste-cnib.js` é lenta (~5 min, usa relógio
 real); as demais são rápidas. Cada suíte imprime o próprio placar. O padrão do
 projeto é que **teste novo reprove a versão anterior** — várias aceitam
 `CRATOS_SRC=<pasta do .xpi descompactado>` para serem apontadas a uma versão

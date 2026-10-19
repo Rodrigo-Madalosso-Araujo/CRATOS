@@ -87,8 +87,8 @@
       /* A mensagem fala de ORIGEM e de CAMINHO. Não diz o que aconteceu com a
          restrição — o servidor recusou a via, não relatou o estado dela. */
       _faixa("alertar", "esta restrição tem origem no RENAJUD ANTIGO (WEB), e o " +
-        "RENAJUD novo não opera sobre ela. Use a tela do RENAJUD antigo; por " +
-        "enquanto esse caminho é manual.");
+        "RENAJUD novo não opera sobre ela. Tente retirá-la pelo RENAJUD antigo; por " +
+        "enquanto esse caminho é manual. Nada foi certificado.");
       return;
     }
     /* RESTRIÇÃO JÁ EXISTENTE (campo 11/09): a inclusão volta HTTP 400 (o WS
@@ -105,10 +105,34 @@
         .catch((e) => console.warn("CRATOS/RENAJUD: certidão de preexistente falhou:", e.message));
       return;
     }
+    /* ERRO INTERNO do RENAJUD (campo, 19/10): a retirada voltou com "Não foi possível
+       realizar a operação. A execução do método RenajudWsClient#pesquisaRestricaoJudicial
+       retornou o código HTTP 500. RENAJUD-WS (Erro Interno)… ID: <uuid>". Não é recusa:
+       o serviço falhou ao localizar a restrição — o que costuma acontecer com restrição
+       lançada no RENAJUD ANTIGO. A faixa orienta (Rodrigo: "tente retirar pelo antigo";
+       no futuro o CRATOS abrirá o antigo sozinho) e repete o ID para o chamado. Mesma
+       regra do RENAJUD-WEB: diz o que o SERVIDOR respondeu, nunca o estado da restrição. */
+    if (metodo !== "GET" && status >= 300 && (_norm(env.corpo).replace(/[^a-z0-9]/g, "").includes("errointerno") ||
+        /retornou o codigo http 5\d\d/.test(_norm(env.corpo)))) {
+      const id = (String(env.corpo || "").match(/\b([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\b/i) || [])[1];
+      const ato = metodo === "DELETE" ? "à retirada" : metodo === "POST" ? "à inclusão" : "à operação";
+      _faixa("alertar", "o RENAJUD respondeu com ERRO INTERNO " + ato + " (HTTP " + status + ") e não " +
+        "confirmou nada. Nada foi certificado." + (metodo === "DELETE"
+          ? " Esse erro costuma aparecer em restrição lançada no RENAJUD ANTIGO — tente retirá-la por lá."
+          : " Tente de novo mais tarde.") + (id ? " ID de rastreabilidade: " + id : ""));
+      return;
+    }
     /* Qualquer OUTRO erro não vira certidão — mas também não some calado: vira
-       faixa âmbar e a fila NÃO avança (não dá para ter certeza de que terminou). */
+       faixa âmbar e a fila NÃO avança (não dá para ter certeza de que terminou).
+       1.6.3: a faixa traz a MENSAGEM do servidor — antes você tinha de procurá-la na tela. */
     if (status >= 300) {
-      _faixa("alertar", "o RENAJUD recusou a operação (HTTP " + status + "). Nada foi " +
+      /* 1.6.2: a BUSCA (GET) não é ato. Busca vazia que volte com erro HTTP não pode
+         virar "recusou a operação" — quem lê o resultado da busca é a baixa, pela
+         tela (aguardarResultadoBaixa). A faixa fica só para inclusão e retirada. */
+      if (metodo === "GET") return;
+      const msgServidor = _mensagemDoServidor(env.corpo);
+      _faixa("alertar", "o RENAJUD recusou a operação (HTTP " + status + ")" +
+        (msgServidor ? ": “" + msgServidor + "”" : "") + ". Nada foi " +
         "certificado; confira na tela e, se for o caso, refaça esta parte.");
       return;
     }
@@ -121,9 +145,29 @@
     else if (metodo === "DELETE") fabricarFolha(dados, "baixa");
   });
 
+  /* Mensagem legível do corpo de erro: JSON (message/mensagem/detail/erro) ou texto
+     sem marcação, cortado — vai para a faixa, que é texto (sem HTML). */
+  function _mensagemDoServidor(corpo) {
+    const bruto = String(corpo || "");
+    let msg = "";
+    try {
+      const j = JSON.parse(bruto);
+      const cand = j && (j.message || j.mensagem || j.detail || j.erro || j.error ||
+        (Array.isArray(j.errors) && j.errors[0] && (j.errors[0].message || j.errors[0])));
+      if (typeof cand === "string") msg = cand;
+    } catch (e) {
+      msg = bruto.replace(/<[^>]*>/g, " ");
+    }
+    msg = msg.replace(/\s+/g, " ").trim();
+    return msg.length > 220 ? msg.slice(0, 217) + "…" : msg;
+  }
+
   function _faixa(nivel, texto) {
     try {
-      if (typeof CratosFaixa !== "undefined" && CratosFaixa[nivel]) return CratosFaixa[nivel](texto);
+      /* 1.6.2: CratosFaixa.<nível>(MÓDULO, texto). Antes ia só o texto — ele virava o
+         "módulo" e a faixa saía como "CRATOS — undefined" (folha emitida, restrição
+         do RENAJUD antigo, recusa da operação). */
+      if (typeof CratosFaixa !== "undefined" && CratosFaixa[nivel]) return CratosFaixa[nivel]("renajud", texto);
     } catch (e) {}
     console.log("CRATOS/RENAJUD:", texto);
   }
@@ -430,12 +474,126 @@
     // preencher roda antes do reactive form montar e o valor não fixa.
     await clicar("button", "Limpar");
     await sleep(600);
-    await esperar(() => document.querySelector('input[id="numeroProcesso"]'), 8000);
-    colarComMascara('input[id="numeroProcesso"]', est.numProcesso);
-    await sleep(400);
+    /* 1.6.2: confere que o número FIXOU antes de pesquisar. Com o campo vazio o
+       RENAJUD responde "Necessário informar pelo menos um parâmetro de pesquisa" —
+       e uma busca que não aconteceu não pode virar certidão de coisa nenhuma. */
+    let fixou = false;
+    for (let i = 0; i < 3 && !fixou; i++) {
+      await esperar(() => document.querySelector('input[id="numeroProcesso"]'), 8000);
+      colarComMascara('input[id="numeroProcesso"]', est.numProcesso);
+      await sleep(400);
+      const campo = document.querySelector('input[id="numeroProcesso"]');
+      fixou = !!campo && soDigitos(campo.value) === soDigitos(est.numProcesso);
+      if (!fixou) await sleep(600);
+    }
+    if (!fixou) {
+      return CratosFaixa.parar("renajud",
+        "o número do processo não fixou no campo de busca da baixa (3 tentativas). Nada foi " +
+        "pesquisado nem certificado. Preencha à mão e clique em Pesquisar.");
+    }
+    const vazioAntes = alertaNenhumaRestricao();
     await clicar("button", "Pesquisar");
-    console.log("CRATOS/RENAJUD: busca preenchida (proc " + est.numProcesso + "). " +
-                "Selecione a(s) restrição(ões) e vá em 'Retirar'.");
+    const desfecho = await aguardarResultadoBaixa(vazioAntes);
+    return concluirBuscaBaixa(est, desfecho);
+  }
+
+  /* ═══ RESULTADO DA BUSCA DA BAIXA (1.6.2) ═══
+   * Print do Rodrigo (19/10): sem restrição, o componente de pesquisa mostra
+   * <div class="alert alert-secondary" role="alert">Nenhuma restrição encontrada</div>.
+   * Três desfechos: "tabela" (há restrição — segue como sempre, a retirada é sua),
+   * "vazio" (certidão de nada a retirar) e "outro"/"timeout" (faixa, nunca certidão). */
+  function alertaNenhumaRestricao() {
+    const raiz = document.querySelector("app-veiculo-restricao-pesquisa") || document;
+    return Array.from(raiz.querySelectorAll('.alert, [role="alert"]'))
+      .some((a) => _norm(a.textContent).includes("nenhuma restricao encontrada"));
+  }
+
+  /* Página INTEIRA, de propósito: se a lista de restrições renderizar fora do
+     componente de pesquisa, perder a tabela daria alarme falso justo quando HÁ
+     restrição. (O "Limpar" antes do Pesquisar tira resultado velho.) */
+  function tabelaDeRestricoes() {
+    return Array.from(document.querySelectorAll("table")).some((t) =>
+      Array.from(t.querySelectorAll("tbody tr")).some((tr) => tr.querySelector("td")));
+  }
+
+  function aguardarResultadoBaixa(vazioAntes, timeout) {
+    const limite = timeout || 20000;
+    return new Promise((resolve) => {
+      const t0 = Date.now();
+      let sumiu = !vazioAntes;          // aviso velho na tela: só vale depois de sumir e voltar
+      const tick = () => {
+        if (tabelaDeRestricoes()) return resolve({ tipo: "tabela" });
+        const vazio = alertaNenhumaRestricao();
+        if (!vazio) sumiu = true;
+        if (vazio && sumiu && Date.now() - t0 > 600) return resolve({ tipo: "vazio" });
+        const corpo = _norm(document.body ? document.body.textContent : "");
+        if (corpo.includes("necessario informar pelo menos um parametro")) {
+          return resolve({ tipo: "outro", msg: "Necessário informar pelo menos um parâmetro de pesquisa" });
+        }
+        if (Date.now() - t0 > limite) return resolve({ tipo: "timeout" });
+        setTimeout(tick, 300);
+      };
+      tick();
+    });
+  }
+
+  async function concluirBuscaBaixa(est, desfecho) {
+    const tipo = desfecho && desfecho.tipo;
+    if (tipo === "tabela") {
+      console.log("CRATOS/RENAJUD: busca preenchida (proc " + est.numProcesso + "). " +
+                  "Selecione a(s) restrição(ões) e vá em 'Retirar'.");
+      return "tabela";
+    }
+    if (tipo === "vazio") {
+      const r = await fabricarCertidaoNadaARetirar(est);
+      try {
+        await Store.set("renajud_estado", Object.assign({}, est, { ativo: false, fase: "nada_a_retirar" }));
+      } catch (e) {}
+      if (!r.ok) {
+        CratosFaixa.alertar("renajud", "o RENAJUD não encontrou restrição deste processo, mas não " +
+          "consegui gerar a certidão (" + r.motivo + ").");
+        return "vazio_sem_certidao";
+      }
+      /* Pulso TERMINAL: a baixa do RENAJUD espera uma folha por executado; aqui não
+         há retirada, há UMA certidão — o painel segue por este sinal. */
+      try {
+        await Store.set("orq_conv_feito", {
+          convenio: "RENAJUD", numProcesso: est.numProcesso, operacao: "baixa", ok: true, em: Date.now(),
+        });
+      } catch (e) {}
+      _faixa("dizer", "nenhuma restrição deste processo no RENAJUD — nada a retirar.\nCertidão gerada: " + r.filename);
+      return "vazio";
+    }
+    CratosFaixa.alertar("renajud", (tipo === "outro"
+      ? "o RENAJUD respondeu “" + desfecho.msg + "” à busca"
+      : "a busca da baixa não trouxe resultado que eu reconheça em 20 segundos") +
+      ". NADA foi certificado — confira a tela.");
+    return tipo || "timeout";
+  }
+
+  function fabricarCertidaoNadaARetirar(est) {
+    const proc = soDigitos(est.numProcesso);
+    const filename = "CRATOS/" + proc + " RENAJUD Baixa (nada a retirar).pdf";
+    const linhas = [
+      "",
+      "Certifico e dou fé que, nesta data (" + _dataBR() + "), procedi à pesquisa, no RENAJUD - " +
+        "Restrições Judiciais Sobre Veículos Automotores, de restrições judiciais vinculadas ao " +
+        "processo nº " + est.numProcesso + ", para fins de retirada, e que o sistema informou: " +
+        "“Nenhuma restrição encontrada”. Não há, portanto, restrição veicular ativa a retirar.",
+      "",
+      "Era o que me cumpria certificar.",
+    ];
+    return browser.runtime.sendMessage({
+      tipo: "fabricar_pdf",
+      convenio: "RENAJUD",
+      numProcesso: est.numProcesso,
+      operacao: "baixa",
+      detalhe: "nada_a_cancelar",
+      titulo: "CERTIDÃO DE PESQUISA NO RENAJUD — NADA A RETIRAR",
+      linhas,
+      filename,
+    }).then((r) => ({ ok: !r || r.ok !== false, filename, motivo: r && r.erro }))
+      .catch(() => ({ ok: true, filename }));   // Promise rejeita no FF mesmo baixando
   }
 
   // Fase 2 da baixa: tela de exclusão (/veiculo/restricao/exclusao). Preenche os
@@ -939,6 +1097,8 @@
     window.__cratosRenajud = {
       get idxAtual() { return _idxAtual; },
       set idxAtual(v) { _idxAtual = v; },
+      prepararBaixa, aguardarResultadoBaixa, concluirBuscaBaixa, alertaNenhumaRestricao,
+      fabricarCertidaoNadaARetirar,
     };
   }
 })();

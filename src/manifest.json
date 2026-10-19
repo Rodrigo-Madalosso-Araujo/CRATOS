@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "CRATOS",
-  "version": "1.4.2",
+  "version": "1.6.4",
   "description": "Captura dados do processo no PJe e automatiza parcialmente a execução de convênios (consultas e registro) para o processo em tela. Quem confirma, assina e envia é sempre você.",
   "browser_specific_settings": {
     "gecko": {
@@ -30,7 +30,8 @@
     "*://renajud.pdpj.jus.br/*",
     "*://indisponibilidade.onr.org.br/*",
     "*://*.censec.org.br/*",
-    "*://serasa-judicial.serasaexperian.com.br/*"
+    "*://serasa-judicial.serasaexperian.com.br/*",
+    "*://www3.bcb.gov.br/*"
   ],
   "background": {
     "scripts": [
@@ -44,7 +45,9 @@
       "modulos/cnib.js",
       "modulos/censec.js",
       "modulos/serasajud.js",
+      "modulos/ccs.js",
       "modulos/juntada.js",
+      "comum/unzip.js",
       "background.js"
     ]
   },
@@ -134,6 +137,18 @@
         "comum/relatorio.js",
         "comum/faixa.js",
         "conteudo/serasajud.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "*://www3.bcb.gov.br/ccs/*"
+      ],
+      "js": [
+        "comum/storage.js",
+        "comum/relatorio.js",
+        "comum/faixa.js",
+        "conteudo/ccs.js"
       ],
       "run_at": "document_idle"
     }
