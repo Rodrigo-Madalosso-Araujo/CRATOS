@@ -18,7 +18,15 @@ método que travou todo bug real desta lista.
 
 ## Situação
 
-### As que RODAM hoje (19/10/2026 — 1.6.4 = 1.6.3 + PDF do CCS + chip): 36 suítes, 836 asserções
+### As que RODAM hoje (19/10/2026 — 1.6.5 = 1.6.4 + entrada do CCS): 37 suítes, 855 asserções
+
+>>> 1.6.5: o CCS ficou EM BRANCO depois do login (campo, 19/10) — o CRATOS abria uma página
+    interna e a volta do ADFS caía nela sem sessão. Agora abre pela ENTRADA (iniciar.do) e,
+    se ainda cair em página vazia, volta UMA vez e depois para pedindo limpar os cookies do BCB.
+    Nova `teste-ccs-entrada.js` (19), que reprova a 1.6.4 com 12 falhas (inclui o teto que
+    faltava na coleta: tela ≠ 0801 navegava sem limite). `teste-ccs-requisicao.js` ajustada.
+
+### RODARAM na 1.6.4 (19/10/2026 — 1.6.3 + PDF do CCS + chip): 36 suítes, 836 asserções
 
 >>> No repositório estão de volta as três suítes da 1.4.1 que se perderam do disco
     (`teste-censec-partes.js`, `teste-infojud-recoleta.js`, `teste-opcoes-rotulo.js`)
@@ -132,6 +140,7 @@ método que travou todo bug real desta lista.
 |---|---|---|
 | `teste-baixa-nada-a-cancelar.js` | 35 | rápida |
 | `teste-ccs-coleta.js` | 58 | rápida |
+| `teste-ccs-entrada.js` | 19 | rápida |
 | `teste-ccs-marcacao.js` | 19 | rápida |
 | `teste-ccs-requisicao.js` | 42 | rápida |
 | `teste-censec-partes.js` | 15 | rápida |

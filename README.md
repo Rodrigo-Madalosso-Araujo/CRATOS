@@ -5,7 +5,7 @@ Extensão Firefox (Manifest V2) que captura os dados do processo no PJe e
 **prepara** a execução de convênios (consultas e registro) para o processo em
 tela, no âmbito do TRT da 18ª Região.
 
-> Versão: **1.6.4** · Compatibilidade: Firefox 115+ · Este repositório é
+> Versão: **1.6.5** · Compatibilidade: Firefox 115+ · Este repositório é
 > disponibilizado para fins de **homologação** pelo Tribunal.
 
 ---
@@ -107,7 +107,7 @@ cd testes
 node teste-<nome>.js # roda uma suíte
 ```
 
-Há **36 suítes / 836 asserções**. A `teste-cnib.js` é lenta (~5 min, usa relógio
+Há **37 suítes / 855 asserções**. A `teste-cnib.js` é lenta (~5 min, usa relógio
 real); as demais são rápidas. Cada suíte imprime o próprio placar. O padrão do
 projeto é que **teste novo reprove a versão anterior** — várias aceitam
 `CRATOS_SRC=<pasta do .xpi descompactado>` para serem apontadas a uma versão

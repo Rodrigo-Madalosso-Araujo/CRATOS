@@ -42,6 +42,7 @@
   const html = CratosHTML.html;
   const BASE = location.origin + "/ccs/";
   const URL_CCS = {
+    inicio: BASE + "iniciar.do?method=iniciar",
     requisitar: BASE + "requisitarConsultaCpfCnpj.do?method=iniciar",
     requisicoes: BASE + "iniciarConsultaRequisicoesRealizadas.do?method=iniciarConsultaRequisicoes",
     requisicao: (n) => BASE +
@@ -85,12 +86,16 @@
     if (!tela) {
       if (document.querySelector('input[type="password"]') || /indexEstatico|login|signin/i.test(location.href)) {
         avisar("aguardando seu login no CCS (Banco Central). Assim que você entrar, eu sigo sozinho.");
+      } else if (paginaEmBranco(document)) {
+        return tratarPaginaEmBranco(est);
       } else {
         alertar("não reconheci esta tela do CCS (falta o código [CCSFW…] no canto). Se for o login, " +
           "entre; eu sigo depois.");
       }
       return;
     }
+    /* Tela reconhecida: a sessão está de pé — zera a contagem de páginas em branco. */
+    if (est.emBranco) await salvar(est, { emBranco: 0 });
     try {
       if (est.modo === "coleta") return await passoColeta(est, tela);
       return await passoRequisicao(est, tela);
@@ -328,8 +333,16 @@
       return io.navegar(URL_CCS.arquivos);
     }
     if (est.fase === "coleta_ir") {
-      if (tela === "0801") return tela0801Coleta(est);
+      if (tela === "0801") {
+        if (est.idas) await salvar(est, { idas: 0 });   // chegou: o teto vale por requisição
+        return tela0801Coleta(est);
+      }
       if (!fila.length) return finalizarColeta(est);
+      /* Da tela inicial (1201, a entrada desde a 1.6.5) ou de outra qualquer: vai à
+         requisição — com teto, para não girar se o CCS devolver sempre outra tela. */
+      const idas = (est.idas || 0) + 1;
+      if (idas > 3) throw new Error("o CCS não abriu a requisição " + fila[0] + " depois de 3 tentativas.");
+      await salvar(est, { idas });
       return io.navegar(URL_CCS.requisicao(fila[0]));
     }
     alertar(`coleta em fase inesperada (${est.fase}) na tela CCSFW${tela}. Clique em “Coletar CCS” de novo.`);
@@ -709,6 +722,34 @@
   /* ═══════════════════════════════════════════════════════════════════════════
    * LEITURA DAS TELAS
    * ═══════════════════════════════════════════════════════════════════════════ */
+  /* 1.6.5 — PÁGINA EM BRANCO depois do login. Visto em campo (19/10): o CRATOS abria
+     uma página interna do CCS; sem sessão, o BCB mandava ao ADFS e, na volta, a página
+     interna vinha VAZIA (a sessão nova não tinha passado pela entrada do CCS; cookie de
+     tentativa anterior piorava). Desde a 1.6.5 o CRATOS abre pela ENTRADA (iniciar.do).
+     Se ainda assim cair numa página vazia: volta UMA vez para a entrada; na segunda,
+     PARA com a instrução de limpar os cookies do BCB — nunca gira em loop. */
+  const MAX_EM_BRANCO = 1;
+  function paginaEmBranco(doc) {
+    if (!doc || !doc.body) return true;
+    if (doc.querySelector("frameset, frame, iframe, form, input, select, textarea, a[href], img")) return false;
+    const copia = doc.body.cloneNode(true);
+    for (const el of Array.from(copia.querySelectorAll('[id^="cratos"], script, style, noscript'))) el.remove();
+    return (copia.textContent || "").replace(/\s+/g, "").length < 30;
+  }
+
+  async function tratarPaginaEmBranco(est) {
+    const vezes = (est.emBranco || 0) + 1;
+    await salvar(est, { emBranco: vezes });
+    if (vezes <= MAX_EM_BRANCO) {
+      avisar("o CCS abriu em branco — voltando pela tela inicial do CCS…");
+      return io.navegar(URL_CCS.inicio);
+    }
+    CratosFaixa.parar("ccs", "o CCS voltou EM BRANCO de novo, mesmo entrando pela tela inicial. " +
+      "Costuma ser cookie de uma sessão anterior do Banco Central. Clique no cadeado da barra de " +
+      "endereço → “Limpar cookies e dados do site” (www3.bcb.gov.br), feche esta aba e mande o CCS " +
+      "de novo pelo CRATOS.");
+  }
+
   function codigoTela(doc) {
     const t = (doc && doc.body && doc.body.textContent) || "";
     const m = t.match(/\[\s*CCSFW\s*(\d{4})\s*\]/i);
@@ -1093,7 +1134,7 @@
     window.__cratosCcs = {
       io, processar, codigoTela, lerLinhas0601, lerStatus0801, lerNumeroRequisicao, lerQuadro0602,
       lerRequisicoes1302, lerArquivos0802, fabricarCertidaoEnvio, fabricarCertidaoColeta, mascararDocs,
-      lerDocSelecionado, lerLinksDocs, agregarStatus, escolherPdf0802, ultimaResposta,
+      lerDocSelecionado, lerLinksDocs, agregarStatus, escolherPdf0802, ultimaResposta, paginaEmBranco,
     };
   }
 })();

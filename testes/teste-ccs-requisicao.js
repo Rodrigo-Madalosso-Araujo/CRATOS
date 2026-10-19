@@ -76,8 +76,8 @@ function moduloDeFundo(mem, abas) {
     checar(c.aceitarTermo === false && c.envioAutomatico === false && c.criterio === "todas" &&
       c.esconderInativos === false && c.motivo === "Execução trabalhista",
       "⛔ módulo: padrões de fábrica — termo e envio NÃO automáticos, todas as detaláveis, inativos à mostra, motivo");
-    checar(abas[0] === "https://www3.bcb.gov.br/ccs/requisitarConsultaCpfCnpj.do?method=iniciar",
-      "módulo: abre a tela de requisição por CPF/CNPJ");
+    checar(abas[0] === "https://www3.bcb.gov.br/ccs/iniciar.do?method=iniciar",
+      "⛔ módulo: abre o CCS pela ENTRADA (iniciar.do), não pela página interna — a volta do login vinha em branco (1.6.5)");
     checar((await M.executar({ numeroProcesso: F.PROC_FMT, partes }, "baixa")).ok === false,
       "módulo: CCS não tem baixa");
     checar((await M.executar({ numeroProcesso: F.PROC_FMT, partes: [partes[2]] }, "consulta")).ok === false,
@@ -106,14 +106,14 @@ function moduloDeFundo(mem, abas) {
     const rc = await M.coletar({ numeroProcesso: F.PROC_FMT, partes });
     const ec = mem["cratos:ccs_estado"];
     checar(rc.ok && rc.direto && ec.modo === "coleta" && ec.fila.length === 1 && ec.fila[0] === F.REQ &&
-      abas[0].indexOf("numeroRequisicao=" + F.REQ) > 0,
-      "⛔ coleta: vai DIRETO à requisição guardada (sem a busca limitada a 30 dias); encerrada fica de fora");
+      ec.fase === "coleta_ir" && /iniciar\.do\?method=iniciar/.test(abas[0]),
+      "⛔ coleta: segue DIRETO à requisição guardada (sem a busca limitada a 30 dias), entrando pela tela inicial; encerrada fica de fora");
     mem["cratos:ccs_req:" + F.PROC] = [];
     abas.length = 0;
     const rb = await M.coletar({ numeroProcesso: F.PROC_FMT, partes });
     checar(rb.ok && !rb.direto && mem["cratos:ccs_estado"].fase === "coleta_buscar" &&
-      /iniciarConsultaRequisicoesRealizadas/.test(abas[0]),
-      "coleta sem nº guardado: plano B pela consulta de requisições realizadas");
+      /iniciar\.do\?method=iniciar/.test(abas[0]),
+      "coleta sem nº guardado: plano B (consulta de requisições), também entrando pela tela inicial");
   }
 
   /* ── tela inicial → formulário ─────────────────────────────────────────── */

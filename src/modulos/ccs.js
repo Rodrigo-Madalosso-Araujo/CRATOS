@@ -113,7 +113,10 @@ const ModuloCCS = {
         fase: "iniciado",
         abertoEm: new Date().toISOString(),
       });
-      await abrirCcs(CCS_URL.requisitar);
+      /* 1.6.5: pela ENTRADA do CCS (CCSFW1201), não pela página interna. Sem sessão, o
+         BCB manda ao ADFS e devolve a esta entrada; a volta direto a uma página interna
+         vinha em branco (campo, 19/10). O content script segue da 1201 ao formulário. */
+      await abrirCcs(CCS_URL.inicio);
       /* UMA certidão (a de envio) para a requisição inteira — o painel avança quando
          ela chega. */
       return { ok: true, aguardando: true, esperados: 1 };
@@ -149,7 +152,9 @@ const ModuloCCS = {
         abertoEm: new Date().toISOString(),
       });
       await Store.set("ccs_coleta_resultado", null);
-      await abrirCcs(abertas.length ? CCS_URL.requisicao(abertas[0]) : CCS_URL.requisicoes);
+      /* 1.6.5: pela entrada (ver executar); da 1201 o content script vai à requisição
+         guardada ou à consulta por janelas. */
+      await abrirCcs(CCS_URL.inicio);
       return { ok: true, direto: abertas.length > 0, requisicoes: abertas.length };
     } catch (e) {
       return { ok: false, motivo: "erro", erro: e.message || String(e) };

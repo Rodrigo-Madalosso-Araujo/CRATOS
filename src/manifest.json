@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "CRATOS",
-  "version": "1.6.4",
+  "version": "1.6.5",
   "description": "Captura dados do processo no PJe e automatiza parcialmente a execução de convênios (consultas e registro) para o processo em tela. Quem confirma, assina e envia é sempre você.",
   "browser_specific_settings": {
     "gecko": {
