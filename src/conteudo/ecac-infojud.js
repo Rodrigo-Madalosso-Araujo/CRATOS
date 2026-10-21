@@ -595,9 +595,26 @@ async function gerarListaPedidos(pedidoParte, cfgCompleto) {
   if (cfg.infocad?.ativo) lista.push({ tipo: "Info. Cadastrais", opcoes: {}, ni });
   if (cfg.efin?.ativo) {
     const qtd = parseInt(cfg.efin.anos) || 1;
+    /* Opções finas do eFinanceira, vindas das Preferências. Fallback no padrão
+       recomendado (Todas/Todas/Sim/Contas e movimentações) para config antiga que
+       ainda não tem esses campos — assim o eFinanceira já sai detalhado sem o
+       usuário reconfigurar. O incluirPedido casa esses textos na tela do eCAC. */
+    const efinOpc = {
+      conta:   cfg.efin_conta   || "Todas",
+      relacao: cfg.efin_relacao || "Todas",
+      cambio:  cfg.efin_cambio  || "Sim",
+      extrato: cfg.efin_extrato || "Contas e movimentações",
+    };
     for (let i = 1; i <= qtd; i++) {
-      const ano = anoAtual - i;
-      lista.push({ tipo: "eFinanceira", opcoes: { dataIni: "01/" + ano, dataFim: "12/" + ano }, ni });
+      const ano = anoAtual - i;   // sempre a partir do ano anterior FECHADO
+      /* ⛔ NÃO incluir `ano` nas opções: o eFinanceira é por PERÍODO (Data MM/AAAA),
+         não usa o dropdown de ano (novoano). Com `ano`, o incluirPedido tentava
+         selecionar 2025 nesse dropdown, que o eFinanceira não tem, e travava a
+         solicitação inteira ("o eCAC não ofereceu o ano X para eFinanceira") —
+         regressão da 1.5.0. O ano do NOME do arquivo vem da caixa postal na coleta. */
+      lista.push({ tipo: "eFinanceira",
+        opcoes: Object.assign({}, efinOpc, { dataIni: "01/" + ano, dataFim: "12/" + ano }),
+        ni });
     }
   }
 
@@ -1193,15 +1210,21 @@ async function lerItensResultado() {
     const tipo = (cels[2]?.textContent || "").trim().toUpperCase();
     const anoData = (cels[3]?.textContent || "").trim();
     const link = cels[4]?.querySelector("a");
-    if (!tipo || !link) continue;
+    /* Sem tipo: linha de cabeçalho/ruído. Sem link: normalmente ignora — MAS um tipo
+       ASSÍNCRONO (eFinanceira) NÃO-PRONTO vem SEM a lupa, só com o texto "processamento
+       ainda não concluído" na coluna Opções. Essa linha PRECISA entrar, senão o
+       eFinanceira pendente some e não vira a certidão de consolidação. */
+    if (!tipo) continue;
+    if (!link && !ehTipoAssincrono(tipo)) continue;
     if (!nomeContrib) {
       nomeContrib = (cels[1]?.textContent || "").trim().replace(/\s+/g, " ");
       niContrib = (cels[0]?.textContent || "").trim();
     }
     itens.push({
       tipo, anoData,
-      onclick: link.getAttribute("onclick") || "",
-      href: link.getAttribute("href") || "",
+      onclick: link ? (link.getAttribute("onclick") || "") : "",
+      href: link ? (link.getAttribute("href") || "") : "",
+      semLink: !link,
     });
   }
   return { itens, nomeContrib, niContrib };
@@ -1276,10 +1299,20 @@ async function colherTodosItens(contexto) {
     pasta: contexto.pasta || "CRATOS",
   });
 
-  const ordenados = [
+  let ordenados = [
     ...itens.filter((i) => i.tipo !== "DOI"),
     ...itens.filter((i) => i.tipo === "DOI"),
   ];
+
+  /* Botão "Baixar só o e-Financeira": na coleta do dia seguinte, colhe apenas o
+     retorno do eFinanceira (ignora os demais tipos, que já vieram no dia 1). */
+  if (contexto && contexto.soEfin) {
+    ordenados = ordenados.filter((i) => {
+      const t = (i.tipo || "").toUpperCase();
+      return t === "EFINANCEIRA" || ehTipoAssincrono(t);
+    });
+    if (!ordenados.length) return { ok: true, total: 0, colhidos: 0, falhas: [], pendentes: [], semEfin: true };
+  }
 
   let colhidos = 0, falhas = [], pendentes = [];
   for (const item of ordenados) {
@@ -1310,9 +1343,14 @@ async function colherUmItem(item, niContrib) {
     //  (b) assíncrono ainda NÃO disponível (sem href usável): pendente.
     const href = _hrefReal(item.href);
     if (href) return await colherDownloadDireto(item, niContrib, href);
-    return ehTipoAssincrono(item.tipo)
-      ? { ok: false, assincrono: true, erro: "ainda não disponibilizado" }
-      : { ok: false, erro: "sem link (onclick/href) para " + (item.tipo || "?") };
+    /* Tipo assíncrono SEM link (eFinanceira não-pronto: a coluna Opções traz só o texto
+       "processamento ainda não concluído", sem lupa). É NÃO-PRONTO genuíno (sem dado) →
+       certidão de consolidação, igual ao caso do link com corpo vazio. Nunca "nada consta". */
+    if (ehTipoAssincrono(item.tipo)) {
+      const exercicio = (item.anoData || "").replace(/[^\d]/g, "").slice(-4);
+      return await fabricarCertidaoEfinPendente((niContrib || "").replace(/\D/g, ""), exercicio);
+    }
+    return { ok: false, erro: "sem link (onclick/href) para " + (item.tipo || "?") };
   }
   const params = m[1].split(",").map((p) => p.trim().replace(/^'|'$/g, ""));
   // params: [acao, numSolicitacao, tipoInformacao, indicePedido, nirf, target]
@@ -1464,6 +1502,10 @@ async function colherDownloadDireto(item, niContrib, href) {
       const txt = new TextDecoder("latin1").decode(new Uint8Array(buf));
       const url2 = _acharLinkDownload(txt, href);
       if (!url2) {
+        // eFinanceira é ASSÍNCRONO: a Receita às vezes dá o link mas o corpo vem como
+        // página "em processamento" (sem arquivo). Isso é NÃO-PRONTO (sem dado), não
+        // falha de leitura → certidão de estado, nunca .zip bruto (ARQ-041 na juntada).
+        if (ehEfin) return await fabricarCertidaoEfinPendente(ni, exercicio);
         console.log("CRATOS/coleta: download direto veio HTML sem link (" + tipoUP + "):",
           txt.replace(/\s+/g, " ").slice(0, 600));
         return { ok: false, erro: "download " + tipoUP + ": HTML sem link" };
@@ -1474,7 +1516,31 @@ async function colherDownloadDireto(item, niContrib, href) {
       tipoArq = _magicArquivo(buf);
     }
 
-    if (tipoArq === "html") {   // ainda HTML após seguir o link: não é arquivo
+    // eFinanceira: os ÚNICOS desfechos válidos são
+    //   (a) ZIP real          → extrai o(s) PDF(s) de dentro, renomeados por ano;
+    //   (b) ZIP real sem PDF, OU corpo que NEM É arquivo (link veio vazio/"em
+    //       processamento")  → certidão "Consolidando resultados" (NÃO-PRONTO, sem dado);
+    //   (c) ZIP real que estoura no inflate → erro vermelho (TEM dado, falha de leitura);
+    //   (d) PDF direto (inesperado, mas é DADO) → baixa como PDF.
+    // Regra de ferro: pendência não vira certidão de resultado, e dado ilegível não vira
+    // certidão FALSA. E NUNCA salvar .zip bruto — o PJe recusa na juntada (ARQ-041).
+    if (ehEfin) {
+      if (tipoArq === "zip") {
+        const rz = await colherEFinanceiraZip(new Uint8Array(buf), { ni, exercicio });
+        if (rz && rz.vazioEfin) return await fabricarCertidaoEfinPendente(ni, exercicio);
+        return rz;
+      }
+      if (tipoArq === "pdf") {
+        const b64pdf = _bytesToB64(new Uint8Array(buf));
+        const rotuloPdf = rotulo + (exercicio ? " (" + exercicio + ")" : "");
+        const rp = await browser.runtime.sendMessage({ tipo: "baixar_pdf_base64", base64: b64pdf, tipoLabel: rotuloPdf, ni, ext: "pdf" });
+        return (rp && rp.ok) ? { ok: true, arquivo: rp.filename } : { ok: false, erro: (rp && rp.erro) || "falha no download" };
+      }
+      // corpo que não é zip nem pdf (html sem link já tratado acima; "outro"/vazio aqui):
+      return await fabricarCertidaoEfinPendente(ni, exercicio);
+    }
+
+    if (tipoArq === "html") {   // não-eFin, ainda HTML após seguir o link: não é arquivo
       return { ok: false, erro: "download " + tipoUP + ": conteúdo não é arquivo" };
     }
 
@@ -1484,6 +1550,30 @@ async function colherDownloadDireto(item, niContrib, href) {
   } catch (e) {
     return { ok: false, erro: String(e.message || e) };
   }
+}
+
+/*
+ * eFinanceira vem em ZIP. A ABERTURA do zip + inflate (DecompressionStream) é feita
+ * no BACKGROUND: no content script do Firefox (sandbox/Xray) o DecompressionStream
+ * recusa o buffer ("Value could not be converted to ArrayBufferView") — bug que
+ * pegou em campo na 1.5.0. O background é página de extensão normal, sem essa
+ * membrana. Aqui só mandamos os bytes do zip (base64); o background descompacta,
+ * renomeia ("eFinanceira (<ano>)" / "eFinanceira N (<ano>)") e baixa cada PDF.
+ * Zip sem PDF => background devolve `vazioEfin`; o chamador emite a certidão de estado.
+ */
+async function colherEFinanceiraZip(buf, ctx) {
+  const base64 = _bytesToB64(buf);
+  let r;
+  try {
+    r = await browser.runtime.sendMessage({
+      tipo: "efin_zip", base64, ni: ctx.ni, exercicio: ctx.exercicio || "",
+    });
+  } catch (e) {
+    return { ok: false, erro: "falha ao abrir o zip do eFinanceira: " + String(e.message || e) };
+  }
+  if (r && r.vazioEfin) return { ok: false, vazioEfin: true, exercicio: ctx.exercicio || "" };
+  if (r && r.ok) return { ok: true, arquivo: (r.arquivos || [])[0], arquivos: r.arquivos || [] };
+  return { ok: false, erro: (r && r.erro) || "falha ao abrir o zip do eFinanceira" };
 }
 
 /* Identifica o arquivo pelos primeiros bytes (assinatura), ignorando Content-Type:
@@ -1616,6 +1706,60 @@ async function fabricarCertidao(item, niContrib, textoPagina, tipoLabel) {
   return (r && r.ok) ? { ok: true, certidao: true } : { ok: false, erro: (r && r.erro) || "falha ao fabricar certidão" };
 }
 
+/*
+ * eFinanceira é assíncrono: na coleta automática (dia 1), a Receita às vezes já dá
+ * o link mas o zip vem SEM PDF (resultado ainda em consolidação). Em vez de erro
+ * calado ou zip quebrado, junta uma certidão do ESTADO da diligência — que a
+ * consulta foi registrada e o retorno virá depois. NÃO afirma resultado nem
+ * "nada consta" (respeita a regra de ferro: pendência não vira certidão de
+ * resultado). No dia seguinte, o botão exclusivo traz o extrato de verdade.
+ */
+async function fabricarCertidaoEfinPendente(niContrib, exercicio) {
+  const ni = niContrib || "";
+  /* Guarda de duplicação: rodar a coleta 2x no mesmo dia não deve gerar duas certidões
+     de consolidação do MESMO ano (o Cofre guardaria uma "(2)"). Checa por nome no Cofre;
+     se já existe a de consolidação deste exercício, não repete. Melhor-esforço: se a
+     checagem falhar, segue e emite (mais vale duplicar que engolir). */
+  const numProcGuard = (contextoAtualColeta && contextoAtualColeta.numProcesso) || null;
+  if (numProcGuard) {
+    try {
+      const lst = await browser.runtime.sendMessage({ tipo: "cofre_listar", numProcesso: numProcGuard });
+      const arqs = (lst && lst.arquivos) || [];
+      const anoTxt = exercicio ? "(" + exercicio + ")" : "";
+      if (arqs.some((a) => a && a.nome && /em consolida[cç][aã]o/i.test(a.nome) &&
+          (!exercicio || a.nome.includes(anoTxt)))) {
+        return { ok: true, certidao: true, efinPendente: true, jaExistia: true };
+      }
+    } catch (e) { /* segue e emite */ }
+  }
+  const rotuloNi = ni.replace(/\D/g, "").length === 14 ? "CNPJ" : "CPF";
+  const data = new Date().toLocaleDateString("pt-BR");
+  const titulo = "Consolidando resultados da consulta ao e-Financeira";
+  const linhas = [
+    "Data da consulta: " + data,
+    rotuloNi + ": " + ni,
+  ];
+  if (exercicio) linhas.push("Exercicio/ano: " + exercicio);
+  linhas.push(
+    "",
+    "A consulta ao e-Financeira foi registrada perante a Receita Federal.",
+    "Por ser de retorno ASSINCRONO, o resultado ainda esta sendo consolidado",
+    "e nao foi disponibilizado ate esta data.",
+    "",
+    "Assim que o retorno estiver disponivel, o respectivo extrato sera juntado.");
+  const tipoLabel = "eFinanceira" + (exercicio ? " (" + exercicio + ")" : "") + " - em consolidacao";
+  const filename = _montarCaminhoCertidao(contextoAtualColeta, tipoLabel, ni);
+  const r = await browser.runtime.sendMessage({
+    tipo: "fabricar_pdf", titulo, linhas, filename,
+    convenio: "INFOJUD",
+    numProcesso: (contextoAtualColeta && contextoAtualColeta.numProcesso) || null,
+    detalhe: tipoLabel,
+  });
+  return (r && r.ok)
+    ? { ok: true, certidao: true, efinPendente: true }
+    : { ok: false, erro: (r && r.erro) || "falha ao fabricar certidão de eFinanceira pendente" };
+}
+
 function _montarCaminhoCertidao(ctx, tipoLabel, ni) {
   const limpar = (s) => String(s || "").replace(/[\/\\:*?"<>|]/g, "").trim();
   const pasta = limpar((ctx && ctx.pasta) || "CRATOS") || "CRATOS";
@@ -1654,6 +1798,9 @@ async function iniciarColetaEcac() {
   try { est = await Store.get("coleta_estado"); } catch (e) {}
   if (!est || !est.ativo) return;
   if (location.href.toLowerCase().includes("resultadosolicitacao")) {
+    /* Cortina central enquanto colhe: informa e impede o usuário de mexer na aba
+       no meio do download. Some ao fim (ou quando uma faixa de parada aparece). */
+    try { if (typeof CratosOverlay !== "undefined") CratosOverlay.mostrar("As certidões estão sendo baixadas. Aguarde — não feche nem clique nesta aba."); } catch (e) {}
     await coletaColherEAvancar(est);
   }
 }
@@ -1667,7 +1814,7 @@ async function coletaColherEAvancar(est) {
   console.log(`CRATOS/coleta: colhendo solicitação [${est.idx + 1}/${est.fila.length}] ${atual}`);
   await sleep(1200);
 
-  const r = await colherTodosItens({ numProcesso: est.numProcesso, pasta: est.pasta, nomeAbrev: "" })
+  const r = await colherTodosItens({ numProcesso: est.numProcesso, pasta: est.pasta, nomeAbrev: "", soEfin: est.soEfin })
     .catch((e) => ({ ok: false, erro: String(e.message || e) }));
   if (r && r.ok) {
     est.total += r.total || 0;
@@ -1689,6 +1836,7 @@ async function coletaColherEAvancar(est) {
     est.colhidos, "arquivo(s); pendentes:", est.pendentes.length, "falhas:", est.falhas.length);
   est.ativo = false;
   await Store.set("coleta_estado", est);               // background em polling detecta o fim
+  try { if (typeof CratosOverlay !== "undefined") CratosOverlay.esconder(); } catch (e) {}
 }
 
 
@@ -1725,6 +1873,6 @@ if (document.readyState === "loading") {
 
 /* Gancho de teste (mundo isolado: a página não enxerga). Exposto de propósito,
    para o harness exercitar as funções REAIS — cópia testada é teste de si mesma. */
-window.__cratosEcac = { selecionarVara, selecionarOpcaoTexto, fecharAvisoEncerramentoEcac, limiteExcedidoNaTela, finalizarRegistro };
+window.__cratosEcac = { selecionarVara, selecionarOpcaoTexto, fecharAvisoEncerramentoEcac, limiteExcedidoNaTela, finalizarRegistro, gerarListaPedidos, colherEFinanceiraZip, colherDownloadDireto, fabricarCertidaoEfinPendente, colherTodosItens };
 
 } // fim de iniciarEcacInfojud

@@ -196,6 +196,12 @@ async function rodar(cenario) {
 
   // ── ambiente da extensão ──────────────────────────────────────────────────
   const guardado = {};
+  /* O jsdom não tem window.CSS; o Firefox tem. Sem isto a suíte morria no passo 1
+     ("CSS is not defined") — crash de ambiente, não reprovação do código. */
+  if (!window.CSS) window.CSS = {};
+  if (!window.CSS.escape) {
+    window.CSS.escape = (v) => String(v).replace(/[^a-zA-Z0-9_\u00A0-\uFFFF-]/g, (c) => "\\" + c);
+  }
   window.browser = {
     storage: {
       local: {
@@ -336,4 +342,4 @@ const ESTADO_BASE = {
   for (const f of falhas) console.log("  ✗", f);
   console.log(`\n${oks.length} passaram, ${falhas.length} falharam`);
   process.exit(falhas.length ? 1 : 0);
-})();
+})();

@@ -105,21 +105,19 @@ const ModuloSERASAJUD = {
           dataLiquidacao = calc.dataLiquidacao;             // pode ser null — de propósito
         }
       }
-      if (!valor) {
-        return { ok: false, motivo: "Não achei o valor da dívida (PJe-Calc vazio?). Confira ou use valor fixo nas Preferências." };
-      }
 
-      /* ═══ DATA DA DÍVIDA — só a BAIXA precisa, e ela é obrigatória lá ═══
-         Sem a data de liquidação, PARAMOS AQUI. Preencher com a data de hoje, ou
-         com a de importação do cálculo, seria pôr no processo uma data que
-         ninguém afirmou — num ato de baixa. */
-      if (operacao === "baixa" && !dataLiquidacao) {
-        return {
-          ok: false,
-          motivo: "A baixa exige a Data da Dívida, e o PJe-Calc não trouxe data de " +
-                  "liquidação neste processo. Faça esta baixa à mão — não preencho data por conta própria.",
-        };
-      }
+      /* ═══ PENDÊNCIAS — em vez de ABORTAR, deixamos o content script PEDIR ═══
+         Antes: sem valor (ou, na baixa, sem data de liquidação) o módulo PARAVA aqui e
+         devolvia erro — a aba do SerasaJUD nem abria, e a diligência morria por falta de
+         um cálculo nos autos (relato de campo). Agora, quando o PJe-Calc não traz o dado,
+         MARCAMOS a pendência e abrimos a aba assim mesmo: o content script mostra um popup
+         pedindo só o que falta (valor e/ou data), espera SEM PRAZO — o usuário pode ter de
+         buscar o número em outra fonte e demorar — e só então preenche. O usuário digitando
+         a data é o usuário AFIRMANDO a data (rastreável na certidão), o oposto de a extensão
+         inventar uma — por isso a antiga recusa de "não preencho data por conta própria"
+         deixa de ser um bloqueio e vira um pedido explícito. */
+      const valorPendente = !valor;
+      const dataPendente = operacao === "baixa" && !dataLiquidacao;
 
       await Store.set("serasajud_estado", {
         ativo: true,
@@ -133,6 +131,8 @@ const ModuloSERASAJUD = {
         credor,
         valor,
         dataLiquidacao,
+        valorPendente,
+        dataPendente,
         config: {
           horasSla: String(cfg.horasSla || "120"),
           gerarCertidao: cfg.gerarCertidao !== "nao",

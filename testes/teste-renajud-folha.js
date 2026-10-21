@@ -54,8 +54,8 @@ const RESP_BAIXA = {
 const RESP_MISTA = {
   dadosProcesso: RESP_INCLUSAO.dadosProcesso,
   veiculos: [
-    { placa: "ABC1D23", marcaModelo: "FIAT/UNO", proprietario: { nome: "BARAO LTDA" }, tipoRestricao: "Transferência" },
-    { placa: "XYZ9K88", marcaModelo: "VW/GOL", proprietario: { nome: "BARAO LTDA" }, tipoRestricao: "Transferência",
+    { placa: "ABC1D23", marcaModelo: "FIAT/UNO", proprietario: { nome: "EXEMPLO LTDA" }, tipoRestricao: "Transferência" },
+    { placa: "XYZ9K88", marcaModelo: "VW/GOL", proprietario: { nome: "EXEMPLO LTDA" }, tipoRestricao: "Transferência",
       mensagemErro: "Veículo com restrição de roubo/furto" },
   ],
 };
@@ -85,10 +85,13 @@ function montar(estado) {
     },
     downloads: { download: async () => 1 },
   };
+  /* Assinatura REAL da faixa: (módulo, texto). Até a 1.6.1 este mock aceitava só
+     (texto) — imitava o defeito do _faixa do RENAJUD, que mandava o texto no lugar
+     do módulo, e por isso o teste passava com a faixa saindo "CRATOS — undefined". */
   w.CratosFaixa = {
-    parar: (t) => faixas.push(["parar", t]),
-    alertar: (t) => faixas.push(["alertar", t]),
-    dizer: (t) => faixas.push(["dizer", t]),
+    parar: (m, t) => faixas.push(["parar", t, m]),
+    alertar: (m, t) => faixas.push(["alertar", t, m]),
+    dizer: (m, t) => faixas.push(["dizer", t, m]),
   };
   w.console.log = () => {}; w.console.warn = () => {}; w.console.debug = () => {};
   w.eval(fs.readFileSync(path.join(SRC, "comum", "storage.js"), "utf8"));
@@ -142,6 +145,8 @@ function disparar(w, metodo, status, corpo) {
     "a folha lista placa e modelo");
   checar(m && m.linhas.some((l) => /8ª VARA DO TRABALHO/.test(l)), "a folha traz o órgão julgador");
   checar(faixas.some((f) => f[0] === "dizer"), "avisa o usuário na faixa (verde) que a folha saiu");
+  checar(faixas.length > 0 && faixas.every((f) => f[2] === "renajud" && typeof f[1] === "string" && f[1].length > 0),
+    "⛔ a faixa vai com o MÓDULO \"renajud\" e o texto (antes saía \"CRATOS — undefined\")");
 }
 
 /* ── 1b. FECHA O POPUP DE COMPROVANTE (o que travava a 2ª parte) ──────────── */

@@ -58,6 +58,9 @@ const CratosFaixa = {
      importante: o que não foi enviado se refaz; o que já foi, não. */
   parar(modulo, msg, opts) {
     const o = opts || {};
+    /* Se um overlay de "aguarde" estiver no ar, tira-o: uma parada exige que a
+       pessoa VEJA a faixa e possa clicar no botão de relatório. */
+    try { if (globalThis.CratosOverlay) globalThis.CratosOverlay.esconder(); } catch (e) {}
     console.error("%cCRATOS/" + String(modulo).toUpperCase() + ": PAREI — " + msg,
       "color:#ff6b6b;font-weight:bold");
     /* `opts.cauda` existe porque "Nada foi enviado" é FALSO em consulta: no
@@ -104,4 +107,72 @@ globalThis.CratosFaixa = CratosFaixa;
 
 }
 
-if (typeof module !== "undefined") { module.exports = { CratosFaixa: globalThis.CratosFaixa }; }
+/*
+ * CratosOverlay — o "pare tudo, estou trabalhando" no CENTRO da tela.
+ *
+ * Diferente da faixa (que informa no cantinho), o overlay é uma cortina que
+ * COBRE a tela e BLOQUEIA cliques enquanto o CRATOS baixa as certidões, para o
+ * usuário não mexer na página no meio da coleta. Fica ABAIXO da faixa no
+ * empilhamento (z-index menor), então uma faixa de parada aparece por cima e
+ * continua clicável — e o parar() ainda esconde o overlay, por garantia.
+ * Rede de segurança: some sozinho depois de um tempo, para nunca ficar preso.
+ */
+if (typeof globalThis.CratosOverlay === "undefined") {
+
+const CratosOverlay = {
+  _id: "cratos-overlay-aguarde",
+  _timer: null,
+
+  mostrar(texto) {
+    try {
+      clearTimeout(this._timer);
+      let ov = document.getElementById(this._id);
+      if (!ov) {
+        if (!document.getElementById("cratos-ov-style")) {
+          const st = document.createElement("style");
+          st.id = "cratos-ov-style";
+          st.textContent = "@keyframes cratosSpin{to{transform:rotate(360deg)}}";
+          (document.head || document.documentElement).appendChild(st);
+        }
+        ov = document.createElement("div");
+        ov.id = this._id;
+        ov.style.cssText = "position:fixed;inset:0;z-index:2147483640;display:flex;" +
+          "align-items:center;justify-content:center;background:rgba(0,0,0,.55);cursor:progress";
+        // Engole clique/teclado da página enquanto está no ar.
+        const engole = (e) => { e.stopPropagation(); e.preventDefault(); };
+        ov.addEventListener("click", engole, true);
+        ov.addEventListener("mousedown", engole, true);
+        ov.addEventListener("keydown", engole, true);
+        const card = document.createElement("div");
+        card.style.cssText = "min-width:260px;max-width:80vw;padding:22px 26px;border-radius:12px;" +
+          "background:#111;color:#e8e8e8;font:15px/1.5 system-ui,sans-serif;text-align:center;" +
+          "box-shadow:0 6px 30px rgba(0,0,0,.6);border-top:4px solid #4ade80";
+        const spin = document.createElement("div");
+        spin.style.cssText = "width:34px;height:34px;margin:0 auto 14px;border-radius:50%;" +
+          "border:4px solid #333;border-top-color:#4ade80;animation:cratosSpin .9s linear infinite";
+        const txt = document.createElement("div");
+        txt.className = "cratos-ov-txt";
+        card.appendChild(spin); card.appendChild(txt); ov.appendChild(card);
+        (document.body || document.documentElement).appendChild(ov);
+      }
+      ov.querySelector(".cratos-ov-txt").textContent = "CRATOS — " + (texto || "Aguarde…");
+      /* Rede de segurança: se algo travar, o overlay não fica preso para sempre. */
+      this._timer = setTimeout(() => this.esconder(), 180000);
+      return ov;
+    } catch (e) { return null; }
+  },
+
+  esconder() {
+    try {
+      clearTimeout(this._timer);
+      const ov = document.getElementById(this._id);
+      if (ov) ov.remove();
+    } catch (e) {}
+  },
+};
+
+globalThis.CratosOverlay = CratosOverlay;
+
+}
+
+if (typeof module !== "undefined") { module.exports = { CratosFaixa: globalThis.CratosFaixa, CratosOverlay: globalThis.CratosOverlay }; }

@@ -22,6 +22,18 @@
    caminho do orquestrador.
    Todos os outros módulos já nomeiam o seu (ModuloSAB, ModuloCNIB, …); o
    INFOJUD era o único fora do padrão. */
+/* Opções finas do eFinanceira — MESMOS textos das <option> do formulário do eCAC
+   (o incluirPedido casa por TEXTO). O padrão segue a orientação do Tribunal para um
+   relatório detalhado: Tipo de conta = Todas, Tipo de relação = Todas, Exibir câmbio
+   = Sim, Tipo de extrato = Contas e movimentações. O usuário pode alterar. */
+const EFIN_CONTA   = ["Conta de Depósito", "Conta de Custódia", "Conta de Investimento",
+                      "Conta de Seguro", "Consórcio", "Conta em moeda estrangeira", "Todas"];
+const EFIN_RELACAO = ["Titular", "Procurador", "Representante legal", "Intermediado",
+                      "Beneficiário Final", "Doador - Empréstimo de TVM BTC",
+                      "Tomador - Empréstimo de TVM BTC", "Todas"];
+const EFIN_EXTRATO = ["Contas e movimentações", "Somente da lista de contas"];
+const EFIN_CAMBIO  = ["Não", "Sim"];
+
 const ModuloInfojud = {
   nome: "infojud",
   rotulo: "INFOJUD (eCAC/Receita)",
@@ -47,6 +59,10 @@ const ModuloInfojud = {
           dimob:   { tipo: "toggle_anos", padrao: { ativo: false, anos: 2 }, rotulo: "DIMOB — últimos anos" },
           infocad: { tipo: "toggle",      padrao: { ativo: false },          rotulo: "Informações Cadastrais" },
           efin:    { tipo: "toggle_anos", padrao: { ativo: false, anos: 1 }, rotulo: "eFinanceira — últimos anos [assíncrona]" },
+          efin_conta:   { tipo: "select", padrao: "Todas", opcoes: EFIN_CONTA,   rotulo: "eFinanceira · Tipo de conta" },
+          efin_relacao: { tipo: "select", padrao: "Todas", opcoes: EFIN_RELACAO, rotulo: "eFinanceira · Tipo de relação" },
+          efin_cambio:  { tipo: "select", padrao: "Sim",   opcoes: EFIN_CAMBIO,  rotulo: "eFinanceira · Exibir câmbio" },
+          efin_extrato: { tipo: "select", padrao: "Contas e movimentações", opcoes: EFIN_EXTRATO, rotulo: "eFinanceira · Tipo de extrato" },
         },
       },
       cnpj: {
@@ -61,6 +77,10 @@ const ModuloInfojud = {
           cpmf:    { tipo: "toggle",      padrao: { ativo: false },          rotulo: "CPMF" },
           infocad: { tipo: "toggle",      padrao: { ativo: false },          rotulo: "Informações Cadastrais" },
           efin:    { tipo: "toggle_anos", padrao: { ativo: false, anos: 1 }, rotulo: "eFinanceira — últimos anos [assíncrona]" },
+          efin_conta:   { tipo: "select", padrao: "Todas", opcoes: EFIN_CONTA,   rotulo: "eFinanceira · Tipo de conta" },
+          efin_relacao: { tipo: "select", padrao: "Todas", opcoes: EFIN_RELACAO, rotulo: "eFinanceira · Tipo de relação" },
+          efin_cambio:  { tipo: "select", padrao: "Sim",   opcoes: EFIN_CAMBIO,  rotulo: "eFinanceira · Exibir câmbio" },
+          efin_extrato: { tipo: "select", padrao: "Contas e movimentações", opcoes: EFIN_EXTRATO, rotulo: "eFinanceira · Tipo de extrato" },
         },
       },
     },

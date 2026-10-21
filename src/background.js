@@ -44,6 +44,12 @@ browser.runtime.onMessage.addListener((msg, sender) => {
       return marcarProcessoAposSab();
     case "cnib_salvar_pdf":
       return salvarPdfCnib(msg);
+    case "ccs_pdf":
+      return salvarPdfCcs(msg);
+    case "ccs_coletar":
+      return ModuloCCS.coletar(msg);
+    case "ccs_marcar":
+      return marcarProcessoAposCcs();
     case "orquestra_executar":
       return orquestraExecutar(msg, sender);
     case "orq_fechar_aba":
@@ -53,7 +59,7 @@ browser.runtime.onMessage.addListener((msg, sender) => {
     case "coletar_colher":
       return coletarColher(msg.contexto);
     case "coletar_tudo":
-      return coletarTudo(msg.numeroProcesso, msg.pasta);
+      return coletarTudo(msg.numeroProcesso, msg.pasta, msg.soEfin);
     case "diario_ler":
       return Diario.ler(msg.numProcesso).then((d) => ({ ok: true, diario: d, certidoes: montarCertidoes(d) }));
     case "diario_limpar":
@@ -244,6 +250,7 @@ const HOST_CONVENIO = {
   CNIB: "*://indisponibilidade.onr.org.br/*",
   CENSEC: "*://*.censec.org.br/*",
   SERASAJUD: "*://serasa-judicial.serasaexperian.com.br/*",
+  CCS: "*://www3.bcb.gov.br/ccs/*",
 };
 async function fecharAbaConvenio(convenioId) {
   const host = HOST_CONVENIO[String(convenioId || "").toUpperCase()];
@@ -336,6 +343,28 @@ async function marcarProcessoAposSab() {
     return r;
   } catch (e) {
     console.warn("CRATOS/SAB: falha nas marcações:", e.message);
+    return { ok: false, erro: String(e.message || e) };
+  }
+}
+
+/* Chip do CCS (1.6.4, pedido do Rodrigo): depois do ENVIO confirmado (CCSFW0602) —
+   marcar antes afirmaria "aguardando resposta" de uma solicitação ainda abandonável.
+   Mesmo caminho do SAB: a aba do PJe aplica a etiqueta (casada por NOME). Sem GIGS e
+   sem remoção ao fim do ciclo (decisão de 19/10). */
+const CHIP_CCS = "CCS - aguardar resposta";
+async function marcarProcessoAposCcs() {
+  try {
+    const est = (await Store.get("ccs_estado")) || {};
+    if (!(est.config && est.config.chip)) return { ok: true, pulado: "desligado" };
+    if (est.tabPje == null || !est.idProcessoPje) return { ok: false, erro: "a aba do PJe não foi registrada" };
+    await Store.set("pje_marcacao_resultado", null);
+    browser.tabs.sendMessage(est.tabPje, {
+      tipo: "pje_marcar_processo", idProcesso: est.idProcessoPje, etiqueta: CHIP_CCS, gigs: null,
+    }).catch(() => {});
+    const r = await _aguardarMarcacao(15000);
+    if (!r) return { ok: false, erro: "a aba do PJe não respondeu" };
+    return Object.assign({ chip: CHIP_CCS }, r);
+  } catch (e) {
     return { ok: false, erro: String(e.message || e) };
   }
 }
@@ -634,14 +663,41 @@ function montarCertidoes(diario) {
        escreve uma relação. */
     /* `linhasRelacao`, não `itens`: `itens` já é o diário, no escopo de fora —
        reusar o nome dava TDZ e derrubava a função inteira. */
-    const linhasRelacao = nomes.map((t, i) =>
-      `${i + 1} - ${_escHtml(t)}${i === nomes.length - 1 ? "." : ";"}`);
+    const relacao = (lista) => lista.map((t, i) =>
+      `${i + 1} - ${_escHtml(t)}${i === lista.length - 1 ? "." : ";"}`);
+
+    /* 1.6.2 — NADA A CANCELAR. Na baixa, convênio que pesquisou e não achou restrição
+       ativa (CNIB "não localizado"/"já cancelada", RENAJUD "Nenhuma restrição
+       encontrada") gera certidão própria com detalhe "nada_a_cancelar". Ele NÃO pode
+       entrar no "procedi ao cancelamento" — a certidão afirmaria um cancelamento que
+       não houve. Convênio com algum cancelamento de fato fica no grupo de cancelados. */
+    let corpo;
+    if (fam.tipo === "baixa") {
+      const cancelou = (nome) => meus.some((it) =>
+        String(it.convenio || "?").toUpperCase() === nome && it.detalhe !== "nada_a_cancelar");
+      const cancelados = nomes.filter(cancelou);
+      const nada = nomes.filter((n) => !cancelou(n));
+      const fraseNada = "não foram localizadas restrições ativas a cancelar nos seguintes convênios:";
+      if (!nada.length) {
+        corpo = p(fam.abertura) + relacao(cancelados).map(p).join("") + p(fam.fecho);
+      } else if (!cancelados.length) {
+        corpo = p("CERTIFICO E DOU FÉ, para conhecimento do MM. Juiz, que " + fraseNada) +
+          relacao(nada).map(p).join("") +
+          p("CERTIFICO, por fim, que as certidões das pesquisas estão anexadas a presente certidão.");
+      } else {
+        corpo = p(fam.abertura) + relacao(cancelados).map(p).join("") +
+          p("CERTIFICO, ainda, que " + fraseNada) + relacao(nada).map(p).join("") +
+          p("CERTIFICO, por fim, que os comprovantes dos cancelamentos e as certidões das pesquisas " +
+            "estão anexados a presente certidão.");
+      }
+    } else {
+      corpo = p(fam.abertura) + relacao(nomes).map(p).join("") + p(fam.fecho);
+    }
 
     saida.push({
       tipo: fam.tipo,
       titulo: fam.titulo,
-      html: p("CERTIDÃO") + p(fam.abertura) + linhasRelacao.map(p).join("") + p(fam.fecho) +
-            p("Era o que me cumpria certificar."),
+      html: p("CERTIDÃO") + corpo + p("Era o que me cumpria certificar."),
       convenios: nomes,
       /* Os arquivos de CADA certidão são só os daquela família — o comprovante
          de baixa não pode ir anexo à certidão de inclusão. */
@@ -821,6 +877,31 @@ async function salvarPdfCnib(msg) {
 }
 
 /*
+ * PDF de detalhamentos do CCS — o documento do PRÓPRIO Banco Central, baixado pelo
+ * content script (same-origin) e conferido pelos bytes (%PDF) lá. Aqui só nomeamos no
+ * padrão CRATOS (com o CPF/CNPJ, para executados homônimos não colidirem) e passamos
+ * pelo caminho de sempre: Cofre (para a juntada anexar, sigiloso) + diário + pulso.
+ */
+async function salvarPdfCcs(msg) {
+  try {
+    const bytes = _b64ToBytes(msg.base64);
+    if (!(bytes.length > 4 && bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46)) {
+      return { ok: false, erro: "o arquivo do CCS não é PDF" };
+    }
+    const blob = new Blob([bytes], { type: "application/pdf" });
+    const url = URL.createObjectURL(blob);
+    const filename = montarNomePdf(msg.pasta || "CRATOS", msg.numProcesso, msg.nomeAbrev,
+      msg.rotulo || "CCS detalhamento", "pdf", msg.doc);
+    baixarERegistrar(url, filename, {
+      numProcesso: msg.numProcesso, convenio: "CCS", operacao: "consulta", detalhe: "detalhamento",
+    }, msg.base64);
+    return { ok: true, filename, presumido: true };
+  } catch (e) {
+    return { ok: false, erro: String(e.message || e) };
+  }
+}
+
+/*
  * Despachante do orquestrador — recebe o convenioId + operacao + ctx do painel
  * e chama o módulo correto. Cada módulo vive em modulos/{id}.js, carregado pelo manifest.
  */
@@ -842,6 +923,8 @@ async function orquestraExecutar(msg, sender) {
       return ModuloCENSEC.executar(ctx, operacao);
     case "SERASAJUD":
       return ModuloSERASAJUD.executar(ctx, operacao);
+    case "CCS":
+      return ModuloCCS.executar(ctx, operacao);
     default:
       return { ok: false, motivo: `Convênio ${convenioId} não implementado nesta versão.` };
   }
@@ -1086,7 +1169,7 @@ function filaDeSolicitacoes(solicitacoes) {
 /* Gancho de teste (jsdom): exercitar a montagem da fila sem simular o motor. */
 try { globalThis.__cratosColeta = { filaDeSolicitacoes }; } catch (e) {}
 
-async function coletarTudo(numeroProcesso, pasta) {
+async function coletarTudo(numeroProcesso, pasta, soEfin) {
   const alvo = String(numeroProcesso || "").replace(/\D/g, "");
   if (alvo.length < 15) return { ok: false, motivo: "numero_processo_invalido" };
 
@@ -1111,7 +1194,7 @@ async function coletarTudo(numeroProcesso, pasta) {
   // 2) semeia o estado dirigido por fila
   await Store.set("coleta_estado", {
     ativo: true, numProcesso: alvo, pasta: pasta || "CRATOS",
-    fila, idx: 0,
+    fila, idx: 0, soEfin: !!soEfin,   // botão "Baixar só o e-Financeira": colhe só esse tipo
     total: 0, colhidos: 0, falhas: [], pendentes: [],
   });
 
@@ -1310,6 +1393,47 @@ browser.runtime.onMessage.addListener((msg) => {
         return { ok: true, filename, presumido: true };
       } catch (e) {
         // só falha real: erro ao montar bytes/blob/nome (não o download em si)
+        return { ok: false, erro: String(e.message || e) };
+      }
+    })();
+  }
+  /* eFinanceira: recebe o ZIP inteiro (base64) e descompacta AQUI, no background.
+     A abertura do zip usa DecompressionStream, que no content script do Firefox
+     (sandbox/Xray) recusa o buffer ("Value could not be converted to ArrayBufferView")
+     — bug de campo da 1.5.0. O background é página de extensão normal, sem essa
+     membrana. Tira o(s) PDF(s), renomeia e baixa cada um. Zip sem PDF => vazioEfin
+     (assíncrono ainda não pronto): o content script emite a certidão de estado. */
+  if (msg && msg.tipo === "efin_zip") {
+    return (async () => {
+      try {
+        const bytes = _b64ToBytes(msg.base64);
+        let entradas;
+        try {
+          entradas = await CratosUnzip.entries(bytes);
+        } catch (e) {
+          return { ok: false, erro: "falha ao abrir o zip do eFinanceira: " + String(e.message || e) };
+        }
+        const itens = CratosUnzip.rotularEfinPdfs(entradas, msg.exercicio);
+        if (!itens.length) return { ok: true, vazioEfin: true };   // zip sem PDF: ainda não consolidado
+        const ni = msg.ni;
+        const arquivos = [];
+        for (const it of itens) {
+          const blob = new Blob([it.bytes], { type: "application/pdf" });
+          const url = URL.createObjectURL(blob);
+          const filename = montarNomePdf(
+            (_contextoColeta && _contextoColeta.pasta) || "CRATOS",
+            (_contextoColeta && _contextoColeta.numProcesso) || ni,
+            (_contextoColeta && _contextoColeta.nomeAbrev) || "",
+            it.label, "pdf", ni
+          );
+          baixarERegistrar(url, filename, {
+            numProcesso: (_contextoColeta && _contextoColeta.numProcesso) || null,
+            convenio: "INFOJUD", detalhe: it.label,
+          }, _bytesParaBase64(it.bytes));
+          arquivos.push(filename);
+        }
+        return { ok: true, arquivos };
+      } catch (e) {
         return { ok: false, erro: String(e.message || e) };
       }
     })();

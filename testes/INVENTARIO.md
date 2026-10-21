@@ -18,31 +18,167 @@ método que travou todo bug real desta lista.
 
 ## Situação
 
-### As que RODAM hoje (16/09/2026 — 1.4.2): 21 suítes, 533 asserções
+### As que RODAM hoje (19/10/2026 — 1.6.5 = 1.6.4 + entrada do CCS): 37 suítes, 855 asserções
+
+>>> 1.6.5: o CCS ficou EM BRANCO depois do login (campo, 19/10) — o CRATOS abria uma página
+    interna e a volta do ADFS caía nela sem sessão. Agora abre pela ENTRADA (iniciar.do) e,
+    se ainda cair em página vazia, volta UMA vez e depois para pedindo limpar os cookies do BCB.
+    Nova `teste-ccs-entrada.js` (19), que reprova a 1.6.4 com 12 falhas (inclui o teto que
+    faltava na coleta: tela ≠ 0801 navegava sem limite). `teste-ccs-requisicao.js` ajustada.
+
+### RODARAM na 1.6.4 (19/10/2026 — 1.6.3 + PDF do CCS + chip): 36 suítes, 836 asserções
+
+>>> No repositório estão de volta as três suítes da 1.4.1 que se perderam do disco
+    (`teste-censec-partes.js`, `teste-infojud-recoleta.js`, `teste-opcoes-rotulo.js`)
+    e o `teste-painel-liga-desliga.js` com 26 asserções (1.4.2). Todas passam na 1.6.4.
+
+>>> 1.6.4: (a) CCSFW0802 real — nome <req>-<AAAAMMDDhhmm>-<login>.pdf, coluna só com a data;
+    a 1.6.3 lia a coluna (meia-noite) e nunca aceitava o PDF. Agora serve o PDF gerado DEPOIS
+    DA ÚLTIMA RESPOSTA (ou pelo clique), o mais recente; sem "documento" falso no nome.
+    `teste-ccs-coleta.js` 50 → 58 (inclui o caso do print: PDF de tentativa anterior aceito).
+    (b) Chip "CCS - aguardar resposta" ligado por padrão, só depois do envio confirmado;
+    `teste-ccs-requisicao.js` 38 → 42. Ambas reprovam a 1.6.3.
+
+### RODARAM na 1.6.3 (19/10/2026 — 1.6.2 + ajustes do teste de campo): 33 suítes, 783 asserções
+
+>>> 1.6.3 (teste de campo de 19/10):
+    • CCS coleta — a 0801 REAL mostra um CPF/CNPJ por vez, em tabelas aninhadas, e o status
+      vem como "Não solicitado"/"Pendente"/data. `teste-ccs-coleta.js` 43 → 50: fixture da
+      coleta refeito no desenho real (reprova a 1.6.2 com "não reconheci"); leitura do
+      documento selecionado, visita aos demais SÓ para ler, soma, certidão agrupada por
+      executado, nome do arquivo pelo executado (não pelo exequente).
+    • `teste-renajud-erro-interno.js` (9, novo): erro interno do RENAJUD-WS na retirada →
+      faixa orienta o RENAJUD antigo + ID de rastreabilidade; inclusão → "tente mais tarde";
+      demais recusas trazem a mensagem do servidor.
+    • `teste-serasajud-nomes.js` (5, novo): Autor/Réu casam ignorando pontuação ("… LTDA - ME"
+      × "… LTDA ME") ou pela grafia da tabela de titulares; nada casa → não escolhe às cegas.
+    • Recon 0.2.1 (pasta recon/, fora da bateria do CRATOS): link malformado não derruba a
+      extração — `recon/testes/teste-recon-estrutura.js` 29 → 32.
+
+### RODARAM na 1.6.2 (19/10/2026 — 1.6.1 + baixa sem restrição): 31 suítes, 762 asserções
+
+>>> 1.6.2: baixa sem restrição ativa no CNIB e no RENAJUD passa a gerar certidão (relato do
+    Rodrigo, 16/10; telas reais nos prints de 19/10). Nova suíte `teste-baixa-nada-a-cancelar.js`
+    (35): RENAJUD "Nenhuma restrição encontrada" → certidão + pulso; aviso velho não vale;
+    "Necessário informar…"/timeout e número que não fixa → faixa, nunca certidão; GET não vira
+    "recusou". CNIB "não localizado" (+ popup "Não identificada") → certidão; popup com
+    instituição nomeada → faixa sem certidão; "já canceladas" → certidão com protocolos.
+    Consolidada de baixa separa "procedi ao cancelamento" de "não foram localizadas
+    restrições ativas a cancelar". Reprova a 1.6.1.
+    Achado junto: o `_faixa` do RENAJUD mandava o texto no lugar do módulo (faixas saíam
+    "CRATOS — undefined"); os mocks de `teste-renajud-folha.js`/`-multiparte.js` imitavam a
+    assinatura errada — alinhados à API real e com asserção nova (folha 35 → 36).
+    `teste-painel-encadeamento.js`: a asserção "pulso só no concluido" passou à regra nova
+    (também nada_a_cancelar/ja_canceladas; nunca sem_resposta/outra_instituicao).
+
+### RODARAM na 1.6.1 (15/10/2026 — endurecimento HTML + CCS): 30 suítes, 726 asserções
+
+>>> 1.6.1: módulo CCS (Cadastro de Clientes do SFN / Bacen). Três suítes novas, todas com
+    telas FICTÍCIAS montadas a partir do mapa do recon (`testes/fixture-ccs.js`; o harness
+    comum é `testes/harness-ccs.js` — nenhum dos dois é suíte):
+      `teste-ccs-requisicao.js` (38) — módulo de fundo, 0501/0502/0801, padrões de fábrica,
+        termo NÃO aceito sem a Preferência, trava de processo, sem relacionamento, fiação;
+      `teste-ccs-marcacao.js` (19) — 0601: sufixo, critério todas/sem Data Fim, linha
+        escondida marcada, nunca selecionarTodos(), envio só com marcação limpa, sufixo
+        (com CPF) fora de faixa/console/storage;
+      `teste-ccs-coleta.js` (43) — certidão de envio (LGPD, rastro, divergência), registro,
+        coleta direta, arquivo só com data de geração POSTERIOR ao clique, %PDF pelos
+        bytes, certidão do estado atual (quem falta), estado 1/dia, plano B em janelas de
+        30 dias, background e sigilo.
+    As três reprovam a 1.5.4 (sem módulo CCS). `teste-seguranca-html.js` segue 34/34 com o
+    CCS dentro da varredura.
+
+### Endurecimento HTML (15/10/2026 — entra na versão seguinte à 1.5.4): 27 suítes, 626 asserções
+
+>>> 1.5.5 (passe de segurança pedido pela DSC, chamado interno): todo dado externo que vai
+    para a tela como HTML passa por escape. Helper único `CratosHTML` em `comum/storage.js`
+    (o arquivo carregado em todo contexto): `html```, que escapa toda interpolação, e
+    `CratosHTML.definir(el, frag)`, o ÚNICO ponto de escrita de HTML dinâmico (monta os
+    nós por DOMParser, sem innerHTML). Revisadas as 41 ocorrências de innerHTML em
+    `painel.js`, `opcoes.js`, `serasajud.js` e `sab.js`; as 27 com conteúdo dinâmico
+    passaram para `definir(html``)`. Eram crus na 1.5.4: polo e documento da parte, dados da
+    caixa postal da Receita, data do cálculo no popup do SAB, valores salvos nas
+    Preferências (o escapeAttr antigo só tratava aspas). ESLint ganhou o
+    `eslint-plugin-no-unsanitized` com a configuração da Mozilla (sem escapers):
+    27 → 0 achados; addons-linter: UNSAFE_VAR_ASSIGNMENT 28 → 0. Nova suíte
+    teste-seguranca-html.js (34). Nenhuma outra suíte mudou de resultado.
+
+### As que RODAM hoje (29/09/2026 — 1.5.4): 26 suítes, 592 asserções
+
+>>> 1.5.4: SerasaJUD sem cálculo nos autos deixou de abortar — o background marca
+    valorPendente/dataPendente e abre a aba; o content script mostra um popup (estilo SAB)
+    pedindo valor e/ou data, com espera SEM timeout e botão "Cancelar (faço à mão)". A
+    certidão registra origem manual. Nova suíte teste-serasajud-manual.js (31).
+
+### RODARAM na 1.5.3 (28/09/2026): 25 suítes, 561 asserções
+
+>>> 1.5.3: o eFinanceira não-pronto SEM link (linha `resultadoSolicitacao` sem lupa, só o
+    texto "processamento ainda não concluído") também vira a certidão "Consolidando
+    resultados" — `lerItensResultado` parou de descartar a linha assíncrona sem `<a>`, e
+    `colherUmItem` emite a certidão. Mais um guarda anti-duplicação (`fabricarCertidao
+    EfinPendente` checa o Cofre antes de emitir: 2 coletas no mesmo dia = 1 certidão).
+    Fecha o sub-caso do link-ausente que a 1.5.2 (link-presente-corpo-vazio) não cobria.
+
+>>> 1.5.2: (1) OVERLAY central de coleta — cortina "As certidões estão sendo baixadas"
+    no CENTRO da tela do e-CAC durante a colheita (só INFOJUD, bloqueia clique, some no
+    fim ou quando uma faixa de parada aparece); `CratosOverlay` vive em `comum/faixa.js`.
+    (2) eFinanceira NÃO-PRONTO: quando o link da Receita devolve corpo que NÃO é zip real
+    (página "em processamento" / blob vazio), o CRATOS emite a certidão "Consolidando
+    resultados" em vez de salvar um `.zip` bruto — que a juntada tentava anexar e o PJe
+    recusava com ARQ-041 "Arquivo deve ser PDF" (bug de campo, print do Rodrigo em 25/09).
+    Regra de ferro preservada: zip real ilegível continua ERRO, nunca certidão falsa.
+
+>>> 1.5.1 consertou DOIS bugs de campo do eFinanceira: (1) o pedido não carrega mais
+    `ano` (carregava → o incluirPedido tentava o dropdown de ano do eCAC, que o
+    eFinanceira não tem, e travava a solicitação); (2) a abertura do zip saiu do
+    content script para o BACKGROUND — no sandbox/Xray do Firefox o DecompressionStream
+    recusava o buffer ("Value could not be converted to ArrayBufferView"), erro que o
+    teste em Node não pegava. Agora o unzip roda no background (mesmo ambiente do Node)
+    e a lógica de nome está em `unzip.js: rotularEfinPdfs`, testável direto.
 
 | suíte | asserções | tempo |
 |---|---|---|
+| `teste-baixa-nada-a-cancelar.js` | 35 | rápida |
+| `teste-ccs-coleta.js` | 58 | rápida |
+| `teste-ccs-entrada.js` | 19 | rápida |
+| `teste-ccs-marcacao.js` | 19 | rápida |
+| `teste-ccs-requisicao.js` | 42 | rápida |
 | `teste-censec-partes.js` | 15 | rápida |
-| `teste-infojud-recoleta.js` | 8 | rápida |
-| `teste-opcoes-rotulo.js` | 9 | rápida |
 | `teste-cnib-detalhe.js` | 81 | rápida |
-| `teste-infojud-entrada-colheita.js` | 49 | rápida |
-| `teste-juntada-anexos.js` | 61 | rápida |
-| `teste-renajud-folha.js` | 35 | rápida |
-| `teste-renajud-multiparte.js` | 23 | rápida |
-| `teste-serasajud-data.js` | 11 | rápida |
-| `teste-infojud-lotes.js` | 31 | rápida |
-| `teste-painel-encadeamento.js` | 58 | rápida |
-| `teste-painel-maispje.js` | 10 | rápida |
-| `teste-painel-liga-desliga.js` | 26 | rápida |
-| `teste-desligado.js` | 4 | rápida |
-| `teste-infojud-vara.js` | 24 | rápida |
-| `teste-sab-atualizacao.js` | 23 | rápida |
-| `teste-sab-marcar-partes.js` | 9 | rápida |
 | `teste-cnib.js` | 20 | ⏳ **~5 min** (usa relógio real) |
-| `teste-opcoes-vara.js` | 17 | rápida |
-| `teste-infojud-pulso.js` | 10 | rápida |
+| `teste-desligado.js` | 4 | rápida |
 | `teste-ecac-aviso-encerramento.js` | 9 | rápida |
+| `teste-infojud-efin-botao.js` | 8 | rápida |
+| `teste-infojud-efin-pendente.js` | 21 | rápida |
+| `teste-infojud-efin-zip.js` | 7 | rápida |
+| `teste-infojud-efinanceira.js` | 14 | rápida |
+| `teste-infojud-entrada-colheita.js` | 49 | rápida |
+| `teste-infojud-lotes.js` | 31 | rápida |
+| `teste-infojud-overlay.js` | 12 | rápida |
+| `teste-infojud-pulso.js` | 10 | rápida |
+| `teste-infojud-recoleta.js` | 8 | rápida |
+| `teste-infojud-vara.js` | 24 | rápida |
+| `teste-juntada-anexos.js` | 61 | rápida |
+| `teste-opcoes-rotulo.js` | 9 | rápida |
+| `teste-opcoes-vara.js` | 17 | rápida |
+| `teste-painel-autoscroll.js` | 3 | rápida |
+| `teste-painel-encadeamento.js` | 58 | rápida |
+| `teste-painel-liga-desliga.js` | 26 | rápida |
+| `teste-painel-maispje.js` | 10 | rápida |
+| `teste-renajud-erro-interno.js` | 9 | rápida |
+| `teste-renajud-folha.js` | 36 | rápida |
+| `teste-renajud-multiparte.js` | 23 | rápida |
+| `teste-sab-atualizacao.js` | 23 | rápida |
+| `teste-sab-conclusao-unica.js` | 4 | rápida |
+| `teste-sab-marcar-partes.js` | 9 | rápida |
+| `teste-seguranca-html.js` | 34 | rápida |
+| `teste-serasajud-data.js` | 11 | rápida |
+| `teste-serasajud-manual.js` | 31 | rápida |
+| `teste-serasajud-nomes.js` | 5 | rápida |
+
+>>> As três suítes da 1.4.1 que chegaram a se perder do disco de trabalho foram
+    recuperadas do repositório e estão na tabela acima, assim como o
+    `teste-painel-liga-desliga.js` com 26 asserções (checagem do ícone SVG).
 
 >>> ⛔ Ao rodar a bateria, **confira que cada suíte imprimiu o próprio placar.**
     O `teste-cnib.js` passou meses explodindo com `ENOENT` antes da primeira
@@ -53,6 +189,10 @@ método que travou todo bug real desta lista.
     de chamada (use `CRATOS_SRC`), **namespace** velho (`carrasco:` em vez de
     `cratos:`), e arquivo de `comum/` criado depois do harness e nunca carregado
     (`faixa.js`, `relatorio.js`).
+    Quarta causa, vista em 15/10/2026: **API do navegador que o jsdom não tem**.
+    O `teste-cnib.js` morria no passo 1 com "CSS is not defined" (`CSS.escape`
+    existe no Firefox, não no jsdom). Placar 4/20 com cara de reprovação, mas era
+    crash: o harness agora faz polyfill de `CSS.escape` e voltou a 20/20.
 
 ### Ainda a refazer
 
@@ -187,6 +327,82 @@ inclusão**, como o eCAC faz (7 submits para 6 pedidos). Contra a 1.0.6 reprova 
 e imprime a revisão inteira. Consulta à tabela no topo de `incluirPedido`; tipo
 decidido pela TELA, não por variável de passada.
 **Variável de passada não sobrevive a postback; a tela sobrevive.**
+
+**`teste-infojud-efinanceira.js`** (1.5.0) — as opções finas do eFinanceira nas
+Preferências. `gerarListaPedidos` passa Tipo de conta/relação/câmbio/extrato para
+cada pedido; padrão recomendado (Todas/Todas/Sim/Contas e movimentações) mesmo em
+config antiga (fallback); ano sempre a partir do ano anterior FECHADO (anoAtual-1),
+nunca o corrente. Confere também que `incluirPedido` consome opcoes.conta/relacao/
+cambio/extrato nos selects novoTipo* da tela. Reprova a 1.4.3 (sem gerarListaPedidos
+no hook e pedido só com datas).
+
+**`teste-infojud-efin-zip.js`** (1.5.0) — descompactar + renomear. `CratosUnzip` lê
+o container zip e descomprime DEFLATE (round-trip com zlib). `colherEFinanceiraZip`
+manda baixar cada PDF como "eFinanceira (<ano>)"; 2º do mesmo ano em diante ganha
+índice ANTES do ano ("eFinanceira 2 (<ano>)"); anos diferentes viram rótulos
+distintos (o nome interno é idêntico entre zips — não pode colidir). Zip sem PDF →
+`vazioEfin`. Dados 100% sintéticos (LGPD). Reprova a 1.4.3 (sem unzip).
+**Zip não anexa no PJe; o que a juntada precisa é do PDF de dentro, com nome único por ano.**
+
+**`teste-infojud-efin-pendente.js`** (1.5.0, reforçado 1.5.2) — eFinanceira assíncrono,
+dia 1. Zip vazio/sem PDF na coleta → certidão "Consolidando resultados da consulta ao
+e-Financeira", que certifica o ESTADO da diligência (registrada, retorno assíncrono
+pendente) e NÃO afirma resultado nem "nada consta". Zip com PDF → baixa, sem certidão
+de consolidação. **1.5.2 fechou o buraco do campo:** quando o link devolve HTML "em
+processamento" OU um corpo que nem é arquivo (não-PK, não-%PDF), também vira a certidão
+de consolidação — antes o HTML virava erro "sem link" e o "outro" era salvo como `.zip`
+cru, que a juntada tentava anexar e o PJe recusava (ARQ-041 "Arquivo deve ser PDF").
+E o caso 6 trava a REGRA DE FERRO: zip REAL que estoura no inflate = erro vermelho,
+NUNCA certidão falsa (tem dado, é falha de leitura). **1.5.3 (casos 7-8):** a linha do
+eFinanceira SEM lupa (a Opções traz só "processamento ainda não concluído") também vira
+a certidão — `lerItensResultado` parou de descartar a linha assíncrona sem `<a>` e
+`colherUmItem` emite (testado de ponta a ponta via `colherTodosItens`, reprova a 1.5.2
+que descartava a linha); e o guarda anti-duplicação (2 coletas no mesmo dia = 1 certidão,
+via `cofre_listar`). O harness ganhou um Cofre falso acumulável. Reprova a 1.4.3 (gate),
+a 1.5.1 (casos 4-5) e a 1.5.2 (casos 7-8).
+**Pendência (sem dado) vira certidão de estado; dado ilegível vira erro — jamais uma certidão falsa.**
+
+**`teste-infojud-efin-botao.js`** (1.5.0) — o botão exclusivo "Baixar só o
+e-Financeira" (coleta do dia seguinte). Com `soEfin`, `colherTodosItens` colhe só o
+eFinanceira e ignora DIRPF/DOI/etc.; sem item de eFinanceira, devolve `semEfin` (não
+colhe os outros à toa). Confere a fiação de ponta a ponta: painel (botão) →
+`coletar_tudo(soEfin)` → background (`coleta_estado.soEfin`) → content script (filtro).
+Reprova a 1.4.3.
+
+**`teste-infojud-overlay.js`** (1.5.2) — a cortina central de coleta. `CratosOverlay`
+(em `comum/faixa.js`): `mostrar()` cria uma cortina FIXA cobrindo a tela (`inset:0`),
+z-index bem no topo mas ABAIXO da faixa (para uma parada aparecer por cima), engolindo
+clique/tecla; idempotente (chamar 2x mantém um só e atualiza o texto). `esconder()`
+remove. `CratosFaixa.parar()` esconde o overlay (a parada precisa ser vista e clicável).
+Fiação no INFOJUD: `iniciarColetaEcac` MOSTRA ao entrar na tela de resultado; `coleta
+ColherEAvancar` ESCONDE quando a fila termina. Só INFOJUD, por ora. Rede de segurança:
+some sozinho após 180s. Reprova a 1.5.1 (sem CratosOverlay nem a fiação na coleta).
+**A cortina bloqueia o clique durante o download, mas some na hora de uma parada — quem parou precisa agir.**
+
+**`teste-serasajud-manual.js`** (1.5.4) — lançamento manual de valor/data quando não há
+cálculo nos autos. Bug de campo: a baixa do SerasaJUD abortava sem cálculo. Trava: o
+background NÃO aborta mais (gate por fonte: some "Não achei o valor da dívida"/"A baixa
+exige a Data da Dívida", entra valorPendente/dataPendente); `garantirDadosManuais` mostra
+o popup pedindo só o que falta (valor+data na baixa; só data se o cálculo trouxe o valor;
+só valor na inclusão); normalizadores pt-BR de valor e data (real, não futura); Confirmar
+preenche o estado + origemManual; Cancelar → false + `CratosFaixa.parar`; entrada inválida
+mantém o popup aberto; sem pendência segue direto; **espera SEM timeout** (só resolve por
+ação do usuário). Reprova a 1.5.3 (sem `garantirDadosManuais`).
+**Sem cálculo nos autos não é erro: é o usuário AFIRMAR o valor/data à mão — e a certidão registra a origem.**
+
+**`teste-seguranca-html.js`** (1.5.5) — escape de todo dado externo que vira HTML. Cargas
+fictícias (`<img onerror>`, `"><svg onload>`, `<script>`, aspas, `&`) passam pelo PAINEL
+(nome, polo e documento da parte; nº da solicitação, processo e data da caixa postal;
+pendências e falhas da colheita; título/convênios do diário; erro do PJe na juntada;
+relatório e progresso da fila), pelas PREFERÊNCIAS (valor salvo volta intacto no campo e é
+salvo igual; aviso mantém `<b>` mas não `<img>`) e pelos POPUPS do SerasaJUD e do SAB —
+nenhum elemento injetado, texto literal na tela, sem escape duplo. Testa o próprio helper
+(`esc`, `html```, arrays, `marcacaoLimitada`, `definir`). E VARRE `src/`: `innerHTML` só
+com literal fixo; HTML com dado só por `CratosHTML.definir(el, html`…`)`; proibidos
+`insertAdjacentHTML`, `outerHTML=`, `document.write` (a varredura prova a si mesma num
+arquivo-isca com 5 erros). Reprova a 1.5.4 (sem `CratosHTML`; polo, caixa postal e
+opções injetam elemento; 27 pontos na varredura).
+**Módulo novo (CCS, SNIPER, PREVJUD…) que montar HTML fora do `definir(html``)` reprova aqui.**
 
 **`teste-censec-partes.js`** (1.4.1) — as partes de cada ato na certidão do CEP.
 Exercita o fluxo dentro da página (censec.js + censec-api.js): o grampo chama
