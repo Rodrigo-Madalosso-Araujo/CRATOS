@@ -130,7 +130,7 @@
     const linhas = [
       ["Nome", "CRATOS — Central de Recursos para Automação de Tarefas e Operações Sistêmicas"],
       ["Versão", versao],
-      ["Compatibilidade", "Firefox 115 ou superior"],
+      ["Compatibilidade", "Firefox 140 ou superior"],
       ["Desenvolvimento", pessoas.map((p) =>
         html`<div class="pessoa"><span class="iniciais">${p.iniciais}</span><span>${p.texto}</span></div>`)],
       ["Convênios", "INFOJUD (eCAC), SAB/BacenJud, RENAJUD, CNIB, CENSEC (CEP) e SerasaJUD."],
