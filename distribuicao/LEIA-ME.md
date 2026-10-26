@@ -32,3 +32,11 @@ Ao trocar de hospedagem (ex.: a STI passa a hospedar), muda-se o `update_url` nu
 ## Primeira vez (antes de distribuir a 1.9.0)
 
 Pôr `updates.json` na raiz do `main` do repositório. Pode ir vazio (`"updates": []`), porque a 1.9.0 é instalada à mão. Enquanto o arquivo não existir, o Firefox só registra um erro silencioso e nada acontece.
+
+## Histórico de publicações
+
+| versão | data | xpi assinado (SHA-256) | PR do updates.json | release |
+|---|---|---|---|---|
+| 1.9.1 | 26/10/2026 | `1e08a9d171c4d1f54283dfdd79552106f1752ae019b791617f2f2c3c9a06f2a1` | #3 (junto com src/testes/manual da 1.9.1) | `v1.9.1` — a criar pelo Rodrigo, antes do merge |
+
+A 1.9.1 é a primeira versão entregue pela atualização automática. Ela foi publicada para testar o mecanismo, com só o Rodrigo na 1.9.0. Daqui em diante vale o portão: versão homologada.
