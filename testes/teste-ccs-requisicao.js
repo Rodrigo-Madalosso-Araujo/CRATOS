@@ -225,16 +225,16 @@ function moduloDeFundo(mem, abas) {
   /* ── fiação ────────────────────────────────────────────────────────────── */
   {
     const man = JSON.parse(fs.readFileSync(path.join(H.SRC, "manifest.json"), "utf8"));
-    const cs = (man.content_scripts || []).find((c) => (c.matches || []).indexOf("*://www3.bcb.gov.br/ccs/*") >= 0);
+    const cs = (man.content_scripts || []).find((c) => (c.matches || []).indexOf("https://www3.bcb.gov.br/ccs/*") >= 0);
     checar(cs && cs.js.indexOf("comum/storage.js") === 0 && cs.js.indexOf("comum/faixa.js") >= 0 &&
       cs.js[cs.js.length - 1] === "conteudo/ccs.js", "manifest: content script do CCS (storage → faixa → ccs.js)");
     const bg = man.background.scripts;
     checar(bg.indexOf("modulos/ccs.js") > bg.indexOf("modulos/registro.js") && bg.indexOf("modulos/ccs.js") < bg.indexOf("background.js"),
       "manifest: modulos/ccs.js no background, depois do registro");
-    checar(man.permissions.indexOf("*://www3.bcb.gov.br/*") >= 0, "manifest: permissão do host do CCS");
+    checar(man.permissions.indexOf("https://www3.bcb.gov.br/*") >= 0, "manifest: permissão do host do CCS");
     const b = fs.readFileSync(path.join(H.SRC, "background.js"), "utf8");
     checar(/case "CCS":\s*return ModuloCCS\.executar/.test(b) && /case "ccs_coletar":/.test(b) && /case "ccs_pdf":/.test(b) &&
-      /CCS: "\*:\/\/www3\.bcb\.gov\.br\/ccs\/\*"/.test(b), "background: orquestrador, coleta, PDF e fechamento de aba do CCS");
+      /CCS: "https:\/\/www3\.bcb\.gov\.br\/ccs\/\*"/.test(b), "background: orquestrador, coleta, PDF e fechamento de aba do CCS");
     const p = fs.readFileSync(path.join(H.SRC, "conteudo", "painel.js"), "utf8");
     checar(/id: "CCS",[^\n]*ops: \["consulta"\]/.test(p), "painel: CCS na lista (consulta, aparece na INCLUSÃO)");
     checar(/id="cx-coletar-ccs"/.test(p) && /tipo: "ccs_coletar"/.test(p), "painel: botão “Coletar CCS”");

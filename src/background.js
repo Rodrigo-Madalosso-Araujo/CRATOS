@@ -34,6 +34,8 @@ browser.runtime.onMessage.addListener((msg, sender) => {
       return entregarFilaEcac();
     case "ecac_fechar_aba":
       return fecharAbaEcac(sender);
+    case "ecac_sou_registro":
+      return souAbaRegistroEcac(sender);
     case "sab_abrir_ordem":
       return abrirOrdemSab(msg);
     case "sab_certidao":
@@ -50,8 +52,25 @@ browser.runtime.onMessage.addListener((msg, sender) => {
       return ModuloCCS.coletar(msg);
     case "ccs_marcar":
       return marcarProcessoAposCcs();
+    case "prevjud_pdf":
+      return salvarPdfPrevjud(msg);
+    case "prevjud_coletar":
+      return ModuloPREVJUD.coletar(msg);
+    case "prevjud_fechar_aba":
+      /* fecha a aba de quem pediu (a do PREVJUD), só no sucesso */
+      return fecharAbaSab(sender);
+    case "sniper_fechar_aba":
+      /* fecha a aba de quem pediu (a do SNIPER), só no sucesso — mesmo mecanismo do SAB */
+      return fecharAbaSab(sender);
     case "orquestra_executar":
       return orquestraExecutar(msg, sender);
+    case "processo_aba":
+      /* 1.9.0: a aba do PJe onde o processo está — fechou, apaga os dados dele */
+      return { ok: Limpeza.registrar(sender && sender.tab ? sender.tab.id : null, msg.numProcesso) };
+    case "medir_disponibilidade":
+      return ModuloDisponibilidade.medir(msg.convenioId);
+    case "certidao_indisponibilidade":
+      return ModuloDisponibilidade.certidao(msg, fabricarCertidaoTexto);
     case "orq_fechar_aba":
       return fecharAbaConvenio(msg.convenioId);
     case "coletar_achar":
@@ -203,6 +222,7 @@ async function abrirEcacERegistrar(plano) {
   });
 
   const aba = await browser.tabs.create({ url: ECAC_SOLICITACAO_URL, active: true });
+  await Store.set("ecac_aba", aba.id);   // 1.9.0: o vigia do e-CAC só age nesta aba
 
   /* `aguardando: true` — E ISTO É O QUE IMPEDE O ATROPELO (21/08).
      O registro no eCAC leva mais de um minuto: o content script preenche parte
@@ -212,6 +232,13 @@ async function abrirEcacERegistrar(plano) {
      O INFOJUD é longo como o CNIB e o SerasaJUD, e agora se comporta como eles:
      o painel mostra "⏸ Aguardando conclusão…" e espera o usuário. */
   return { ok: true, aguardando: true, tabId: aba.id, total: partes.length };
+}
+
+/* 1.9.0 — a aba que pergunta é a que o CRATOS abriu para o registro do INFOJUD? */
+async function souAbaRegistroEcac(sender) {
+  const id = await Store.get("ecac_aba");
+  const tabId = sender && sender.tab && sender.tab.id;
+  return { sim: tabId != null && id != null && tabId === id };
 }
 
 async function entregarFilaEcac() {
@@ -246,11 +273,11 @@ async function fecharAbaEcac(sender) {
  * Idempotente: sem aba, não faz nada. SAB e INFOJUD têm o próprio fechamento.
  */
 const HOST_CONVENIO = {
-  RENAJUD: "*://renajud.pdpj.jus.br/*",
-  CNIB: "*://indisponibilidade.onr.org.br/*",
-  CENSEC: "*://*.censec.org.br/*",
-  SERASAJUD: "*://serasa-judicial.serasaexperian.com.br/*",
-  CCS: "*://www3.bcb.gov.br/ccs/*",
+  RENAJUD: "https://renajud.pdpj.jus.br/*",
+  CNIB: "https://indisponibilidade.onr.org.br/*",
+  CENSEC: "https://*.censec.org.br/*",
+  SERASAJUD: "https://serasa-judicial.serasaexperian.com.br/*",
+  CCS: "https://www3.bcb.gov.br/ccs/*",
 };
 async function fecharAbaConvenio(convenioId) {
   const host = HOST_CONVENIO[String(convenioId || "").toUpperCase()];
@@ -284,7 +311,7 @@ async function abrirOrdemSab(msg) {
 
   // Reaproveita aba do SAB se já aberta, senão cria
   const abasSab = await browser.tabs.query({
-    url: "*://pje.trt18.jus.br/sab/*"
+    url: "https://pje.trt18.jus.br/sab/*"
   });
   if (abasSab.length) {
     await browser.tabs.update(abasSab[0].id, { url, active: true });
@@ -397,7 +424,7 @@ async function abrirDeterminacaoSab(msg) {
     abertoEm: new Date().toISOString(),
   });
 
-  const abasSab = await browser.tabs.query({ url: "*://pje.trt18.jus.br/sab/*" });
+  const abasSab = await browser.tabs.query({ url: "https://pje.trt18.jus.br/sab/*" });
   if (abasSab.length) {
     await browser.tabs.update(abasSab[0].id, { url, active: true });
   } else {
@@ -418,7 +445,7 @@ async function abrirDeterminacaoSab(msg) {
  */
 async function abrirRenajud(operacao) {
   const host = "https://renajud.pdpj.jus.br/";
-  const abas = await browser.tabs.query({ url: "*://renajud.pdpj.jus.br/*" });
+  const abas = await browser.tabs.query({ url: "https://renajud.pdpj.jus.br/*" });
   if (abas.length) {
     await browser.tabs.update(abas[0].id, { active: true });
   } else {
@@ -438,7 +465,7 @@ async function abrirCnib(operacao) {
   const url = operacao === "baixa"
     ? base + "/ordem/cancelamento/total"
     : base + "/ordem/cadastro";
-  const abas = await browser.tabs.query({ url: "*://indisponibilidade.onr.org.br/*" });
+  const abas = await browser.tabs.query({ url: "https://indisponibilidade.onr.org.br/*" });
   if (abas.length) {
     await browser.tabs.update(abas[0].id, { url, active: true });
   } else {
@@ -458,7 +485,7 @@ async function abrirSerasajud() {
      de qualquer jeito. Abrimos onde ele vai parar e o content script clica em
      "Cadastrar Ordem" — navegação interna, sem vaivém. */
   const url = "https://serasa-judicial.serasaexperian.com.br/ordem";
-  const abas = await browser.tabs.query({ url: "*://serasa-judicial.serasaexperian.com.br/*" });
+  const abas = await browser.tabs.query({ url: "https://serasa-judicial.serasaexperian.com.br/*" });
   if (abas.length) {
     await browser.tabs.update(abas[0].id, { url, active: true });
   } else {
@@ -475,7 +502,7 @@ async function abrirSerasajud() {
  */
 async function abrirCensec() {
   const url = "https://www.censec.org.br/private/s/00000000-0000-0000-0000-000000000000/cep";
-  const abas = await browser.tabs.query({ url: "*://*.censec.org.br/*" });
+  const abas = await browser.tabs.query({ url: "https://*.censec.org.br/*" });
   if (abas.length) {
     await browser.tabs.update(abas[0].id, { url, active: true });
   } else {
@@ -627,6 +654,18 @@ const _FAMILIAS = [
               "cancelamento das restrições nos seguintes convênios:",
     fecho: "CERTIFICO, por fim, que os comprovantes dos cancelamentos estão " +
            "anexados a presente certidão.",
+  },
+  {
+    /* 1.9.0 — certidão de INDISPONIBILIDADE de sistema conveniado (modulos/disponibilidade.js).
+       Família própria: não pode entrar em "foram realizados", porque a diligência NÃO foi
+       feita. Sem ela, a certidão nem seria oferecida na juntada. */
+    tipo: "indisponibilidade",
+    titulo: "Sistemas indisponíveis",
+    operacoes: ["indisponibilidade"],
+    abertura: "CERTIFICO E DOU FÉ, para conhecimento do MM. Juiz, que os seguintes sistemas " +
+              "conveniados não estavam disponíveis no momento da diligência:",
+    fecho: "CERTIFICO, por fim, que as certidões de indisponibilidade estão anexadas a presente " +
+           "certidão, devendo as diligências ser repetidas oportunamente.",
   },
 ];
 
@@ -925,6 +964,10 @@ async function orquestraExecutar(msg, sender) {
       return ModuloSERASAJUD.executar(ctx, operacao);
     case "CCS":
       return ModuloCCS.executar(ctx, operacao);
+    case "SNIPER":
+      return ModuloSNIPER.executar(ctx, operacao);
+    case "PREVJUD":
+      return ModuloPREVJUD.executar(ctx, operacao);
     default:
       return { ok: false, motivo: `Convênio ${convenioId} não implementado nesta versão.` };
   }
@@ -974,7 +1017,7 @@ async function executarInfojud(ctx, operacao) {
     };
   }
   if (semDocumento.length) {
-    console.warn("CRATOS/INFOJUD: fora da fila por falta de CPF/CNPJ:", semDocumento.join(", "));
+    console.warn("CRATOS/INFOJUD: fora da fila por falta de CPF/CNPJ:", semDocumento.map((n) => CratosMascara.nome(n)).join(", "));
   }
 
   /* ⚠️ ERA AQUI O BUG (achado em 21/08, com o Rodrigo): esta linha chamava
@@ -1200,7 +1243,7 @@ async function coletarTudo(numeroProcesso, pasta, soEfin) {
 
   // 3) navega a aba direto para o 1º resultado (a URL abre por GET, sessão por cookie)
   const url0 = URL_RESULTADO_BG + fila[0];
-  const abasDecjuiz = await browser.tabs.query({ url: "*://cav.receita.fazenda.gov.br/*" });
+  const abasDecjuiz = await browser.tabs.query({ url: "https://cav.receita.fazenda.gov.br/*" });
   let abaResultado = null;
   if (abasDecjuiz.length) {
     abaResultado = abasDecjuiz[0].id;
@@ -1243,7 +1286,7 @@ async function coletarTudo(numeroProcesso, pasta, soEfin) {
 /* PASSO 2 (teste) — manda a aba que está na tela de resultado (resultadoSolicitacao)
    colher os PDFs. Procura entre as abas da Receita a que responde na tela certa. */
 async function coletarColher(contexto) {
-  const abas = await browser.tabs.query({ url: "*://*.receita.fazenda.gov.br/*" });
+  const abas = await browser.tabs.query({ url: "https://*.receita.fazenda.gov.br/*" });
   if (!abas.length) return { ok: false, erro: "nenhuma aba da Receita aberta" };
   for (const aba of abas) {
     try {
@@ -1280,7 +1323,7 @@ async function lerCaixaPostalViaAba(pagina, tamanho, opts) {
    */
   const o = opts || {};
   const limite = o.esperaMs || 60000;
-  const ALVO_ABAS = "*://www3.cav.receita.fazenda.gov.br/caixapostal/*";
+  const ALVO_ABAS = "https://www3.cav.receita.fazenda.gov.br/caixapostal/*";
 
   let abas = await browser.tabs.query({ url: ALVO_ABAS });
   let abaAberta = null;
@@ -1348,9 +1391,31 @@ async function esperarConteudoPronto(tabId, timeoutMs) {
   return false;
 }
 
+/* 1.9.0 — dados de processo só enquanto a aba dele está aberta (modulos/limpeza.js) */
+if (typeof Limpeza !== "undefined") {
+  Limpeza.aoApagarProcesso = (n) => { try { Cofre.limpar(n); } catch (e) { /* nada */ } };
+  if (browser.tabs && browser.tabs.onRemoved) {
+    browser.tabs.onRemoved.addListener((tabId) => {
+      Limpeza.aoFecharAba(tabId).then((ap) => { if (ap.length) console.log("CRATOS: dados de", ap.length, "processo(s) apagados ao fechar a aba."); })
+        .catch((e) => console.warn("CRATOS: limpeza ao fechar a aba:", e.message));
+    });
+  }
+  if (browser.runtime && browser.runtime.onStartup) {
+    browser.runtime.onStartup.addListener(() => {
+      Limpeza.aoIniciar().catch((e) => console.warn("CRATOS: limpeza ao abrir o Firefox:", e.message));
+    });
+  }
+}
+
 /* Limpa estado de execução pendente ao instalar/atualizar (mesma higiene da maisPJe). */
-browser.runtime.onInstalled.addListener(async () => {
+browser.runtime.onInstalled.addListener(async (detalhes) => {
   await Store.remove(CHAVES.execucao);
+  /* 1.9.0: depois de ATUALIZAÇÃO, o painel mostra uma vez as novidades */
+  try {
+    if (typeof CratosNovidades !== "undefined") {
+      await CratosNovidades.aoInstalar(detalhes, browser.runtime.getManifest().version, Store);
+    }
+  } catch (e) { console.warn("CRATOS: novidades:", e.message); }
 });
 
 /*
@@ -1500,6 +1565,21 @@ browser.runtime.onMessage.addListener((msg) => {
     }
   }
 });
+
+/* Mesma fabricação do `fabricar_pdf`, chamada de dentro do fundo (certidão de
+   indisponibilidade, 1.9.0): Cofre + diário + pulso, nome no padrão CRATOS/. */
+function fabricarCertidaoTexto(o) {
+  try {
+    const bytes = gerarPDFTexto(o.linhas || [], o.titulo || "CRATOS");
+    const url = URL.createObjectURL(new Blob([bytes], { type: "application/pdf" }));
+    baixarERegistrar(url, o.filename, {
+      numProcesso: o.numProcesso, convenio: o.convenio || "?", operacao: o.operacao || null, detalhe: o.detalhe || null,
+    }, _bytesParaBase64(bytes));
+    return { ok: true, filename: o.filename, presumido: true };
+  } catch (e) {
+    return { ok: false, erro: String(e.message || e) };
+  }
+}
 
 /* ═══ MÉTRICAS DO HELVETICA (WinAnsiEncoding), códigos 32..255 ═══
  * Larguras em 1/1000 do corpo, direto do AFM das fontes base-14 do PDF.

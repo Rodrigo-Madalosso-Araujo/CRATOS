@@ -292,6 +292,13 @@
     /* CCS (Bacen): consulta — aparece na INCLUSÃO, como CENSEC/INFOJUD. A coleta das
        respostas (dias depois) é o botão "Coletar CCS" da tela inicial. */
     { id: "CCS",      label: "CCS (Bacen — relacionamentos)", tipo: "interativo", ops: ["consulta"], disponivel: true },
+    /* SNIPER (CNJ): investigação patrimonial — consulta, na INCLUSÃO. A aba NÃO está no
+       HOST_CONVENIO: quem a fecha é o próprio content script, e só no SUCESSO (1.7.2) — em
+       falha ela fica aberta para conferência. */
+    { id: "SNIPER",   label: "SNIPER (investigação patrimonial)", tipo: "interativo", ops: ["consulta"], disponivel: true },
+    /* PREVJUD (CNJ/INSS): Dossiê Previdenciário — consulta, na INCLUSÃO. Os dossiês que não
+       ficarem prontos em 15 min são buscados depois pelo botão "Coletar PREVJUD". */
+    { id: "PREVJUD",  label: "PREVJUD (Dossiê Previdenciário)", tipo: "interativo", ops: ["consulta"], disponivel: true },
   ];
   const CHAVE_ORDEM = "orquestra_ordem";
   let modoAtual = null;   // "inclusao" | "baixa" — sem persistência (escolha consciente)
@@ -303,6 +310,7 @@
   let partesSelecionadas = [];
   let ordemAtual = CONVENIOS.map(c => c.id);
   let orquestraFila = [];
+  let orquestraIniciadaEm = 0;
   let orquestraIdx = 0;
   /* Ledger da execução: uma linha por convênio rodado, com o desfecho. É o que o
      relatório de fim de fila lê. Zerado a cada nova execução. */
@@ -314,6 +322,9 @@
      por Store.onChange e avança sozinho quando o pulso diz "completo e limpo".
      Sinal AUSENTE degrada para o botão manual — nunca para pulo indevido. */
   const CHAVE_CONV_FEITO = "orq_conv_feito";
+  /* 1.9.0: convênios com verificação de disponibilidade (endereços em modulos/disponibilidade.js) */
+  const DISP_IDS = ["INFOJUD", "RENAJUD", "CNIB", "CENSEC", "SERASAJUD", "CCS", "SNIPER", "PREVJUD"];
+  const tempos = { vigiaMs: 3 * 60 * 1000 };
 
   // Carrega ordem salva (se houver)
   Store.get(CHAVE_ORDEM).then(o => { if (Array.isArray(o) && o.length) ordemAtual = o; }).catch(() => {});
@@ -339,8 +350,32 @@
     partesAtuais = partes;
     processoAtual = proc;
     modoAtual = null;
+    registrarAbaDoProcesso(proc.numero);
     renderModoSelecao();
   }
+
+  /* ═══ DADOS SÓ ENQUANTO A ABA ESTIVER ABERTA (1.9.0) ═══════════════════════════
+     O fundo apaga os dados do processo quando esta aba fecha (modulos/limpeza.js).
+     Se o CRATOS gerou arquivo que ainda não foi juntado, fechar a aba pede
+     confirmação (decisão do Rodrigo, 22/10: "o servidor que refaça tudo se der essa
+     bobeira. Basta avisar"). */
+  let pendenteJuntada = false;
+  let offDiario = null;
+  async function registrarAbaDoProcesso(numero) {
+    const dig = String(numero || "").replace(/\D/g, "");
+    if (dig.length !== 20) return;
+    try { await browser.runtime.sendMessage({ tipo: "processo_aba", numProcesso: numero }); } catch (e) { /* nada */ }
+    if (offDiario) { try { offDiario(); } catch (e) { /* nada */ } }
+    const avaliar = (d) => { pendenteJuntada = !!(d && (d.itens || []).some((it) => !it.juntadoEm)); };
+    try { avaliar(await Store.get("diario:" + dig)); } catch (e) { /* nada */ }
+    offDiario = Store.onChange("diario:" + dig, avaliar);
+  }
+  window.addEventListener("beforeunload", (ev) => {
+    if (!pendenteJuntada) return;
+    ev.preventDefault();
+    ev.returnValue = "O CRATOS gerou arquivos deste processo que ainda não foram juntados. Ao fechar a aba, eles se perdem.";
+    return ev.returnValue;
+  });
 
   /* Tela inicial: dois botões INCLUSÃO / BAIXA em destaque */
   function renderModoSelecao() {
@@ -390,11 +425,29 @@
         <div class="cx-vazio" id="cx-ccs-status" style="margin-top:8px"></div>
       </div>
       <div style="border-top:1px solid #333;margin-top:10px;padding-top:10px">
+        <button class="cx-acao" id="cx-coletar-prevjud"
+          style="background:#1a1a1a;border:1px solid #e11d1d;color:#e8e8e8;font-size:12px">
+          Coletar PREVJUD (dossiês em processamento)
+        </button>
+        <div class="cx-vazio" id="cx-prevjud-status" style="margin-top:8px"></div>
+      </div>
+      <div style="border-top:1px solid #333;margin-top:10px;padding-top:10px">
         <button class="cx-acao" id="cx-juntar"
           style="background:#1a1a1a;border:1px solid #e11d1d;color:#e8e8e8;font-size:12px">
           Juntar certidão dos convênios
         </button>
+        <div style="font-size:11px;color:#9a9a9a;margin-top:6px" id="cx-aviso-aba">Os arquivos do CRATOS ficam disponíveis para juntada só enquanto esta aba do processo estiver aberta.</div>
         <div class="cx-vazio" id="cx-juntar-status" style="margin-top:8px"></div>
+      </div>
+      <div style="border-top:1px solid #333;margin-top:10px;padding-top:10px">
+        <select id="cx-disp-conv" style="width:100%;margin-bottom:6px;background:#111;color:#e8e8e8;border:1px solid #444;padding:4px;font-size:12px">
+          ${DISP_IDS.map((id) => html`<option value="${id}">${(CONVENIOS.find((c) => c.id === id) || { label: id }).label}</option>`)}
+        </select>
+        <button class="cx-acao" id="cx-disp-verificar"
+          style="background:#1a1a1a;border:1px solid #6b7280;color:#e8e8e8;font-size:12px">
+          Verificar disponibilidade do convênio
+        </button>
+        <div class="cx-vazio" id="cx-disp-status" style="margin-top:8px"></div>
       </div>
     `);
 
@@ -413,7 +466,127 @@
     corpo.querySelector("#cx-modo-baixa").onclick    = () => irPara("baixa");
     corpo.querySelector("#cx-localizar").onclick = localizarResultado;
     corpo.querySelector("#cx-coletar-ccs").onclick = coletarCcs;
+    corpo.querySelector("#cx-coletar-prevjud").onclick = coletarPrevjud;
     corpo.querySelector("#cx-juntar").onclick = abrirJuntada;
+    corpo.querySelector("#cx-disp-verificar").onclick = verificarDisponibilidade;
+    mostrarNovidades();
+  }
+
+  /* ═══ NOVIDADES DA VERSÃO (1.9.0) ═══════════════════════════════════════════
+     Depois de uma atualização (o background marca `novidades_pendente`), mostra
+     UMA vez o que mudou; "Entendi" apaga. Preferência "Novidades da versão" desliga.
+     O texto vem de comum/novidades.js (dentro do pacote; nada da rede). */
+  async function mostrarNovidades() {
+    try {
+      if (typeof CratosNovidades === "undefined" || corpo.querySelector("#cx-novidades")) return;
+      const pend = await Store.get("novidades_pendente");
+      if (!pend || !pend.para) return;
+      const cfg = (await Store.get(CHAVES.config)) || {};
+      const pref = cfg.novidades && cfg.novidades.mostrar;
+      if (pref && pref.ativo === false) return;
+      const entradas = CratosNovidades.paraMostrar(pend.de, pend.para);
+      if (!entradas.length) { await Store.set("novidades_pendente", null); return; }
+      const bloco = (e) => html`<div style="margin-top:6px"><div style="color:#9a9a9a;font-size:11px">${e.versao} — ${e.data}</div>
+        <ul style="margin:4px 0 0 16px;padding:0">${e.itens.map((t) => html`<li style="margin:2px 0">${t}</li>`)}</ul></div>`;
+      const card = document.createElement("div");
+      card.id = "cx-novidades";
+      card.style.cssText = "border:1px solid #e11d1d;border-radius:6px;padding:8px 10px;margin-bottom:10px;font-size:12px;background:#140b0b";
+      const titulo = entradas.length === 1 ? `Novidades da ${pend.para}` : `Novidades desde a ${pend.de}`;
+      CratosHTML.definir(card, html`<div style="font-weight:700;color:#e8e8e8">✨ ${titulo}</div>
+        ${entradas.map(bloco)}
+        <div id="cx-novidades-hist" style="display:none;border-top:1px solid #333;margin-top:8px;padding-top:4px">
+          ${CratosNovidades.VERSOES.filter((e) => !entradas.includes(e)).map(bloco)}</div>
+        <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
+          <button class="cx-acao" id="cx-novidades-ok" style="font-size:12px;width:auto;padding:4px 14px">Entendi</button>
+          <a href="#" id="cx-novidades-ver" style="color:#9a9a9a;font-size:11px">ver versões anteriores</a>
+        </div>`);
+      corpo.insertBefore(card, corpo.firstChild);
+      card.querySelector("#cx-novidades-ok").onclick = async () => {
+        try { await Store.set("novidades_pendente", null); } catch (e) { /* nada */ }
+        card.remove();
+      };
+      card.querySelector("#cx-novidades-ver").onclick = (ev) => {
+        ev.preventDefault();
+        const h = card.querySelector("#cx-novidades-hist");
+        h.style.display = h.style.display === "none" ? "block" : "none";
+      };
+    } catch (e) { /* novidade nunca atrapalha o painel */ }
+  }
+
+  /* ═══ DISPONIBILIDADE DOS CONVÊNIOS (1.9.0) ═══════════════════════════════════
+     Certidão de ESTADO, sempre com confirmação humana. A medição é do background
+     (modulos/disponibilidade.js): 3 tentativas + PJe como controle. Aqui só se
+     mostra o resultado e, se for "indisponível", OFERECE a certidão. */
+  async function medirConvenio(id) {
+    try { return await browser.runtime.sendMessage({ tipo: "medir_disponibilidade", convenioId: id }); }
+    catch (e) { return { ok: false, motivo: String(e.message || e) }; }
+  }
+  function hmsDe(iso) {
+    const d = new Date(iso);
+    const p2 = (n) => String(n).padStart(2, "0");
+    return isNaN(d.getTime()) ? "" : `${p2(d.getHours())}:${p2(d.getMinutes())}:${p2(d.getSeconds())}`;
+  }
+  async function verificarDisponibilidade() {
+    const st = corpo.querySelector("#cx-disp-status");
+    const id = (corpo.querySelector("#cx-disp-conv") || {}).value;
+    const conv = CONVENIOS.find((c) => c.id === id) || { id, label: id };
+    if (!st || !id) return;
+    CratosHTML.definir(st, html`<span style="color:#9a9a9a">Medindo o ${conv.label}… (até 3 tentativas, cerca de 30 segundos)</span>`);
+    const m = await medirConvenio(id);
+    renderMedicao(st, m, conv, "botao", null);
+  }
+  /* `antes`: na fila, avança/encerra o convênio ANTES de gerar a certidão (o pulso
+     do arquivo não pode ser contado como certidão do convênio). */
+  function renderMedicao(el, m, conv, origem, antes) {
+    if (!m || !m.ok) {
+      CratosHTML.definir(el, html`<span class="cx-erro">Não consegui medir (${(m && (m.motivo || m.erro)) || "erro"}).</span>`);
+      return;
+    }
+    const ts = m.tentativas || [];
+    const lista = html`<div style="font-size:11px;color:#9a9a9a;margin-top:4px">${ts.map((t) => html`<div>${hmsDe(t.hora)} — ${t.mensagem}</div>`)}</div>`;
+    if (m.conclusao === "respondeu") {
+      const ult = ts[ts.length - 1] || {};
+      CratosHTML.definir(el, html`<div style="color:#4ade80">O ${conv.label} respondeu às ${hmsDe(ult.hora)} (${ult.mensagem}). Nada a certificar.</div>${lista}`);
+      return;
+    }
+    if (m.conclusao === "controle_falhou") {
+      CratosHTML.definir(el, html`<div style="color:#facc15">O ${conv.label} não respondeu, mas o PJe também não: pode ser a rede desta unidade. Nada foi certificado.</div>${lista}`);
+      return;
+    }
+    CratosHTML.definir(el, html`<div style="color:#ff6b6b">O ${conv.label} não respondeu em ${ts.length} tentativa(s), entre ${hmsDe(ts[0].hora)} e ${hmsDe(ts[ts.length - 1].hora)}; o PJe respondeu normalmente.</div>${lista}
+      <button class="cx-acao cx-disp-gerar" style="font-size:12px;margin-top:6px">Confirmo: o ${conv.label} está indisponível — gerar certidão</button>`);
+    const b = el.querySelector(".cx-disp-gerar");
+    b.onclick = async () => {
+      b.disabled = true;
+      if (antes) { try { antes(); } catch (e) { /* nada */ } }
+      let r = null;
+      try {
+        r = await browser.runtime.sendMessage({ tipo: "certidao_indisponibilidade", idMedicao: m.id,
+          numProcesso: (processoAtual && processoAtual.numero) || "", origem });
+      } catch (e) { r = { ok: false, motivo: String(e.message || e) }; }
+      if (r && r.ok) {
+        CratosHTML.definir(el, html`<div style="color:#facc15">Certidão de indisponibilidade gerada (${String(r.filename || "").split("/").pop()}). Ela entra na juntada dos convênios.</div>`);
+        if (origem === "fila") atualizarProgresso(conv.id, "⛔ Indisponível — certidão de indisponibilidade gerada", "amarelo");
+      } else {
+        b.disabled = false;
+        CratosHTML.definir(el, html`<span class="cx-erro">Não gerei a certidão (${(r && (r.motivo || r.erro)) || "erro"}).</span>`);
+      }
+    };
+  }
+  /* Depois de uma falha/pulo na fila: mede no fundo; se o sistema estiver fora do
+     ar, marca "indisponível" e oferece a certidão no relatório final. */
+  function verificarDepois(conv) {
+    if (!DISP_IDS.includes(conv.id)) return;
+    medirConvenio(conv.id).then((m) => {
+      if (!m || !m.ok || m.conclusao !== "indisponivel") return;
+      const e = orquestraLedger.slice().reverse().find((x) => x.id === conv.id);
+      if (!e) return;
+      e.indisponivel = true;
+      e.medicao = m;
+      atualizarProgresso(conv.id, `⛔ Indisponível (medido às ${hmsDe(m.medidoEm)}) — veja o relatório`, "erro");
+      const rel = corpo.querySelector("#cx-relatorio");
+      if (rel) { rel.remove(); renderRelatorioFinal(); }
+    }).catch(() => { /* nada */ });
   }
 
   /* COLETA DO CCS — dias depois do envio. O background abre a requisição no CCS (direto
@@ -451,6 +624,44 @@
       CratosHTML.definir(st, html`${linhas}${temArquivo
         ? html`<button class="cx-acao" id="cx-ccs-juntar" style="margin-top:8px">Juntar agora</button>` : ""}`);
       const b = st.querySelector("#cx-ccs-juntar");
+      if (b) b.onclick = abrirJuntada;
+    });
+  }
+
+  /* COLETA DO PREVJUD — dossiês que ficaram "em processamento" na solicitação. O
+     background abre o Dossiê Previdenciário; a aba do PREVJUD atualiza a lista, abre os
+     prontos, junta os PDFs + certidão e publica em `prevjud_coleta_resultado`. */
+  async function coletarPrevjud() {
+    const st = corpo.querySelector("#cx-prevjud-status");
+    const numero = processoAtual?.numero || "";
+    if (!st) return;
+    if (!numero) { st.textContent = "Sem número de processo capturado."; return; }
+    CratosHTML.definir(st, html`<span style="color:#9a9a9a">Abrindo o PREVJUD… (se pedir login, entre; a coleta segue sozinha na aba do PREVJUD)</span>`);
+    let r = null;
+    try {
+      r = await browser.runtime.sendMessage({ tipo: "prevjud_coletar", numeroProcesso: numero,
+        partes: (partesAtuais || []).map((p) => ({ nome: p && p.nome, cpfcnpj: p && p.cpfcnpj })) });
+    } catch (e) { r = { ok: false, erro: String(e.message || e) }; }
+    if (!r || !r.ok) {
+      CratosHTML.definir(st, html`<span class="cx-erro">Não iniciei a coleta do PREVJUD (${(r && (r.erro || r.motivo)) || "erro"}).</span>`);
+      return;
+    }
+    CratosHTML.definir(st, r.descobrir
+      ? html`<span style="color:#9a9a9a">Procurando no PREVJUD os pedidos deste processo (últimos 7 dias)…</span>`
+      : html`<span style="color:#9a9a9a">Buscando ${r.pedidos} dossiê(s) em processamento deste processo…</span>`);
+    const off = Store.onChange("prevjud_coleta_resultado", (res) => {
+      if (!res || String(res.numProcesso || "").replace(/\D/g, "") !== String(numero).replace(/\D/g, "")) return;
+      off();
+      if (res.erro) { CratosHTML.definir(st, html`<span class="cx-erro">${res.erro}</span>`); return; }
+      const rotuloTipo = (x) => x.tipo === "pdf" ? `${x.arquivos} PDF(s) + certidão`
+        : x.tipo === "antigo" ? "pedido mais recente tem mais de 7 dias — não juntado"
+          : x.tipo === "ja" ? "o pedido mais recente já foi juntado pelo CRATOS"
+            : "ainda em processamento";
+      const linhas = (res.resultados || []).map((x) => html`<div style="color:${x.tipo === "pdf" ? "#4ade80" : "#facc15"};margin-top:3px">${x.nome || "CPF"}: ${rotuloTipo(x)}</div>`);
+      const temArquivo = (res.resultados || []).some((x) => x.tipo === "pdf");
+      const aviso = res.aviso ? html`<div style="color:#facc15">${res.aviso}</div>` : "";
+      CratosHTML.definir(st, html`${aviso}${linhas}${temArquivo ? html`<button class="cx-acao" id="cx-prevjud-juntar" style="margin-top:8px">Juntar agora</button>` : ""}`);
+      const b = st.querySelector("#cx-prevjud-juntar");
       if (b) b.onclick = abrirJuntada;
     });
   }
@@ -581,6 +792,7 @@
     };
 
     orquestraFila = fila;
+    orquestraIniciadaEm = Date.now();   // 1.9.0: só vale registro do INFOJUD desta execução
     orquestraIdx = 0;
     orquestraLedger = [];
     renderProgresso();
@@ -686,6 +898,7 @@
     area.appendChild(aviso);
 
     let finalizado = false;      // trava o AVANÇO (impede idx++ em dobro)
+    let vigia = null;            // 1.9.0: sem resposta por um tempo → mede a disponibilidade
     let ledgerFeito = false;     // uma linha de ledger por convênio
     const anotar = (status, detalhe) => {
       if (ledgerFeito) return;
@@ -698,6 +911,7 @@
     const finalizar = async (gerarCertidao, sufixo, ledgerStatus, ledgerDetalhe) => {
       if (finalizado) return;
       finalizado = true;
+      if (vigia) clearTimeout(vigia);
       if (off) off();
       anotar(ledgerStatus || "ok", ledgerDetalhe || sufixo || "");
       area.innerHTML = `<div style="font-size:12px;color:#9a9a9a">Seguindo…</div>`;
@@ -726,7 +940,9 @@
        — o humano confere e decide seguir na mão. */
     const travar = (p) => {
       if (finalizado) return;
+      if (vigia) clearTimeout(vigia);
       if (off) off();
+      verificarDepois(conv);
       const esp = Number(p.esperados) > 0 ? Number(p.esperados) : (esperados || "?");
       anotar("trava", `${p.feitos || 0} de ${esp}` + (p.motivo ? " — " + p.motivo : ""));
       atualizarProgresso(conv.id, "⛔ Parou — confira antes de seguir", "erro");
@@ -757,6 +973,7 @@
         const alvo = Number(p.esperados) > 0 ? Number(p.esperados) : (esperados || 1);
         finalizar(false, ` (${feitos} de ${alvo} — confira)`, "conferir",
           `${feitos} de ${alvo}` + (p.motivo ? " — " + p.motivo : ""));
+        verificarDepois(conv);
         return;
       }
 
@@ -810,8 +1027,34 @@
     btnPular.onclick = () => {
       const quanto = esperados ? ` (${chegaram.size} de ${esperados})` : "";
       finalizar(false, " (pulado)", "conferir", "pulado pelo usuário" + quanto);
+      verificarDepois(conv);
     };
     area.appendChild(btnPular);
+
+    /* VIGIA (1.9.0): convênio sem resposta por um tempo (ex.: a aba abriu numa página
+       de erro e o content script nunca achou a tela) → mede. Indisponível → marca e
+       oferece a certidão aqui mesmo; a confirmação encerra o convênio e segue a fila. */
+    if (DISP_IDS.includes(conv.id)) {
+      vigia = setTimeout(async () => {
+        if (finalizado) return;
+        atualizarProgresso(conv.id, "⏸ Sem resposta — verificando se o sistema está no ar…", "amarelo");
+        const m = await medirConvenio(conv.id);
+        if (finalizado) return;
+        if (!m || !m.ok || m.conclusao !== "indisponivel") {
+          atualizarProgresso(conv.id, "⏸ Aguardando conclusão…", "amarelo");
+          return;
+        }
+        atualizarProgresso(conv.id, `⛔ Indisponível (medido às ${hmsDe(m.medidoEm)})`, "erro");
+        const caixa = document.createElement("div");
+        caixa.className = "cx-disp-fila";
+        caixa.style.cssText = "font-size:12px;margin:6px 0";
+        area.insertBefore(caixa, area.firstChild);
+        renderMedicao(caixa, m, conv, "fila", () => {
+          finalizar(false, " (indisponível)", "indisponivel",
+            "sistema indisponível — certidão de indisponibilidade gerada; repita a diligência mais tarde (sugestão: GIGS de prazo)");
+        });
+      }, tempos.vigiaMs);
+    }
   }
 
   /* Relatório de fim de fila. Substitui o "✓ Todos concluídos" por um placar que
@@ -825,14 +1068,24 @@
     const div = document.createElement("div");
     div.id = "cx-relatorio";
     div.style.cssText = "margin-top:10px;padding-top:8px;border-top:1px solid #333;font-size:12px";
-    const itensPrecisa = precisa.map((e) => {
+    const itensPrecisa = precisa.map((e, i) => {
       const vermelho = e.status === "erro" || e.status === "trava";
-      return html`<div style="color:${vermelho ? "#ff6b6b" : "#facc15"};margin-top:3px">⚠ ${e.label} — ${e.detalhe || e.status}</div>`;
+      if (e.status === "indisponivel") {
+        return html`<div style="color:#facc15;margin-top:3px">⛔ ${e.label} — ${e.detalhe}</div>`;
+      }
+      const disp = e.indisponivel && e.medicao
+        ? html`<div style="color:#ff6b6b;margin:2px 0 0 14px">⛔ o sistema estava indisponível (medido às ${hmsDe(e.medicao.medidoEm)})</div><div data-disp="${i}" style="margin-left:14px"></div>`
+        : "";
+      return html`<div style="color:${vermelho ? "#ff6b6b" : "#facc15"};margin-top:3px">⚠ ${e.label} — ${e.detalhe || e.status}</div>${disp}`;
     });
     const corTopo = precisa.length ? "#facc15" : "#4ade80";
     const quemPrecisa = precisa.length ? `, ${precisa.length} precisa(m) de você` : "";
     CratosHTML.definir(div, html`<div style="font-weight:700;color:${corTopo}">${total} convênio(s): ${okN} concluído(s)${quemPrecisa}</div>${itensPrecisa}`);
     prog.appendChild(div);
+    precisa.forEach((e, i) => {
+      const alvo = div.querySelector(`[data-disp="${i}"]`);
+      if (alvo) renderMedicao(alvo, e.medicao, CONVENIOS.find((c) => c.id === e.id) || { id: e.id, label: e.label }, "fila", null);
+    });
   }
 
 
@@ -877,8 +1130,25 @@
     const numero = (processoAtual && processoAtual.numero) || "";
     if (!numero) return;
 
+    /* 1.9.0 (Rodrigo, 23/10): nenhuma solicitação registrada NESTA execução (só Recuperar
+       NI, ou nenhum tipo marcado) → não há resposta a buscar na caixa postal. O registro
+       vem do finalizarRegistro do e-CAC; sem registro desta execução, colhe como sempre. */
+    let reg = null;
+    try { reg = await Store.get("infojud_registro:" + String(numero).replace(/\D/g, "")); } catch (e) {}
+    const semPedido = !!(reg && reg.registradas === 0 && Number(reg.em) >= orquestraIniciadaEm);
+
     const prog = corpo.querySelector("#cx-progresso");
     if (!prog) return;
+    if (semPedido) {
+      const aviso = document.createElement("div");
+      aviso.id = "cx-colheita-auto";
+      aviso.style.cssText = "font-size:12px;margin-top:8px;padding-top:8px;border-top:1px solid #333;color:#9a9a9a";
+      aviso.textContent = reg.soRecuperar
+        ? "INFOJUD: só o Recuperar NI foi feito (a resposta é na hora) — não há solicitação para buscar na caixa postal."
+        : "INFOJUD: nenhuma solicitação foi registrada nesta execução (nenhum tipo marcado) — não há resposta a buscar na caixa postal.";
+      prog.appendChild(aviso);
+      return;
+    }
     const caixa = document.createElement("div");
     caixa.id = "cx-colheita-auto";
     caixa.style.cssText = "font-size:12px;margin-top:8px;padding-top:8px;border-top:1px solid #333";
@@ -1742,6 +2012,14 @@
     renderDesligado,
     botao,
     get ligado() { return ligado; }, set ligado(v) { ligado = v; },
+    // 1.9.0
+    mostrarNovidades,
+    verificarDisponibilidade,
+    renderMedicao,
+    renderModoSelecao,
+    setPartes(p) { partesAtuais = p; },
+    get pendenteJuntada() { return pendenteJuntada; },
+    tempos,
   };
 
 })();

@@ -64,7 +64,8 @@ function montarEcac(url, opts) {
       onChanged: { addListener: () => {} },
     },
     runtime: {
-      sendMessage: async () => ({ ok: true }),
+      /* 1.9.0: o vigia pergunta ao fundo se esta é a aba aberta pelo CRATOS. Padrão: é. */
+      sendMessage: async (m) => (m && m.tipo === "ecac_sou_registro") ? { sim: o.outraAba ? false : true } : ({ ok: true }),
       onMessage: { addListener: () => {} },
       getURL: (p) => p,
     },
@@ -110,6 +111,14 @@ function montarEcac(url, opts) {
     "navega para a CASCA do serviço — o link profundo para solicitacao.asp não vale mais desde 21/08");
   checar(faixas.some((f) => f[0] === "dizer"),
     "avisa em verde que está entrando (não deixa a tela muda)");
+}
+
+/* 1.9.0: aba que NÃO é a do registro (caixa postal, e-CAC aberto à mão) — o vigia não age */
+{
+  const { navegou, faixas } = montarEcac("https://cav.receita.fazenda.gov.br/ecac/", { outraAba: true });
+  await esperar(5200);
+  checar(navegou.length === 0 && !faixas.length,
+    "⛔ 1.9.0: em aba que não foi aberta pelo CRATOS para o registro (ex.: a da caixa postal), o vigia não navega nem fala");
 }
 
 /* Ainda no gov.br: o usuário está logando — não atropelar */

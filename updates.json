@@ -1,0 +1,14 @@
+{
+  "addons": {
+    "cratos@trt18.local": {
+      "updates": [
+        {
+          "version": "1.9.1",
+          "update_link": "https://github.com/Rodrigo-Madalosso-Araujo/CRATOS/releases/download/v1.9.1/cratos-1.9.1.xpi",
+          "update_hash": "sha256:1e08a9d171c4d1f54283dfdd79552106f1752ae019b791617f2f2c3c9a06f2a1",
+          "browser_specific_settings": { "gecko": { "strict_min_version": "140.0" } }
+        }
+      ]
+    }
+  }
+}

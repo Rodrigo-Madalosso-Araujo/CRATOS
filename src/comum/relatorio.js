@@ -35,8 +35,11 @@ if (typeof globalThis.CratosRelatorio === "undefined") {
        ponto onde o rastro se registra sozinho. Sem instrumentar fluxo nenhum. */
     registrar(modulo, texto, nivel) {
       try {
+        /* 1.9.0: hora LOCAL, como o cabeçalho "Quando". Antes saía em UTC (toISOString):
+           o relatório de 23/10 dizia 18:13 num problema das 15:13. */
+        const d = new Date(), p2 = (n) => String(n).padStart(2, "0");
         this._passos.push({
-          t: new Date().toISOString().slice(11, 19),
+          t: p2(d.getHours()) + ":" + p2(d.getMinutes()) + ":" + p2(d.getSeconds()),
           m: String(modulo || ""),
           n: nivel || "info",
           x: String(texto || ""),

@@ -165,7 +165,7 @@ const ModuloCCS = {
 /* Abre (ou reusa) a aba do CCS. Sessão caída → o BCB manda para o ADFS; o content
    script avisa e retoma quando você voltar logado. */
 async function abrirCcs(url) {
-  const abas = await browser.tabs.query({ url: "*://www3.bcb.gov.br/ccs/*" });
+  const abas = await browser.tabs.query({ url: "https://www3.bcb.gov.br/ccs/*" });
   if (abas.length) {
     await browser.tabs.update(abas[0].id, { url, active: true });
   } else {

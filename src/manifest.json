@@ -1,12 +1,13 @@
 {
   "manifest_version": 2,
   "name": "CRATOS",
-  "version": "1.6.5",
+  "version": "1.9.1",
   "description": "Captura dados do processo no PJe e automatiza parcialmente a execução de convênios (consultas e registro) para o processo em tela. Quem confirma, assina e envia é sempre você.",
   "browser_specific_settings": {
     "gecko": {
       "id": "cratos@trt18.local",
       "strict_min_version": "140.0",
+      "update_url": "https://raw.githubusercontent.com/Rodrigo-Madalosso-Araujo/CRATOS/main/updates.json",
       "data_collection_permissions": {
         "required": [
           "none"
@@ -28,13 +29,15 @@
     "storage",
     "tabs",
     "downloads",
-    "*://*.trt18.jus.br/*",
-    "*://*.receita.fazenda.gov.br/*",
-    "*://renajud.pdpj.jus.br/*",
-    "*://indisponibilidade.onr.org.br/*",
-    "*://*.censec.org.br/*",
-    "*://serasa-judicial.serasaexperian.com.br/*",
-    "*://www3.bcb.gov.br/*"
+    "https://*.trt18.jus.br/*",
+    "https://*.receita.fazenda.gov.br/*",
+    "https://renajud.pdpj.jus.br/*",
+    "https://indisponibilidade.onr.org.br/*",
+    "https://*.censec.org.br/*",
+    "https://serasa-judicial.serasaexperian.com.br/*",
+    "https://www3.bcb.gov.br/*",
+    "https://sniper.pdpj.jus.br/*",
+    "https://previdenciario.pdpj.jus.br/*"
   ],
   "background": {
     "scripts": [
@@ -42,6 +45,7 @@
       "comum/api-pje.js",
       "comum/api-caixa-postal.js",
       "modulos/registro.js",
+      "comum/novidades.js",
       "modulos/infojud.js",
       "modulos/sab.js",
       "modulos/renajud.js",
@@ -49,20 +53,25 @@
       "modulos/censec.js",
       "modulos/serasajud.js",
       "modulos/ccs.js",
+      "modulos/sniper.js",
+      "modulos/prevjud.js",
+      "modulos/disponibilidade.js",
       "modulos/juntada.js",
       "comum/unzip.js",
+      "modulos/limpeza.js",
       "background.js"
     ]
   },
   "content_scripts": [
     {
       "matches": [
-        "*://pje.trt18.jus.br/*"
+        "https://pje.trt18.jus.br/*"
       ],
       "js": [
         "comum/storage.js",
         "comum/relatorio.js",
         "comum/faixa.js",
+        "comum/novidades.js",
         "conteudo/painel.js"
       ],
       "css": [
@@ -72,7 +81,7 @@
     },
     {
       "matches": [
-        "*://pje.trt18.jus.br/sab/*"
+        "https://pje.trt18.jus.br/sab/*"
       ],
       "js": [
         "comum/storage.js",
@@ -84,20 +93,21 @@
     },
     {
       "matches": [
-        "*://*.receita.fazenda.gov.br/*"
+        "https://*.receita.fazenda.gov.br/*"
       ],
       "all_frames": true,
       "js": [
         "comum/storage.js",
         "comum/relatorio.js",
         "comum/faixa.js",
+        "conteudo/infojud-empresas.js",
         "conteudo/ecac-infojud.js"
       ],
       "run_at": "document_idle"
     },
     {
       "matches": [
-        "*://renajud.pdpj.jus.br/*"
+        "https://renajud.pdpj.jus.br/*"
       ],
       "js": [
         "comum/storage.js",
@@ -109,7 +119,7 @@
     },
     {
       "matches": [
-        "*://indisponibilidade.onr.org.br/*"
+        "https://indisponibilidade.onr.org.br/*"
       ],
       "js": [
         "comum/storage.js",
@@ -121,7 +131,7 @@
     },
     {
       "matches": [
-        "*://*.censec.org.br/*"
+        "https://*.censec.org.br/*"
       ],
       "js": [
         "comum/storage.js",
@@ -133,7 +143,7 @@
     },
     {
       "matches": [
-        "*://serasa-judicial.serasaexperian.com.br/*"
+        "https://serasa-judicial.serasaexperian.com.br/*"
       ],
       "js": [
         "comum/storage.js",
@@ -145,13 +155,46 @@
     },
     {
       "matches": [
-        "*://www3.bcb.gov.br/ccs/*"
+        "https://www3.bcb.gov.br/ccs/*"
       ],
       "js": [
         "comum/storage.js",
         "comum/relatorio.js",
         "comum/faixa.js",
         "conteudo/ccs.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://sniper.pdpj.jus.br/*"
+      ],
+      "js": [
+        "comum/storage.js",
+        "comum/relatorio.js",
+        "comum/faixa.js",
+        "conteudo/sniper.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://previdenciario.pdpj.jus.br/*"
+      ],
+      "js": [
+        "conteudo/prevjud-cedo.js"
+      ],
+      "run_at": "document_start"
+    },
+    {
+      "matches": [
+        "https://previdenciario.pdpj.jus.br/*"
+      ],
+      "js": [
+        "comum/storage.js",
+        "comum/relatorio.js",
+        "comum/faixa.js",
+        "conteudo/prevjud.js"
       ],
       "run_at": "document_idle"
     }
@@ -176,6 +219,8 @@
     "conteudo/censec-api.js",
     "conteudo/serasajud-api.js",
     "conteudo/renajud-api.js",
-    "conteudo/ecac-grampo.js"
+    "conteudo/ecac-grampo.js",
+    "conteudo/sniper-api.js",
+    "conteudo/prevjud-api.js"
   ]
 }

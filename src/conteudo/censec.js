@@ -255,7 +255,7 @@
       const parte = partes[i];
       const doc = digitos(parte.cpfcnpj);
       avisar(`consultando ${i + 1} de ${partes.length}: ${parte.nome}`, "#facc15");
-      console.log(`CRATOS/CENSEC: [${i + 1}/${partes.length}] ${parte.nome} (${doc})`);
+      console.log(`CRATOS/CENSEC: [${i + 1}/${partes.length}] ${CratosMascara.nome(parte.nome)} (${CratosMascara.doc(doc)})`);
 
       let r;
       try {
@@ -265,11 +265,11 @@
       }
 
       if (!r.ok) {
-        console.error(`CRATOS/CENSEC: ${parte.nome} FALHOU — ${r.motivo}`);
+        console.error(`CRATOS/CENSEC: ${CratosMascara.nome(parte.nome)} FALHOU — ${r.motivo}`);
         falhados.push({ nome: parte.nome, motivo: r.motivo });
       } else {
         feitos.push({ nome: parte.nome, atos: r.atos.length, arquivo: r.arquivo });
-        console.log(`CRATOS/CENSEC: ${parte.nome} — ${r.atos.length} ato(s) -> ${r.arquivo || "(sem PDF)"}`);
+        console.log(`CRATOS/CENSEC: ${CratosMascara.nome(parte.nome)} — ${r.atos.length} ato(s) -> ${r.arquivo ? "PDF gerado" : "(sem PDF)"}`);
       }
 
       // grava o andamento a cada parte: se a aba cair, sabemos onde parou
@@ -413,7 +413,7 @@
     /* Negativa desligada nas Preferências: não gera arquivo, mas a consulta
        continua contando como feita (o usuário viu na tela). */
     if (!atos.length && cfg.gerarNegativa === false) {
-      console.log("CRATOS/CENSEC: sem atos e negativa desligada — nenhum PDF para", parte.nome);
+      console.log("CRATOS/CENSEC: sem atos e negativa desligada — nenhum PDF para", CratosMascara.nome(parte.nome));
       return null;
     }
 
