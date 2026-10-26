@@ -15,7 +15,7 @@ O Firefox consulta esse arquivo cerca de uma vez por dia. Também dá para forç
 
 ## Rotina a cada versão nova (ex.: 1.9.1)
 
-1. **Assinar** a versão na AMO ("Por conta própria") e trazer o xpi assinado para o Claude.
+1. **Assinar** a versão na AMO ("Por conta própria") e salvar o xpi assinado em `assinados\` com o nome **`cratos-X.Y.Z.xpi`, tudo em minúsculas** (convenção desde 26/10). É o mesmo nome que vai na release, e o GitHub diferencia maiúsculas: o arquivo segue direto, sem renomear. Avisar o Claude.
 2. O Claude calcula o SHA-256 e prepara um **PR** que acrescenta a entrada no `updates.json` (na raiz do repositório). Ele **não** faz o merge.
    ```json
    { "version": "1.9.1",
