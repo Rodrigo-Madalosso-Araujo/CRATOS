@@ -88,9 +88,16 @@
         avisar("aguardando seu login no CCS (Banco Central). Assim que você entrar, eu sigo sozinho.");
       } else if (paginaEmBranco(document)) {
         return tratarPaginaEmBranco(est);
+      } else if (quaseVazia(document)) {
+        /* 1.9.1 (26/10): o CCS devolvendo página praticamente vazia (HTTP 200, centenas de
+           bytes) — instabilidade do Banco Central, vista pelo Rodrigo fora do CRATOS. */
+        alertar("o CCS não está gerando a resposta agora (instabilidade do Banco Central): a página veio " +
+          "praticamente vazia. Nada foi certificado. Tente o Coletar CCS mais tarde. [tela: " + estruturaTela(document) + "]");
       } else {
+        /* 1.9.1: a tela vai identificada pela ESTRUTURA (caminho, título, cabeçalho) — entra no
+           relatório de problema e diz qual tela foi, sem dado de pessoa. */
         alertar("não reconheci esta tela do CCS (falta o código [CCSFW…] no canto). Se for o login, " +
-          "entre; eu sigo depois.");
+          "entre; eu sigo depois. [tela: " + estruturaTela(document) + "]");
       }
       return;
     }
@@ -748,6 +755,31 @@
       "Costuma ser cookie de uma sessão anterior do Banco Central. Clique no cadeado da barra de " +
       "endereço → “Limpar cookies e dados do site” (www3.bcb.gov.br), feche esta aba e mande o CCS " +
       "de novo pelo CRATOS.");
+  }
+
+  /* 1.9.1 — texto útil da página (sem os elementos do próprio CRATOS, scripts e estilos). */
+  function textoUtil(doc) {
+    if (!doc || !doc.body) return "";
+    const copia = doc.body.cloneNode(true);
+    for (const el of Array.from(copia.querySelectorAll('[id^="cratos"], script, style, noscript'))) el.remove();
+    return (copia.textContent || "").replace(/\s+/g, " ").trim();
+  }
+  /* Sem código, sem formulário e quase sem texto: o CCS não montou a tela. */
+  function quaseVazia(doc) {
+    if (!doc || !doc.body) return true;
+    if (doc.querySelector("frameset, frame, iframe, form, input, select, textarea")) return false;
+    return textoUtil(doc).length < 60;
+  }
+  /* Só ESTRUTURA, para o aviso e o relatório: caminho (sem parâmetros), título, 1º cabeçalho
+     e tamanho do texto. Sequências de 4+ dígitos são cortadas (CPF, CNPJ, nº de processo). */
+  function estruturaTela(doc) {
+    const corta = (t, n) => mascararDocs(String(t || "").replace(/\s+/g, " ").trim()).replace(/\d[\d.\-\/]{3,}/g, "…").slice(0, n);
+    const cab = doc.querySelector("h1, h2, h3, .titulo, .tituloPagina, th");
+    const partes = ["caminho " + corta(location.pathname, 80)];
+    if (doc.title && doc.title.trim()) partes.push("título \"" + corta(doc.title, 60) + "\"");
+    if (cab && cab.textContent.trim()) partes.push("cabeçalho \"" + corta(cab.textContent, 60) + "\"");
+    partes.push(textoUtil(doc).length + " caracteres");
+    return partes.join(" · ");
   }
 
   function codigoTela(doc) {

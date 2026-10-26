@@ -122,7 +122,7 @@
           .catch(() => {});
         console.log("CRATOS/CNIB: impressão encerrada — avisei a janela principal.");
       }, { once: true });
-      console.log("CRATOS/CNIB: janela de impressão renomeada para", t.titulo);
+      console.log("CRATOS/CNIB: janela de impressão renomeada (título com o nome do arquivo).");
     }).catch(() => {});
     return;   // <<< o popup PARA AQUI. Nada de rotear/automatizar.
   }
@@ -317,7 +317,7 @@
       const doc = digitos(ex.cpfcnpj);
 
       if (docsNaTabela().includes(doc)) {
-        console.log("CRATOS/CNIB:", ex.nome, "já está na lista — pulando.");
+        console.log("CRATOS/CNIB:", CratosMascara.nome(ex.nome), "já está na lista — pulando.");
         incluidos++;
         continue;
       }
@@ -343,7 +343,7 @@
         };
       }
       incluidos++;
-      console.log("CRATOS/CNIB: incluído", ex.nome, `(${incluidos}/${executados.length})`);
+      console.log("CRATOS/CNIB: incluído", CratosMascara.nome(ex.nome), `(${incluidos}/${executados.length})`);
       await sleep(400);
     }
     return { ok: true, incluidos };

@@ -203,8 +203,9 @@ if (typeof Registro !== "undefined") {
             "entra (a marcação é sua), mas com aviso em vermelho na tela — restrição " +
             "de crédito no nome de quem deveria receber é erro caro de desfazer.",
           "<b>Data da Dívida (baixa):</b> vem da <i>data de liquidação</i> do cálculo do " +
-            "PJe-Calc. Se o cálculo não tiver essa data, o CRATOS <b>não inventa</b>: " +
-            "recusa a baixa e pede que você a faça à mão.",
+            "PJe-Calc. Se o processo não tiver cálculo com o valor ou essa data, o CRATOS " +
+            "<b>não inventa</b>: abre uma janela e espera, sem prazo, você informar o que falta " +
+            "(valor e, na baixa, a data). A certidão registra que o dado foi informado por você.",
           "<b>Credor:</b> o primeiro exequente do processo. A ordem é registrada por " +
             "processo, então basta um.",
           "<b>Certidão:</b> só é emitida <b>depois</b> que você clica em Confirmar e o " +

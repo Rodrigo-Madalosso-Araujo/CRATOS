@@ -63,6 +63,11 @@ const ModuloInfojud = {
           efin_relacao: { tipo: "select", padrao: "Todas", opcoes: EFIN_RELACAO, rotulo: "eFinanceira · Tipo de relação" },
           efin_cambio:  { tipo: "select", padrao: "Sim",   opcoes: EFIN_CAMBIO,  rotulo: "eFinanceira · Exibir câmbio" },
           efin_extrato: { tipo: "select", padrao: "Contas e movimentações", opcoes: EFIN_EXTRATO, rotulo: "eFinanceira · Tipo de extrato" },
+          /* 1.9.0 (Rodrigo, 23/10): "Recuperar NI – CNPJ" pelo CPF de cada executado pessoa
+             física. Só no grupo CPF, abaixo do eFinanceira, com o texto AO LADO da caixa
+             (rotuloAoLado), na redação do Rodrigo. Guardado em config.infojud.cpf. */
+          recuperarEmpresas: { tipo: "toggle", padrao: { ativo: true }, rotuloAoLado: true,
+            rotulo: "Recuperar NI - Expedir certidão consolidada das empresas em que o executado (pessoa física) é o responsável" },
         },
       },
       cnpj: {

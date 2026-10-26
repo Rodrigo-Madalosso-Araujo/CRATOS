@@ -18,7 +18,158 @@ método que travou todo bug real desta lista.
 
 ## Situação
 
-### As que RODAM hoje (19/10/2026 — 1.6.5 = 1.6.4 + entrada do CCS): 37 suítes, 855 asserções
+### As que RODAM hoje (26/10/2026 — 1.9.1: CCS + teste da atualização automática): 43 suítes, 1147 asserções
+
+>>> 1.9.1 (26/10): `teste-ccs-entrada.js` 20 → 23 (a tabela abaixo dizia 19, defasada): a tela desconhecida vem
+    identificada pela estrutura (caminho, título, cabeçalho, tamanho), sem números; a página praticamente vazia
+    dá "o CCS não está gerando a resposta agora", sem navegar, sem contar como branco e sem certidão. A 1.9.0 reprova 3.
+
+### Antes (26/10/2026 — 1.9.0 final, assinada: PREVJUD refazendo + relatório e aviso do SerasaJUD): 43 suítes, 1143 asserções
+
+>>> 1.9.0 (26/10): `teste-endurecimento.js` 20 → 22: hora dos "últimos passos" do relatório de problema no horário
+    LOCAL (era UTC) e aviso do SerasaJUD nas Preferências descrevendo a janela de valor/data (desde a 1.5.4).
+
+>>> 1.9.0 (ao vivo, 26/10): `teste-prevjud.js` 91 → 95. O simulador ganhou o protocolo EM USO com
+    "ERROR_AO_RECEBER_PEDIDO_PDPJ" que só depois de N APLICAR vira o pedido refeito (op.erroNoAtivo): não certifica na
+    hora, faz a espera curta de 5 s (até 3) e junta; se nunca refizer, certidão "em processamento" e registro em aberto.
+    O pacote 1.9.0 anterior reprova 3.
+
+### Antes (23/10/2026, tarde — 1.9.0 corrigida após o 1º teste ao vivo do Recuperar NI): 43 suítes, 1137 asserções
+
+>>> 1.9.0 (teste ao vivo, 23/10 tarde): `teste-infojud-empresas.js` 34 → 51. As páginas agora imitam o comportamento
+    real: o POST responde 302 → erro.asp?erro=<frase>, com a td.erro VAZIA (a frase é escrita por script); uma empresa
+    só = detalhe direto (com e sem redirecionamento). Cobre também: motivo da falha no console sem CPF; cortina e resumo
+    com iniciais; temPedidos; modo só Recuperar NI (sem abrir Registrar Solicitação, pulso ok, aba fechada,
+    infojud_registro com zero); menu, vigia, fundo (ecac_aba / ecac_sou_registro) e painel (sem caixa postal sem pedido).
+    O pacote 1.9.0 anterior reprova 23. `teste-infojud-entrada-colheita.js` 49 → 50 (o vigia não age em aba que não é a
+    do registro; o harness responde ecac_sou_registro).
+
+### Antes (23/10/2026, manhã — 1.9.0 com o INFOJUD "Recuperar NI – CNPJ"): 43 suítes, 1119 asserções
+
+>>> 1.9.0 (INFOJUD empresas, 23/10): nova `teste-infojud-empresas.js` (34), páginas fictícias no formato do
+    HAR. Trava: só o CPF Responsável vai preenchido (com máscara), com a sessão da página; "Nenhum registro
+    encontrado." = nenhuma; "mais de 50 registros" = refaz pelas 27 UFs (UF ainda acima de 50 e UF que falhou
+    duas vezes ficam registradas); detalhe de cada empresa (endereço; detalhe de outra empresa é recusado);
+    ⛔ página fora do padrão/login = FALHA, nunca negativa; acentos windows-1252; certidão consolidada sem
+    conclusão; gancho uma vez por execução, antes da 1ª solicitação, com interruptor; falhou para todos =
+    nenhuma certidão e as solicitações seguem; Preferências (render real): no quadro CPF, abaixo do eFinanceira,
+    texto ao lado da caixa, salvo em config.infojud.cpf. Reprova a 1.8.7.
+
+### Antes do INFOJUD empresas (22/10/2026 — 1.9.0 com o endurecimento de segurança): 42 suítes, 1085 asserções
+
+>>> 1.9.0 (endurecimento, 22/10): nova `teste-endurecimento.js` (20): dados do processo apagados ao fechar a
+    aba (só dele; outra aba segura; estado ativo fica; Preferências ficam) e ao abrir o Firefox; aviso e
+    confirmação ao fechar com arquivo não juntado; manifest só https://; nome/CPF nunca crus no console;
+    "Ver novidades das versões" nas Preferências; "Sobre" verdadeiro; testes sem o id real do SNIPER.
+    `teste-prevjud.js` 87 → 91 (escuta: canal interno, evento FORJADO ignorado, Dossiê Médico de fora, sem
+    tarefa desliga); `teste-disponibilidade.js` 29 → 31 (certidão só de medição do fundo; família própria na
+    juntada). Ajustados para https:// e para o canal novo: ccs-requisicao, sniper, novidades, prevjud.
+
+### Antes do endurecimento (1.9.0 = 1.8.7 + novidades, indisponibilidade, atualização automática): 41 suítes, 1059 asserções
+
+>>> 1.9.0: duas suítes novas, sobre `harness-painel.js` (painel REAL num jsdom, como o encadeamento):
+    - `teste-novidades.js` (18): atualização mostra uma vez; instalação nova e recarga não; "Entendi" não
+      volta; Preferência desliga; quem pula versões vê as que pulou; histórico; texto escapado; sem rede.
+    - `teste-disponibilidade.js` (29): só 502/503/504/sem conexão/sem resposta contam; 500/401/403/404/
+      redirecionamento = respondeu; PJe como controle (fora = não certifica); sem cookies/sem seguir
+      redirecionamento; endereços já permitidos; certidão objetiva, sem causa, só de "indisponível";
+      botão só gera no clique de confirmação; na fila, a confirmação encerra o convênio ANTES da certidão.
+    As duas reprovam a 1.8.7. A 1.8.7 (PREVJUD) foi APROVADA ao vivo em 22/10.
+
+### RODARAM na 1.8.7 (22/10/2026 — 1.8.6 + protocolo refeito pelo PREVJUD e coleta sem freio): 39 suítes, 1012 asserções
+
+>>> 1.8.7 (ao vivo, 22/10): o protocolo devolvido no SOLICITAR veio "ERROR_AO_RECEBER_PEDIDO_PDPJ"; o PREVJUD
+    refez com outro protocolo (o ativo) e concluiu em 1 min, mas o CRATOS certificou o erro e anotou o pedido
+    como encerrado — o Coletar recusou ("já juntado"). Harness com o pedido refeito; coleta sem o freio de
+    "já juntado" (Rodrigo). `teste-prevjud.js` 84 → 87, que reprova a 1.8.6.
+
+### RODARAM na 1.8.6 (22/10/2026 — 1.8.5 + espera por todos os documentos e reabertura no 503): 39 suítes, 1009 asserções
+
+>>> 1.8.6 (teste ao vivo de 22/10 — 1ª coleta que juntou!): numa parte faltaram 3 PDFs. O recon do Visualizar
+    mostrou o PREVJUD respondendo 503 a documentos na 1ª abertura e entregando na reabertura. O harness avisa
+    início e fim de cada pedido (nº `k`), tem documento lento e 503 nas N primeiras aberturas.
+    `teste-prevjud.js` 80 → 84, que reprova a 1.8.5.
+
+### RODARAM na 1.8.5 (22/10/2026 — 1.8.4 + repasse permitido e teste na instalação): 39 suítes, 1005 asserções
+
+>>> 1.8.5 (teste ao vivo de 22/10): com a 1.8.4 a tela do PREVJUD parou no login ("Erro ao tentar se
+    conectar ao serviço de login") — a escuta repassava a chamada com o `apply` da PÁGINA recebendo o
+    `arguments` da extensão, que o Firefox barra. O harness ganhou essa barreira (`apply` das funções da
+    página lança "Permission denied"): a 1.8.4 quebra nele como ao vivo. `teste-prevjud.js` 78 → 80: a escuta
+    não quebra as chamadas da página; se falhar no teste da instalação, desfaz tudo e usa o método antigo.
+
+### RODARAM na 1.8.4 (22/10/2026 — 1.8.3 + escuta do lado da extensão): 39 suítes, 1003 asserções
+
+>>> 1.8.4 (teste ao vivo de 22/10): o grampo de página não entrava (`window.__cratosPrevjudGrampo`
+    undefined). Escuta passa a ser do lado da extensão (wrappedJSObject + exportFunction, em
+    document_start), com endereço relativo completado antes de comparar; grampo de página só como reserva,
+    nunca os dois. `teste-prevjud.js` 72 → 78, que reprova a 1.8.3.
+
+### RODARAM na 1.8.3 (21/10/2026 — 1.8.2 + formato real da lista do PREVJUD): 39 suítes, 997 asserções
+
+>>> 1.8.3 (recon de 21/10, 16h38): na lista, o protocolo em uso vem em `protocoloDossieAtivo`, e "pronto"
+    (CONCLUÍDO na tela) é `dataEntregaResposta` preenchida; `protocolos[]` traz OUTROS protocolos do pedido.
+    O harness passou a emitir a lista nesse formato (situação do ativo que não muda; outro protocolo com
+    situação de "falha"). `teste-prevjud.js` segue com 72 (uma reforçada); a 1.8.2 reprova 25 — o "não
+    localizou" do teste ao vivo.
+
+### RODARAM na 1.8.2 (21/10/2026 — 1.8.1 + lista da abertura e APLICAR): 39 suítes, 997 asserções
+
+>>> 1.8.2 (2º teste ao vivo do PREVJUD): a coleta "não conseguiu ler a lista" — a tela busca a lista ao
+    abrir, antes do grampo (document_idle), e as linhas NÃO têm botão de atualizar (só Visualizar e
+    download; quem refaz a busca é o APLICAR do filtro). Fixture passa a ter a tela real. `teste-prevjud.js`
+    66 → 72, que reprova a 1.8.1 (23 falhas): grampo em document_start com memória reenviada uma vez;
+    ⛔ coleta lê a lista da abertura sem clicar; atualiza pelo APLICAR, ⛔ nunca pelo download; data
+    ISO/UTC; empate de data → ordem da lista.
+
+### RODARAM na 1.8.1 (21/10/2026 — 1.8.0 + ajustes do 1º teste ao vivo do PREVJUD): 39 suítes, 991 asserções
+
+>>> 1.8.1: o PREVJUD demorou mais que a espera para devolver o protocolo (ao vivo, 21/10). `teste-prevjud.js`
+    54 → 66, que reprova a 1.8.0: resposta ligada ao CPF pelo pedido (⛔ resposta atrasada do 1º CPF não trava
+    nem vai para o 2º); protocolo achado pela LISTA de pedidos (só pedido feito a partir do clique); Coletar
+    sem pedido anotado procura pelo processo (por CPF, o mais recente já pronto dos últimos 7 dias; ⛔ mais
+    velho que 7 dias não junta; já juntado não junta de novo).
+
+### RODARAM na 1.8.0 (21/10/2026 — 1.7.3 + módulo PREVJUD): 39 suítes, 979 asserções
+
+>>> 1.8.0: módulo PREVJUD (Dossiê Previdenciário, CNJ/INSS). Nova `teste-prevjud.js` (54), sobre
+    `fixture-prevjud.js` (tela e respostas fictícias no desenho do recon de 21/10), que reprova a 1.7.3.
+    Trava: só PF com CPF; interruptor por documento; um SOLICITAR por CPF com conferência do enviado;
+    abre o dossiê pelo PROTOCOLO (não o pedido antigo do mesmo CPF); PDFs oficiais como vieram;
+    certidão por documento (obtido / sem resposta positiva com a mensagem do INSS, sem CPF / não
+    disponibilizado / não solicitado); ⛔ falha técnica nunca vira negativa; pendente → "em
+    processamento" + registro para o "Coletar PREVJUD"; ⛔ aba recarregada no meio não repete pedido;
+    ⛔ Dossiê Médico e Penhora recusados.
+
+### RODARAM na 1.7.3 (21/10/2026 — 1.7.2 + processos das partes no relatório): 38 suítes, 925 asserções
+
+>>> 1.7.3: aba "Processos" do "Mais detalhes" (GET /v2/investigacao/{idParte}/processos/) → no relatório,
+    por parte: número, tribunal, último nível da classe, assunto, último movimento (fiel). Lista inteira
+    na resposta OU paginação no servidor (avança "próxima página", teto 20). `teste-sniper.js` 63 → 70,
+    que reprova a 1.7.2.
+
+### RODARAM na 1.7.2 (21/10/2026 — 1.7.1 + cortina, digitar primeiro, fechar a aba): 38 suítes, 918 asserções
+
+>>> 1.7.2 (2º teste ao vivo do SNIPER): a digitação do nº pegou → vira a 1ª tentativa; cortina de
+    "aguarde" (CratosOverlay, como no INFOJUD) enquanto o CRATOS trabalha; a aba do SNIPER fecha
+    sozinha depois dos dois PDFs — só no sucesso. `teste-sniper.js` 58 → 63, que reprova a 1.7.1.
+
+### RODARAM na 1.7.1 (21/10/2026 — 1.7.0 + ajustes do 1º teste do SNIPER): 38 suítes, 913 asserções
+
+>>> 1.7.1: campo do processo do SNIPER (colar → redigitar → só dígitos, conferindo a resposta das
+    partes) e cadastro da Receita de cada parte ("Mais detalhes") no começo do relatório.
+    `teste-sniper.js` 49 → 58 (harness com campo que só aceita colar / só digitação / nunca),
+    que reprova a 1.7.0 com 10 falhas.
+
+### RODARAM na 1.7.0 (21/10/2026 — 1.6.5 + módulo SNIPER): 38 suítes, 904 asserções
+
+>>> 1.7.0: módulo SNIPER (investigação patrimonial do CNJ). Nova `teste-sniper.js` (49), sobre
+    `fixture-sniper.js` (tela e respostas fictícias no desenho do recon de 21/10), que reprova a 1.6.5.
+    Trava: um clique só em "Iniciar investigação"; clicarSeguro recusa bloqueio/restrição/cadeado/martelo;
+    relatório sem o ID para bloqueio; certidão separa resultado / nenhum / ERRO DA FONTE / EM ANDAMENTO /
+    sem resposta; o grampo nunca repassa o token; trava de processo; aba recarregada não reinicia.
+
+### RODARAM na 1.6.5 (19–21/10/2026 — 1.6.4 + entrada do CCS + Firefox ≥140): 37 suítes, 855 asserções
 
 >>> 1.6.5: o CCS ficou EM BRANCO depois do login (campo, 19/10) — o CRATOS abria uma página
     interna e a volta do ADFS caía nela sem sessão. Agora abre pela ENTRADA (iniciar.do) e,
@@ -140,7 +291,12 @@ método que travou todo bug real desta lista.
 |---|---|---|
 | `teste-baixa-nada-a-cancelar.js` | 35 | rápida |
 | `teste-ccs-coleta.js` | 58 | rápida |
-| `teste-ccs-entrada.js` | 19 | rápida |
+| `teste-ccs-entrada.js` | 23 | rápida |
+| `teste-sniper.js` | 70 | rápida |
+| `teste-prevjud.js` | 95 | rápida |
+| `teste-novidades.js` | 18 | rápida |
+| `teste-disponibilidade.js` | 31 | rápida |
+| `teste-endurecimento.js` | 22 | rápida |
 | `teste-ccs-marcacao.js` | 19 | rápida |
 | `teste-ccs-requisicao.js` | 42 | rápida |
 | `teste-censec-partes.js` | 15 | rápida |
@@ -151,8 +307,9 @@ método que travou todo bug real desta lista.
 | `teste-infojud-efin-botao.js` | 8 | rápida |
 | `teste-infojud-efin-pendente.js` | 21 | rápida |
 | `teste-infojud-efin-zip.js` | 7 | rápida |
+| `teste-infojud-empresas.js` | 51 | rápida |
 | `teste-infojud-efinanceira.js` | 14 | rápida |
-| `teste-infojud-entrada-colheita.js` | 49 | rápida |
+| `teste-infojud-entrada-colheita.js` | 50 | rápida |
 | `teste-infojud-lotes.js` | 31 | rápida |
 | `teste-infojud-overlay.js` | 12 | rápida |
 | `teste-infojud-pulso.js` | 10 | rápida |

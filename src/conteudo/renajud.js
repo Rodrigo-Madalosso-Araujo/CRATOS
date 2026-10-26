@@ -870,22 +870,22 @@
     await clicar("button", "Limpar"); await sleep(600);
     await preencher('input[id="documentoIdentificacao"]', exec.cpfcnpj); await sleep(400);
     await clicar("button", "Pesquisar");
-    console.log("CRATOS/RENAJUD: pesquisado", exec.nome, "(" + exec.cpfcnpj + ") — " +
+    console.log("CRATOS/RENAJUD: pesquisado", CratosMascara.nome(exec.nome), "(" + CratosMascara.doc(exec.cpfcnpj) + ") — " +
       (idx + 1) + "/" + execs.length + ".");
 
     const res = await esperarResultadoBusca();
     if (res === "vazio") {
-      console.log("CRATOS/RENAJUD: sem veículo para " + exec.nome + " — gerando certidão negativa e seguindo.");
+      console.log("CRATOS/RENAJUD: sem veículo para " + CratosMascara.nome(exec.nome) + " — gerando certidão negativa e seguindo.");
       fabricarCertidaoNegativa(est, exec);
       await buscarExecutadoComVeiculo(est, idx + 1);
     } else if (res === "achou") {
       est.execComVeiculo = exec;
       _idxAtual = idx;   // reserva: se o documento do proprietário não casar, o avanço parte daqui
       try { await Store.set("renajud_exec_veiculo", exec.nome || ""); } catch (e) {}
-      console.log("CRATOS/RENAJUD: veículos de " + exec.nome +
+      console.log("CRATOS/RENAJUD: veículos de " + CratosMascara.nome(exec.nome) +
         " listados. Selecione e vá a 'incluir restrição'.");
     } else {
-      console.warn("CRATOS/RENAJUD: resposta indefinida da busca (timeout) para " + exec.nome + ".");
+      console.warn("CRATOS/RENAJUD: resposta indefinida da busca (timeout) para " + CratosMascara.nome(exec.nome) + ".");
     }
   }
 

@@ -658,7 +658,7 @@ async function incluirPedidosDaFila(lista) {
  * e magistrado vêm da config (texto livre — cada tribunal cola sua string).
  */
 async function preencherCabecalho(pedidoParte, cfg) {
-  console.log("CRATOS/INFOJUD: preenchendo cabeçalho para", pedidoParte.nomeAbrev);
+  console.log("CRATOS/INFOJUD: preenchendo cabeçalho para", CratosMascara.nome(pedidoParte.nomeAbrev));
   await sleep(800);
 
   const inputProcesso = document.querySelector('input[name="processo"]');
@@ -723,6 +723,11 @@ function extrairNomeEcac() {
  * Ao terminar o registro de cada parte, clica Enviar e trata a página de confirmação.
  */
 
+/* Esta aba é a que o CRATOS abriu para o registro? (o fundo guarda o id da aba). */
+async function souAbaDoRegistro() {
+  try { const r = await browser.runtime.sendMessage({ tipo: "ecac_sou_registro" }); return !!(r && r.sim); } catch (e) { return false; }
+}
+
 async function iniciarRegistroEcac() {
   const url = window.location.href;
 
@@ -741,7 +746,7 @@ async function iniciarRegistroEcac() {
     const f = respConf && respConf.fila;
     if (f && f.partes && f.idx < f.partes.length) {
       const prox = f.partes[f.idx];
-      console.log(`CRATOS/INFOJUD: confirmação recebida — próxima parte [${f.idx + 1}/${f.partes.length}] ${prox?.nomeAbrev || ""} (${prox?.tipo || "?"}). Abrindo nova solicitação...`);
+      console.log(`CRATOS/INFOJUD: confirmação recebida — próxima parte [${f.idx + 1}/${f.partes.length}] ${CratosMascara.nome(prox?.nomeAbrev)} (${prox?.tipo || "?"}). Abrindo nova solicitação...`);
       window.location.href = INFOJUD_REG_BASE;   // GET fresco, independe do "Voltar"
     } else if (f && f.partes && f.idx >= f.partes.length) {
       console.log("CRATOS/INFOJUD: confirmação recebida — todas as partes registradas. Fim do registro.");
@@ -766,6 +771,15 @@ async function iniciarRegistroEcac() {
       try { fila = await Store.get("ecac_fila"); } catch (e) {}
       if (!fila || !fila.partes || fila.idx >= fila.partes.length) return;  // não é nosso
       if (window.__cratosEntrouMenu) return;
+      if (!(await souAbaDoRegistro())) return;   // 1.9.0: menu aberto à mão com fila pendurada não é nosso
+      /* 1.9.0 — SÓ RECUPERAR NI (Rodrigo, 23/10): nenhum executado com pedido marcado.
+         Não abre "Registrar Solicitação": pesquisa daqui mesmo e encerra. */
+      if (!(fila.partes || []).some((p) => temPedidos(p, fila.config))) {
+        window.__cratosEntrouMenu = true;
+        console.log("CRATOS/INFOJUD: nenhum pedido marcado — só Recuperar NI, a partir do menu (sem abrir 'Registrar Solicitação').");
+        await soRecuperarNi(fila);
+        return;
+      }
       /* Reusa o `aguardarElemento` que já existe aqui — com um seletor amplo e
          filtro por texto, porque o link não tem id nem classe própria. */
       const achar = () => Array.from(document.querySelectorAll("a")).find((a) =>
@@ -823,6 +837,10 @@ async function iniciarRegistroEcac() {
         let fila = null;
         try { fila = await Store.get("ecac_fila"); } catch (e) {}
         if (!fila || !fila.partes || fila.idx >= fila.partes.length) return;
+        /* 1.9.0 — o vigia só age na aba que o CRATOS ABRIU para o registro. Antes, a aba
+           da caixa postal (que abre em /ecac/) ou uma visita sua ao e-CAC com fila
+           pendurada podiam levar a reclamação — e até a navegação sozinha. */
+        if (!(await souAbaDoRegistro())) return;
         const nascimento = Date.parse(fila.criadoEm || "") || 0;
 
         /* ═══ ENTRAR SOZINHO DEPOIS DO LOGIN (pedido do Rodrigo, 02/09) ═══
@@ -863,6 +881,9 @@ async function iniciarRegistroEcac() {
         try { prog = await Store.get("ecac_progresso"); } catch (e) {}
         if (prog && prog.em >= nascimento) return;   // o frame chegou: nada a reclamar
         if (location.href.includes("solicitacao.asp")) return;
+        let filaAgora = null;
+        try { filaAgora = await Store.get("ecac_fila"); } catch (e) {}
+        if (!filaAgora || !filaAgora.partes || filaAgora.idx >= filaAgora.partes.length) return;   // já terminou
         window.__cratosAvisouEcac = true;
         CratosFaixa.parar("infojud",
           "o eCAC não abriu a tela de solicitação do INFOJUD — caí em " +
@@ -898,14 +919,22 @@ async function iniciarRegistroEcac() {
     return;
   }
 
+  /* 1.9.0 (Rodrigo, 23/10): ANTES do primeiro lançamento, as empresas em que cada
+     executado pessoa física é o responsável ("Recuperar NI – CNPJ"), com certidão
+     consolidada. Uma vez por execução (marca na fila); interruptor nas Preferências. */
+  if (fila.idx === 0 && !fila.empresas && typeof CratosEmpresasInfojud !== "undefined" &&
+      !(fila.config && fila.config.cpf && fila.config.cpf.recuperarEmpresas && fila.config.cpf.recuperarEmpresas.ativo === false)) {
+    await recuperarEmpresasDosExecutados(fila);
+  }
+
   const parte = fila.partes[fila.idx];
   const total = fila.partes.length;
-  console.log(`CRATOS/INFOJUD: registrando [${fila.idx + 1}/${total}] ${parte.nomeAbrev} (${parte.ni})`);
+  console.log(`CRATOS/INFOJUD: registrando [${fila.idx + 1}/${total}] ${CratosMascara.nome(parte.nomeAbrev)} (${CratosMascara.doc(parte.ni)})`);
 
   // Valida NI antes de enviar (fiel ao original).
   const niLen = (parte.ni || "").replace(/\D/g, "").length;
   if ((parte.tipo === "CPF" && niLen !== 11) || (parte.tipo === "CNPJ" && niLen !== 14)) {
-    console.warn("CRATOS/INFOJUD: NI inválido, pulando:", parte.ni);
+    console.warn("CRATOS/INFOJUD: NI inválido, pulando:", CratosMascara.doc(parte.ni));
     await avancarParte(fila);
     window.location.href = INFOJUD_REG_BASE;   // GET fresco → próxima parte
     return;
@@ -951,7 +980,7 @@ async function iniciarRegistroEcac() {
     //  window.alert". Não era: aquele override nunca funcionou — ver o bloco do
     //  grampo lá em cima. A guarda continua necessária pelo motivo acima.)
     if (lista.length === 0) {
-      console.warn(`CRATOS/INFOJUD: parte ${parte.nomeAbrev} (${parte.tipo}) sem tipos ativos na config — pulando sem Enviar. Configure o grupo ${parte.tipo} nas Preferências se quiser consultá-la.`);
+      console.warn(`CRATOS/INFOJUD: parte ${CratosMascara.nome(parte.nomeAbrev)} (${parte.tipo}) sem tipos ativos na config — pulando sem Enviar. Configure o grupo ${parte.tipo} nas Preferências se quiser consultá-la.`);
       await avancarParte(fila);          // idx++ sem registrar (não entra em "registradas")
       await sleep(300);
       window.location.href = INFOJUD_REG_BASE;   // GET fresco → próxima parte
@@ -1002,7 +1031,7 @@ async function iniciarRegistroEcac() {
     // Captura nome oficial do eCAC (só no primeiro lote; depois já está salvo).
     if (offset === 0) {
       const nomeEcac = extrairNomeEcac();
-      if (nomeEcac) { parte.nomeEcac = nomeEcac; console.log("CRATOS/INFOJUD: nome eCAC:", nomeEcac); }
+      if (nomeEcac) { parte.nomeEcac = nomeEcac; console.log("CRATOS/INFOJUD: nome eCAC:", CratosMascara.nome(nomeEcac)); }
     }
 
     if (temMaisLotes) {
@@ -1025,6 +1054,93 @@ async function iniciarRegistroEcac() {
     await sleep(1000);
     await iniciarRegistroEcac();
   }
+}
+
+/* "Recuperar NI – CNPJ" dos executados PF (conteudo/infojud-empresas.js) → certidão
+   consolidada. Regra de ferro: executado cuja consulta falhou NÃO ganha negativa (a
+   certidão registra que não foi concluída); falhando todos, não sai certidão. Não
+   trava as solicitações: elas seguem em qualquer caso.
+   1.9.0 (teste ao vivo, 23/10, pedidos do Rodrigo): CORTINA na tela enquanto pesquisa e
+   gera a certidão (como na coleta das respostas) e RESUMO na faixa ao terminar, só com
+   iniciais ("F.S.: 3 empresas; B.P.: nenhuma"). `opts.soRecuperar`: não há solicitação
+   depois (modo só Recuperar NI, a partir do menu) — a faixa não diz "seguem". */
+function resumoEmpresas(res) {
+  if (!res || !res.resultados) return "";
+  const masc = (n) => (typeof CratosMascara !== "undefined" ? CratosMascara.nome(n) : "executado");
+  return res.resultados.map((r) => masc(r.nome) + ": " + (
+    r.situacao === "empresas" ? (r.empresas.length ? r.empresas.length + (r.empresas.length === 1 ? " empresa" : " empresas") : "mais de 50 por UF")
+      : r.situacao === "nenhuma" ? "nenhuma" : "não concluída")).join("; ");
+}
+
+async function recuperarEmpresasDosExecutados(fila, opts) {
+  const so = !!(opts && opts.soRecuperar);
+  const marcar = async (v) => {
+    fila.empresas = v;
+    try { await Store.set("ecac_fila", Object.assign({}, fila, { empresas: v })); } catch (e) { /* nada */ }
+  };
+  const pf = (fila.partes || []).filter((p) => p && p.tipo === "CPF" && String(p.ni || "").replace(/\D/g, "").length === 11);
+  await marcar("em_andamento");     // recarga no meio não repete (não duplica certidão)
+  if (!pf.length) { await marcar("feito"); return { feito: false, certidao: false }; }
+  const cortina = (t) => { try { if (typeof CratosOverlay !== "undefined") CratosOverlay.mostrar("Recuperar NI: " + t); } catch (e) { /* nada */ } };
+  const aviso = (t) => {
+    try { CratosFaixa.mostrar("infojud", "Empresas dos executados: " + t, "#facc15"); } catch (e) { /* nada */ }
+    cortina(t);   // cada etapa renova o prazo de segurança da cortina (3 min)
+  };
+  aviso("pesquisando as empresas dos executados…");
+  let res = null, certidao = false;
+  try {
+    try { res = await CratosEmpresasInfojud.recuperar(fila.partes, aviso); } catch (e) { res = null; }
+    const validos = res ? res.resultados.filter((r) => r.situacao !== "falha") : [];
+    if (res && validos.length) {
+      cortina("gerando a certidão…");
+      const num = String((pf[0] && pf[0].processo) || "");
+      const pasta = String((fila.config && fila.config.pastaDownload) || "CRATOS").replace(/[\\:*?"<>|]/g, "").trim() || "CRATOS";
+      await browser.runtime.sendMessage({
+        tipo: "fabricar_pdf", convenio: "INFOJUD", numProcesso: num, operacao: "consulta", detalhe: "empresas",
+        titulo: "CERTIDÃO — INFOJUD: EMPRESAS EM QUE O EXECUTADO É RESPONSÁVEL",
+        linhas: CratosEmpresasInfojud.linhasCertidao(res, { numProcesso: num }),
+        filename: `${pasta}/${num.replace(/\D/g, "")}_INFOJUD empresas vinculadas certidao.pdf`,
+      }).catch(() => {});
+      certidao = true;
+    }
+  } finally {
+    try { if (typeof CratosOverlay !== "undefined") CratosOverlay.esconder(); } catch (e) { /* nada */ }
+  }
+  const falhas = res ? res.resultados.filter((r) => r.situacao === "falha").length : pf.length;
+  const resumo = resumoEmpresas(res);
+  const cauda = so ? "" : " As solicitações seguem.";
+  let texto;
+  if (!certidao) texto = `a consulta não pôde ser concluída para ${falhas} executado(s); nenhuma certidão foi gerada.` + cauda;
+  else if (falhas) texto = `certidão gerada — ${resumo}. A consulta não pôde ser concluída para ${falhas} executado(s) (a certidão registra isso).` + cauda;
+  else texto = `certidão gerada — ${resumo}.` + cauda;
+  try { CratosFaixa.mostrar("infojud", "Empresas dos executados: " + texto, "#facc15"); } catch (e) { /* nada */ }
+  await marcar("feito");
+  return { feito: true, certidao, falhas, resumo };
+}
+
+/* A parte tem algum pedido marcado nas Preferências? Espelha EXATAMENTE as checagens de
+   gerarListaPedidos (o que não está salvo conta como desligado, como lá). */
+const TIPOS_CPF  = ["dirpf", "doi", "ditr", "dimob", "decred", "infocad", "efin"];
+const TIPOS_CNPJ = ["dipj", "ecf", "cpmf", "doi", "ditr", "dimob", "decred", "infocad", "efin"];
+function temPedidos(parte, cfgCompleto) {
+  const ehCPF = parte && parte.tipo === "CPF";
+  const cfg = (ehCPF ? cfgCompleto && cfgCompleto.cpf : cfgCompleto && cfgCompleto.cnpj) || {};
+  return (ehCPF ? TIPOS_CPF : TIPOS_CNPJ).some((k) => cfg[k] && cfg[k].ativo);
+}
+function recuperarNiLigado(cfgCompleto) {
+  return !(cfgCompleto && cfgCompleto.cpf && cfgCompleto.cpf.recuperarEmpresas && cfgCompleto.cpf.recuperarEmpresas.ativo === false);
+}
+
+/* MODO SÓ RECUPERAR NI (Rodrigo, 23/10): nenhum executado tem pedido marcado — não há
+   o que registrar nem resposta a buscar na caixa postal. Roda a partir do MENU do
+   serviço, sem abrir "Registrar Solicitação", e encerra o INFOJUD ali. */
+async function soRecuperarNi(fila) {
+  try { await Store.set("ecac_progresso", { em: Date.now(), onde: "menu_so_recuperar" }); } catch (e) {}
+  if (!fila.empresas && recuperarNiLigado(fila.config) && typeof CratosEmpresasInfojud !== "undefined") {
+    await recuperarEmpresasDosExecutados(fila, { soRecuperar: true });
+  }
+  try { await Store.set("ecac_fila", Object.assign({}, fila, { idx: (fila.partes || []).length })); } catch (e) {}
+  await finalizarRegistro({ soRecuperar: true });
 }
 
 async function avancarParte(fila, parteRegistrada) {
@@ -1057,7 +1173,7 @@ async function avancarParte(fila, parteRegistrada) {
  * evidência não é. Havendo qualquer anomalia anotada, a aba fica aberta com a
  * lista do que houve, e quem fecha é o usuário.
  */
-async function finalizarRegistro() {
+async function finalizarRegistro(opts) {
   await sleep(1800);
 
   /* Número do processo para o pulso — lido da fila ANTES de ela ser limpa. O
@@ -1065,11 +1181,20 @@ async function finalizarRegistro() {
      então o pulso de conclusão NÃO nasce no background como nos outros; nasce
      aqui, quando a última solicitação foi registrada. Sem ele, o painel fica no
      botão manual — foi o que o Rodrigo viu: registrou e não avançou sozinho. */
-  let numProcesso = "";
+  let numProcesso = "", registradas = 0;
   try {
     const fila = await Store.get("ecac_fila");
     numProcesso = (fila && fila.partes && fila.partes[0] && fila.partes[0].processo) || "";
+    registradas = ((fila && fila.registradas) || []).length;
   } catch (e) {}
+  /* 1.9.0 (Rodrigo, 23/10): quantas solicitações foram REGISTRADAS nesta execução. Com
+     zero (só Recuperar NI, ou nenhum tipo marcado), não há resposta a buscar na caixa
+     postal — o painel lê isto e não abre a colheita. Chave com o nº do processo: sai
+     junto na limpeza ao fechar a aba. */
+  const digProc = String(numProcesso).replace(/\D/g, "");
+  if (digProc.length === 20) {
+    try { await Store.set("infojud_registro:" + digProc, { registradas, em: Date.now(), soRecuperar: !!(opts && opts.soRecuperar) }); } catch (e) {}
+  }
   const emitir = (ok, motivo) => {
     if (!numProcesso) return;
     return Store.set("orq_conv_feito", {
@@ -1097,7 +1222,8 @@ async function finalizarRegistro() {
 
   /* Registro limpo: o painel avança sozinho. A colheita das respostas continua
      sendo um passo à parte, no fim da fila — isto marca só que o REGISTRO acabou. */
-  await emitir(true, "solicitações registradas");
+  await emitir(true, registradas ? "solicitações registradas"
+    : (opts && opts.soRecuperar ? "só Recuperar NI — nenhuma solicitação a registrar" : "nenhuma solicitação registrada (nenhum tipo marcado)"));
   console.log("CRATOS/INFOJUD: solicitando fechamento da aba de registro.");
   try {
     await browser.runtime.sendMessage({ tipo: "ecac_fechar_aba" });
@@ -1873,6 +1999,6 @@ if (document.readyState === "loading") {
 
 /* Gancho de teste (mundo isolado: a página não enxerga). Exposto de propósito,
    para o harness exercitar as funções REAIS — cópia testada é teste de si mesma. */
-window.__cratosEcac = { selecionarVara, selecionarOpcaoTexto, fecharAvisoEncerramentoEcac, limiteExcedidoNaTela, finalizarRegistro, gerarListaPedidos, colherEFinanceiraZip, colherDownloadDireto, fabricarCertidaoEfinPendente, colherTodosItens };
+window.__cratosEcac = { selecionarVara, selecionarOpcaoTexto, fecharAvisoEncerramentoEcac, limiteExcedidoNaTela, finalizarRegistro, gerarListaPedidos, colherEFinanceiraZip, colherDownloadDireto, fabricarCertidaoEfinPendente, colherTodosItens, recuperarEmpresasDosExecutados, soRecuperarNi, temPedidos, resumoEmpresas, souAbaDoRegistro };
 
 } // fim de iniciarEcacInfojud

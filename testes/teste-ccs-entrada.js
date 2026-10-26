@@ -159,6 +159,36 @@ const estado = (t) => t.mem["cratos:ccs_estado"] || {};
       "paginaEmBranco: página de frames não é branca");
   }
 
+  /* ── 4b. 1.9.1 (26/10): tela sem código identificada pela estrutura; CCS devolvendo página vazia ─ */
+  {
+    const t = montar({ tela: "<html><body><h2>Sistema temporariamente indisponível</h2>" +
+      "<p>Tente novamente mais tarde. Em caso de dúvida, procure o suporte.</p></body></html>", estado: estadoBase() });
+    await tick();
+    const f = (t.faixas.find((x) => /não reconheci/i.test(x.t)) || {}).t || "";
+    checar(/\[tela: caminho \/ccs\/qualquer\.do · cabeçalho "Sistema temporariamente indisponível" · \d+ caracteres\]/.test(f),
+      "1.9.1: \"não reconheci\" diz QUAL tela foi (caminho, cabeçalho, tamanho) — vai para o relatório de problema");
+  }
+  {
+    const t = montar({ tela: "<html><head><title>CCS</title></head><body><img src='logo.gif'><a href='x.do'>Voltar</a></body></html>",
+      url: "https://www3.bcb.gov.br/ccs/visualizarRequisicaoPdfTxt.do?method=visualizar&numeroRequisicao=" + F.REQ, estado: estadoBase() });
+    await tick();
+    const f = (t.faixas.find((x) => /não está gerando a resposta agora/.test(x.t)) || {}).t || "";
+    checar(/instabilidade do Banco Central/.test(f) && /Tente o Coletar CCS mais tarde/.test(f) &&
+      /\[tela: caminho \/ccs\/visualizarRequisicaoPdfTxt\.do · título "CCS" · \d+ caracteres\]/.test(f) && !/numeroRequisicao/.test(f),
+      "1.9.1: página praticamente vazia (26/10) → \"o CCS não está gerando a resposta agora\", com a tela identificada (sem parâmetros)");
+    checar(!t.nav.length && !t.paradas.length && !estado(t).emBranco && !t.msgs.some((m) => /certid|pulso|orq_conv/i.test(JSON.stringify(m))),
+      "página vazia do CCS: não navega, não conta como branco do login, nenhuma certidão (regra de ferro)");
+  }
+  {
+    const t = montar({ tela: "<html><head><title>Processo 0000001-23.2025.5.18.0008</title></head><body><h3>Requisição de FULANO 123.456.789-09</h3>" +
+      "<p>Texto qualquer de uma tela nova do Banco Central, sem código no canto, com conteúdo suficiente para não ser vazia.</p></body></html>", estado: estadoBase() });
+    await tick();
+    const f = (t.faixas.find((x) => /não reconheci/i.test(x.t)) || {}).t || "";
+    const tela = (f.match(/\[tela: [^\]]*\]/) || [""])[0];
+    checar(tela && !/\d{4}/.test(tela.replace(/\d+ caracteres/, "")) && !/123\.456/.test(tela),
+      "⛔ estrutura da tela sem números de processo, CPF ou CNPJ");
+  }
+
   /* ── 5. coleta: teto quando o CCS devolve sempre a inicial ─────────────── */
   {
     const t = montar({ tela: F.TELA_1201,

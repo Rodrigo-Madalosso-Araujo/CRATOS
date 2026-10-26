@@ -143,3 +143,19 @@ if (typeof globalThis.CratosHTML === "undefined") {
   globalThis.CratosHTML = Object.freeze({ esc, attr: esc, html, confiavel, marcacaoLimitada, definir, HtmlSeguro });
   if (typeof module !== "undefined" && module.exports) module.exports.CratosHTML = globalThis.CratosHTML;
 }
+
+/* ═══ CratosMascara (1.9.0) — nome e documento de parte NUNCA vão crus para o console
+ * do navegador (revisão de segurança de 22/10). Nome vira iniciais ("F.D.T."), documento
+ * vira os 2 últimos dígitos ("…09"): dá para seguir o log sem expor a pessoa. */
+if (typeof globalThis.CratosMascara === "undefined") {
+  globalThis.CratosMascara = {
+    nome(n) {
+      const p = String(n == null ? "" : n).trim().split(/\s+/).filter(Boolean);
+      return p.length ? p.map((x) => x[0].toUpperCase() + ".").join("") : "(sem nome)";
+    },
+    doc(d) {
+      const x = String(d == null ? "" : d).replace(/\D/g, "");
+      return x ? "…" + x.slice(-2) : "(sem documento)";
+    },
+  };
+}

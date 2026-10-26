@@ -1,7 +1,7 @@
 # CRATOS — pasta do projeto
 
 Extensão Firefox (MV2) que unifica a execução de convênios a partir do processo
-no PJe do TRT18. Versão atual: **1.6.5**.
+no PJe do TRT18. Versão atual: **1.9.1**.
 
 ## O que é cada pasta
 
@@ -36,8 +36,8 @@ O que é do Rodrigo, e só dele:
 - dizer o que quebrou.
 
 O que é da sessão:
-- `npx web-ext lint --source-dir=src --self-hosted` — tem de dar **0 erros**
-  (os 22 avisos são conhecidos: 20 de `innerHTML` + 2 de `strict_min_version`);
+- `npx addons-linter --self-hosted src` — tem de dar **0 erros, 0 avisos, 0 notas**
+  (o `--self-hosted` é obrigatório desde a 1.9.0, por causa do `update_url`);
 - `npm i jsdom` e `node testes/teste-*.js`;
 - apontar um teste para versão antiga:
   `CRATOS_SRC=<xpi descompactado> node testes/teste-infojud-postback.js`;

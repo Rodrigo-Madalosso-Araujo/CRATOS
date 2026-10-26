@@ -57,7 +57,13 @@
             const campo = document.createElement("div");
             campo.className = "campo";
             const valor = cfgGrupo[ck] ?? cesp.padrao;
-            CratosHTML.definir(campo, html`<label>${cesp.rotulo || ck}</label>${renderControle(ck, cesp, valor)}`);
+            if (cesp.tipo === "toggle" && cesp.rotuloAoLado) {
+              /* 1.9.0 — opção que é uma frase (Recuperar NI): texto ao lado da caixa,
+                 sem título em cima nem "Consultar". */
+              CratosHTML.definir(campo, renderControle(ck, cesp, valor, { rotuloNoCheckbox: true }));
+            } else {
+              CratosHTML.definir(campo, html`<label>${cesp.rotulo || ck}</label>${renderControle(ck, cesp, valor)}`);
+            }
             sub.appendChild(campo);
           }
           faixa.appendChild(sub);
@@ -133,14 +139,20 @@
       ["Compatibilidade", "Firefox 140 ou superior"],
       ["Desenvolvimento", pessoas.map((p) =>
         html`<div class="pessoa"><span class="iniciais">${p.iniciais}</span><span>${p.texto}</span></div>`)],
-      ["Convênios", "INFOJUD (eCAC), SAB/BacenJud, RENAJUD, CNIB, CENSEC (CEP) e SerasaJUD."],
+      ["Convênios", "INFOJUD (eCAC), SAB/BacenJud, RENAJUD, CNIB, CENSEC (CEP), SerasaJUD, CCS (Bacen), SNIPER e PREVJUD."],
       ["Escopo", html`O CRATOS <b>prepara</b>. Confirmar, assinar e enviar é sempre ato seu — em todos os convênios, sem exceção.`],
       ["Uso", "Exclusivo para servidores do Poder Judiciário, dentro dos sistemas em que você " +
         "já está autenticado. Dados protegidos pela LGPD."],
-      ["Privacidade", "🔒 Tudo acontece no seu navegador. Os dados do processo ficam no " +
-        "armazenamento local do Firefox e são sobrescritos a cada nova operação; nada é enviado " +
-        "para servidor do CRATOS — ele não tem servidor, nem telemetria. As requisições são as " +
-        "mesmas que você faria à mão, nos sistemas oficiais."],
+      ["Privacidade", "🔒 Tudo acontece no seu navegador. Os dados de cada processo ficam no " +
+        "armazenamento local do Firefox SÓ enquanto a aba do processo estiver aberta: ao fechá-la, " +
+        "são apagados, e o que sobrar é apagado quando o Firefox abre. Nada é enviado para servidor " +
+        "do CRATOS — ele não tem servidor, nem telemetria. As requisições são as mesmas que você " +
+        "faria à mão, nos sistemas oficiais."],
+      ["Atualizações", "Automáticas, pelo próprio Firefox: ele consulta, cerca de uma vez por dia, a lista de " +
+        "versões publicada no repositório do CRATOS no GitHub e baixa a versão nova assinada. Nessa consulta " +
+        "não vai nenhum dado de processo."],
+      ["Novidades", typeof CratosNovidades !== "undefined"
+        ? html`<button class="botao-novidades" id="ver-novidades" type="button">Ver novidades das versões</button>` : "—"],
     ];
 
     const dl = linhas.map(([rotulo, valor]) =>
@@ -149,6 +161,26 @@
          <header><img src="../icones/cratos-48.png" alt="">Sobre o CRATOS</header>
          <dl>${dl}  </dl>
        </div>`);
+    const bn = caixa.querySelector("#ver-novidades");
+    if (bn) bn.onclick = abrirNovidades;
+  }
+
+  /* 1.9.0: histórico das novidades numa janela (o mesmo texto do cartão do painel) */
+  function abrirNovidades() {
+    if (document.getElementById("janela-novidades") || typeof CratosNovidades === "undefined") return;
+    const j = document.createElement("div");
+    j.id = "janela-novidades";
+    const blocos = CratosNovidades.VERSOES.map((e) =>
+      html`<h3>${e.versao} — ${e.data}</h3><ul>${e.itens.map((t) => html`<li>${t}</li>`)}</ul>`);
+    CratosHTML.definir(j, html`<div class="caixa" role="dialog" aria-label="Novidades das versões">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <strong>Novidades das versões</strong>
+          <button class="botao-novidades" id="fechar-novidades" type="button">Fechar</button>
+        </div>${blocos}</div>`);
+    document.body.appendChild(j);
+    const fechar = () => j.remove();
+    j.querySelector("#fechar-novidades").onclick = fechar;
+    j.onclick = (ev) => { if (ev.target === j) fechar(); };
   }
 
   function anosOptions(sel) {

@@ -1,3 +1,7 @@
+> **Histórico.** Este guia é da primeira publicação (1.4.2). O repositório já está publicado e é
+> **público** (exigência da atualização automática). A rotina de cada versão nova está em
+> [`distribuicao/LEIA-ME.md`](./distribuicao/LEIA-ME.md).
+
 # Como publicar este repositório no GitHub (privado)
 
 > Esta pasta já está pronta para virar um repositório. Eu **não** faço o `push`
