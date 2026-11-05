@@ -17,6 +17,18 @@
   if (window.__cratosRenajudHook) return;
   window.__cratosRenajudHook = true;
   var ALVO = "/veiculos/restricoes";
+  /* 1.9.2 — listas de REFERÊNCIA que a própria página pede ao abrir o formulário: os órgãos
+     do tribunal escolhido e os magistrados delegantes. Só ESCUTA (GET da página); quem
+     decide guardar é o content script, e só com tarefa do CRATOS em andamento. */
+  var LISTAS = /\/api\/v1\/(orgaos\/[A-Za-z0-9]+|magistrados-delegantes)(\?|$)/;
+  function emitirLista(url, status, corpo) {
+    try {
+      if (Number(status) !== 200) return;
+      document.dispatchEvent(new CustomEvent("cratos:renajud:lista", {
+        detail: JSON.stringify({ url: String(url || ""), corpo: String(corpo || "") }),
+      }));
+    } catch (e) { /* silencioso */ }
+  }
 
   function emitir(metodo, status, corpo) {
     try {
@@ -39,6 +51,10 @@
         p.then(function (r) {
           try { r.clone().text().then(function (t) { emitir(metodo, r.status, t); }); } catch (e) {}
         }).catch(function () {});
+      } else if (metodo === "GET" && LISTAS.test(String(url))) {
+        p.then(function (r) {
+          try { r.clone().text().then(function (t) { emitirLista(url, r.status, t); }); } catch (e) {}
+        }).catch(function () {});
       }
       return p;
     };
@@ -53,6 +69,7 @@
     this.addEventListener("load", function () {
       try {
         if (String(self.__cU || "").indexOf(ALVO) !== -1) emitir(self.__cM, self.status, self.responseText);
+        else if (self.__cM === "GET" && LISTAS.test(String(self.__cU || ""))) emitirLista(self.__cU, self.status, self.responseText);
       } catch (e) {}
     });
     return os.apply(this, arguments);

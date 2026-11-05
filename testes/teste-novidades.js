@@ -59,7 +59,7 @@ if (!fs.existsSync(path.join(SRC, "comum", "novidades.js"))) {
     const bg = fs.readFileSync(path.join(SRC, "background.js"), "utf8");
     checar(man.background.scripts.includes("comum/novidades.js") && pje.js.indexOf("comum/novidades.js") >= 0 &&
       pje.js.indexOf("comum/novidades.js") < pje.js.indexOf("conteudo/painel.js"), "manifest: novidades no fundo e no painel");
-    checar(/onInstalled\.addListener\(async \(detalhes\)[\s\S]{0,400}CratosNovidades\.aoInstalar\(detalhes, browser\.runtime\.getManifest\(\)\.version, Store\)/.test(bg),
+    checar(/onInstalled\.addListener\(async \(detalhes\)[\s\S]{0,900}CratosNovidades\.aoInstalar\(detalhes, browser\.runtime\.getManifest\(\)\.version, Store\)/.test(bg),
       "fundo: o onInstalled marca as novidades");
   }
 
@@ -75,6 +75,17 @@ if (!fs.existsSync(path.join(SRC, "comum", "novidades.js"))) {
   {
     const a = await abrir({});
     checar(!a.d.getElementById("cx-novidades"), "sem atualização marcada: nada de cartão");
+  }
+  {
+    /* 1.9.2 (ao vivo, 26/10): a tela inicial desenhada duas vezes seguidas mostrava o cartão DOBRADO */
+    const a = montarPainel(SRC, { mem: { "cratos:novidades_pendente": { de: "1.9.0", para: "1.9.1" } } });
+    a.P.setProcesso({ numero: NUM, id: 1 });
+    a.P.setPartes([{ nome: "FULANO DE TAL", cpfcnpj: "123.456.789-09", polo: "PASSIVO" }]);
+    a.P.renderModoSelecao();
+    a.P.mostrarNovidades();
+    a.P.mostrarNovidades();
+    await tick(80);
+    checar(a.d.querySelectorAll("#cx-novidades").length === 1, "⛔ AO VIVO 26/10: chamadas seguidas mostram UM cartão de novidades, não dois");
   }
   {
     const a = await abrir({ "cratos:novidades_pendente": { de: "1.8.7", para: "1.9.0" } });

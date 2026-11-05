@@ -12,7 +12,9 @@
  *    painel, organização do CNIB — nada disso tem dado de parte.
  * Estado de trabalho ATIVO (convênio rodando agora noutra aba) não é apagado ao fechar.
  */
-const LIMPEZA_MANTER = ["config", "extensao_ligada", "novidades_pendente", "trt", "orquestra_ordem", "botao_pos", "cnib_organizacao"]
+/* 1.9.2: as listas lidas da tela (varas do e-CAC, órgãos do RENAJUD) são institucionais — ficam. */
+const LIMPEZA_MANTER = ["config", "extensao_ligada", "novidades_pendente", "trt", "orquestra_ordem", "botao_pos", "cnib_organizacao",
+  "infojud_varas", "renajud_listas"]
   .map((k) => "cratos:" + k);
 
 const Limpeza = {

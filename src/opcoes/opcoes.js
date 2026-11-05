@@ -31,6 +31,56 @@
     return;
   }
 
+  /* 1.9.2 — listas lidas das telas (varas do e-CAC, órgãos do RENAJUD) e o botão dos
+     Primeiros passos, no topo. */
+  const listas = {};
+  try { listas.infojud_varas = await Store.get("infojud_varas"); } catch (e) { /* nada */ }
+  try { listas.renajud_listas = await Store.get("renajud_listas"); } catch (e) { /* nada */ }
+  try { listas.trt = await Store.get(CHAVES.trt); } catch (e) { /* nada */ }
+  {
+    const topo = document.createElement("div");
+    topo.className = "campo";
+    topo.id = "cx-topo-primeiros";
+    CratosHTML.definir(topo, html`<button id="cx-primeiros" style="padding:7px 14px;background:#1a1a1a;color:#e8e8e8;border:1px solid #e11d1d;border-radius:7px;cursor:pointer">Abrir os Primeiros passos</button>
+      <span class="nota">configuração guiada do essencial (vara do e-CAC, RENAJUD, pasta, juntada)</span>`);
+    alvo.appendChild(topo);
+    topo.querySelector("#cx-primeiros").onclick = () => browser.runtime.sendMessage({ tipo: "abrir_primeiros" }).catch(() => {});
+  }
+  const dataBR = (ms) => { try { return new Date(Number(ms)).toLocaleDateString("pt-BR"); } catch (e) { return "?"; } };
+  /* Troca as opções de um campo "lista" pela lista lida da tela, quando houver. */
+  let cfgModAtual = null;
+  function listaDinamica(esp) {
+    if (esp.listaDinamica === "infojud_varas") {
+      const l = listas.infojud_varas;
+      if (l && Array.isArray(l.opcoes) && l.opcoes.length) {
+        return { esp: Object.assign({}, esp, { opcoes: l.opcoes }), origem: `Lista lida do seu e-CAC em ${dataBR(l.em)} (${l.opcoes.length} varas).`, lida: true };
+      }
+      return { esp, origem: "Lista padrão (TRT18). Use o botão para ler a lista do seu e-CAC.", lida: false };
+    }
+    if (esp.listaDinamica === "renajud_orgaos") {
+      const r = orgaosDoTribunal(cfgModAtual && cfgModAtual.tribunal);
+      return { esp: Object.assign({}, esp, { opcoes: r.opcoes }), origem: r.origem, lida: r.opcoes.length > 0 };
+    }
+    return null;
+  }
+  /* 1.9.2 — órgãos do RENAJUD do tribunal EFETIVO: o escolhido nas Preferências; no
+     "Automático", o do endereço do PJe que o CRATOS guardou; sem os dois, o da última lista
+     lida. Fonte: a lista lida no uso (se for desse tribunal e mais nova) ou a embutida. */
+  function orgaosDoTribunal(tribunalCfg) {
+    const O = typeof CratosOrgaosRenajud !== "undefined" ? CratosOrgaosRenajud : null;
+    const l = listas.renajud_listas;
+    const lidaId = l && l.tribunal && l.tribunal.id;
+    let id = "";
+    if (tribunalCfg) id = O ? O.idDoNome(tribunalCfg) : "";
+    else id = (O && O.idDoHost(listas.trt)) || lidaId || "";
+    const lidaVale = l && Array.isArray(l.orgaos) && l.orgaos.length && lidaId === id &&
+      (!O || Number(l.emOrgaos) >= Date.parse(O.geradoEm));
+    if (lidaVale) return { id, opcoes: l.orgaos, origem: `Lista lida do RENAJUD em ${dataBR(l.emOrgaos)} (${id}, ${l.orgaos.length} órgãos).` };
+    const emb = O && id ? O.orgaosDe(id) : [];
+    if (emb.length) return { id, opcoes: emb, origem: `Lista do RENAJUD para ${id} (${emb.length} órgãos, coletada em ${O.geradoEm.split("-").reverse().join("/")}). Ela se atualiza sozinha a cada inclusão pelo CRATOS.` };
+    return { id, opcoes: [], origem: "Escolha o tribunal acima, ou abra um processo no PJe uma vez (o CRATOS descobre o tribunal pelo endereço)." };
+  }
+
   for (const mod of modulos) {
     const div = document.createElement("div");
     div.className = "modulo";
@@ -38,7 +88,7 @@
     CratosHTML.definir(div, html`<h2>${mod.rotulo}</h2>`);
     const cfgMod = configSalva[mod.nome] || {};
 
-    for (const [chave, esp] of Object.entries(mod.config || {})) {
+    for (let [chave, esp] of Object.entries(mod.config || {})) {
       if (chave === "_grupos") {
         /* Grupos (INFOJUD: cpf | cnpj) vão LADO A LADO, numa faixa .grupos —
            as duas listas são espelhadas, e empilhadas obrigavam a rolar a tela
@@ -83,6 +133,10 @@
       const campo = document.createElement("div");
       campo.className = "campo";
       const valor = cfgMod[chave] ?? esp.padrao;
+      /* 1.9.2 — lista lida da tela + nota explicativa do campo */
+      cfgModAtual = cfgMod;
+      const din = esp.listaDinamica ? listaDinamica(esp) : null;
+      if (din) esp = din.esp;
       if (esp.tipo === "toggle") {
         /* Toggle solto (SAB, CENSEC): o rótulo é a própria frase da opção — ele
            vira o texto AO LADO do checkbox, sem duplicar num <label> acima. Antes,
@@ -91,6 +145,57 @@
         CratosHTML.definir(campo, renderControle(chave, esp, valor, { rotuloNoCheckbox: true }));
       } else {
         CratosHTML.definir(campo, html`<label>${esp.rotulo || chave}</label>${renderControle(chave, esp, valor)}`);
+      }
+      if (din) {
+        const n = document.createElement("div");
+        n.className = "nota cx-origem-lista";
+        n.dataset.lista = esp.listaDinamica;
+        const salvoFora = valor && din.lida && !_resolverValorLista(valor, esp.opcoes || []);
+        CratosHTML.definir(n, html`${din.origem}${salvoFora ? html` <span style="color:#f87171">A escolha salva ("${valor}") não está nesta lista: escolha de novo.</span>` : ""}`);
+        campo.appendChild(n);
+        if (esp.listaDinamica === "renajud_orgaos") {
+          /* trocar o tribunal troca a lista de órgãos na hora */
+          const selTrib = div.querySelector('select[data-chave="tribunal"]');
+          const selOrg = campo.querySelector('select[data-chave="orgao"]');
+          if (selTrib && selOrg) selTrib.addEventListener("change", () => {
+            const r = orgaosDoTribunal(selTrib.value);
+            const atual = selOrg.value;
+            CratosHTML.definir(selOrg, html`<option value="">\u2014 selecione \u2014</option>${r.opcoes.map((o) =>
+              html`<option value="${o}" ${o === atual ? "selected" : ""}>${o}</option>`)}`);
+            n.textContent = r.origem;
+          });
+          /* "Perguntar de novo na próxima inclusão": limpa órgão e magistrado (quem mudou de lotação) */
+          const b = document.createElement("button");
+          b.id = "cx-renajud-reaprender";
+          b.textContent = "Perguntar de novo na próxima inclusão";
+          b.style.cssText = "margin-top:6px;padding:5px 12px;background:#1a1a1a;color:#e8e8e8;border:1px solid #444;border-radius:6px;cursor:pointer";
+          b.onclick = async () => {
+            try {
+              const cfgT = (await Store.get(CHAVES.config)) || {};
+              cfgT.renajud = Object.assign({}, cfgT.renajud || {}, { orgao: "", magistrado: "" });
+              await Store.set(CHAVES.config, cfgT);
+            } catch (e) { /* nada */ }
+            if (selOrg) selOrg.value = "";
+            const mag = div.querySelector('input[data-chave="magistrado"]');
+            if (mag) mag.value = "";
+            n.textContent = "Na próxima inclusão, o CRATOS pergunta o órgão e o magistrado e guarda.";
+          };
+          campo.appendChild(b);
+        }
+        if (esp.listaDinamica === "infojud_varas") {
+          const b = document.createElement("button");
+          b.id = "cx-ler-varas";
+          b.textContent = "Ler as varas do meu e-CAC";
+          b.style.cssText = "margin-top:6px;padding:5px 12px;background:#1a1a1a;color:#e8e8e8;border:1px solid #444;border-radius:6px;cursor:pointer";
+          b.onclick = () => browser.runtime.sendMessage({ tipo: "infojud_ler_varas" }).catch(() => {});
+          campo.appendChild(b);
+        }
+      }
+      if (esp.nota) {
+        const n = document.createElement("div");
+        n.className = "nota";
+        n.textContent = esp.nota;
+        campo.appendChild(n);
       }
       div.appendChild(campo);
     }
@@ -104,6 +209,25 @@
     <span id="cx-salvo" style="color:#4ade80;font-size:13px"></span>`;
   alvo.appendChild(barra);
   document.getElementById("cx-salvar").onclick = salvar;
+
+  /* 1.9.2 — a lista de varas chega enquanto as Preferências estão abertas (botão "Ler as
+     varas do meu e-CAC"): troca as opções do menu SEM perder o que já foi escolhido aqui. */
+  try {
+    browser.storage.onChanged.addListener((mud) => {
+      const k = mud["cratos:infojud_varas"];
+      if (!k || !k.newValue || !Array.isArray(k.newValue.opcoes)) return;
+      listas.infojud_varas = k.newValue;
+      const sel = document.querySelector('.modulo[data-modulo="infojud"] select[data-chave="vara"]');
+      if (!sel) return;
+      const atual = sel.value;
+      const opts = [html`<option value="">\u2014 selecione \u2014</option>`].concat(k.newValue.opcoes.map((o) =>
+        html`<option value="${o.valor}" ${o.valor === atual ? "selected" : ""}>${o.rotulo}</option>`));
+      CratosHTML.definir(sel, html`${opts}`);
+      const n = document.querySelector('.cx-origem-lista[data-lista="infojud_varas"]');
+      if (n) n.textContent = `Lista lida do seu e-CAC em ${dataBR(k.newValue.em)} (${k.newValue.opcoes.length} varas).` +
+        (atual && !k.newValue.opcoes.some((o) => o.valor === atual) ? " A escolha salva não está nesta lista: escolha de novo." : "");
+    });
+  } catch (e) { /* nada */ }
   renderSobre();
 
   /* ═══ CARTÃO "SOBRE O CRATOS" ═══
@@ -148,9 +272,11 @@
         "são apagados, e o que sobrar é apagado quando o Firefox abre. Nada é enviado para servidor " +
         "do CRATOS — ele não tem servidor, nem telemetria. As requisições são as mesmas que você " +
         "faria à mão, nos sistemas oficiais."],
-      ["Atualizações", "Automáticas, pelo próprio Firefox: ele consulta, cerca de uma vez por dia, a lista de " +
-        "versões publicada no repositório do CRATOS no GitHub e baixa a versão nova assinada. Nessa consulta " +
-        "não vai nenhum dado de processo."],
+      ["Atualizações", html`Automáticas, pelo próprio Firefox: ele consulta, cerca de uma vez por dia, a lista de
+        versões publicada no repositório do CRATOS no GitHub e baixa a versão nova assinada. Nessa consulta
+        não vai nenhum dado de processo. O botão abaixo consulta essa mesma lista na hora.
+        <div style="margin-top:8px"><button class="botao-novidades" id="procurar-atualizacao" type="button">Procurar atualização</button></div>
+        <div id="atualizacao-status" style="margin-top:6px;color:#b0b0b0">Instalar uma versão nova reinicia o CRATOS: use quando não houver convênio rodando.</div>`],
       ["Novidades", typeof CratosNovidades !== "undefined"
         ? html`<button class="botao-novidades" id="ver-novidades" type="button">Ver novidades das versões</button>` : "—"],
     ];
@@ -163,6 +289,33 @@
        </div>`);
     const bn = caixa.querySelector("#ver-novidades");
     if (bn) bn.onclick = abrirNovidades;
+    const bu = caixa.querySelector("#procurar-atualizacao");
+    if (bu) bu.onclick = procurarAtualizacao;
+  }
+
+  /* 1.9.2 (Rodrigo, 26/10): "um botãozinho nas configurações para o usuário checar se tem
+     novas atualizações". O fundo pede ao Firefox a mesma consulta que ele faz sozinho. */
+  async function procurarAtualizacao() {
+    const st = document.getElementById("atualizacao-status");
+    const bu = document.getElementById("procurar-atualizacao");
+    const dizer = (t, cor) => { if (st) { st.textContent = t; st.style.color = cor || "#b0b0b0"; } };
+    if (bu) bu.disabled = true;
+    dizer("Consultando a lista de versões…");
+    let r = null;
+    try { r = await browser.runtime.sendMessage({ tipo: "verificar_atualizacao" }); } catch (e) { r = null; }
+    if (bu) bu.disabled = false;
+    if (!r || !r.ok) return dizer("Não consegui consultar agora. Tente mais tarde.", "#facc15");
+    if (r.status === "no_update") return dizer(`Você está na versão mais recente (${r.atual}).`, "#4ade80");
+    if (r.status === "update_available") {
+      if (!r.link) return dizer(`Versão ${r.versao} disponível. Ela chega sozinha pela atualização automática do Firefox.`, "#4ade80");
+      CratosHTML.definir(st, html`<span style="color:#4ade80">Versão ${r.versao} disponível (você está na ${r.atual}).</span>
+        <button class="botao-novidades" id="instalar-atualizacao" type="button" style="margin-left:8px">Instalar agora</button>
+        <div style="color:#b0b0b0;margin-top:4px">O Firefox pergunta se você quer instalar e atualiza por cima, sem perder as Preferências.</div>`);
+      const bi = document.getElementById("instalar-atualizacao");
+      if (bi) bi.onclick = () => browser.runtime.sendMessage({ tipo: "instalar_atualizacao", link: r.link }).catch(() => {});
+      return;
+    }
+    return dizer("Não consegui consultar agora. Tente mais tarde.", "#facc15");
   }
 
   /* 1.9.0: histórico das novidades numa janela (o mesmo texto do cartão do painel) */
@@ -274,7 +427,7 @@
          se GUARDA é o código ("001"), o que se MOSTRA é o nome. Guardar o nome
          seria guardar algo que a Receita reescreve (duas varas já vêm em CAIXA
          ALTA) e que no `option value` vem com espaços à direita. */
-      const opts = [html`<option value="">\u2014 selecione \u2014</option>`].concat(
+      const opts = [html`<option value="">${esp.rotuloVazio || "\u2014 selecione \u2014"}</option>`].concat(
         (esp.opcoes || []).map((o) => {
           const v = (o && typeof o === "object") ? o.valor : o;
           const r = (o && typeof o === "object") ? o.rotulo : o;

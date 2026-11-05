@@ -472,6 +472,29 @@
     mostrarNovidades();
   }
 
+  /* ═══ 1.9.2 — CONVÊNIO AINDA NÃO CONFIGURADO ═════════════════════════════════
+     INFOJUD sem a vara do e-CAC: o pedido sairia sem vara. Avisa na linha do convênio,
+     com o link para os Primeiros passos (não bloqueia: a escolha é de quem usa). */
+  async function avisarConfigPendente() {
+    try {
+      const linha = corpo.querySelector('.cx-parte[data-conv-id="INFOJUD"]');
+      if (!linha || linha.querySelector(".cx-aviso-config")) return;
+      const cfg = ((await Store.get(CHAVES.config)) || {}).infojud || {};
+      if (String(cfg.vara || "").trim()) return;
+      if (linha.querySelector(".cx-aviso-config")) return;
+      const av = document.createElement("div");
+      av.className = "cx-aviso-config";
+      av.style.cssText = "flex-basis:100%;font-size:11px;color:#facc15;margin:2px 0 0 24px";
+      CratosHTML.definir(av, html`⚠ Vara do e-CAC não configurada. <a href="#" class="cx-abrir-primeiros" style="color:#facc15">Abrir os Primeiros passos</a>`);
+      linha.style.flexWrap = "wrap";
+      linha.appendChild(av);
+      av.querySelector(".cx-abrir-primeiros").onclick = (ev) => {
+        ev.preventDefault();
+        browser.runtime.sendMessage({ tipo: "abrir_primeiros" }).catch(() => {});
+      };
+    } catch (e) { /* aviso nunca atrapalha o painel */ }
+  }
+
   /* ═══ NOVIDADES DA VERSÃO (1.9.0) ═══════════════════════════════════════════
      Depois de uma atualização (o background marca `novidades_pendente`), mostra
      UMA vez o que mudou; "Entendi" apaga. Preferência "Novidades da versão" desliga.
@@ -500,6 +523,10 @@
           <button class="cx-acao" id="cx-novidades-ok" style="font-size:12px;width:auto;padding:4px 14px">Entendi</button>
           <a href="#" id="cx-novidades-ver" style="color:#9a9a9a;font-size:11px">ver versões anteriores</a>
         </div>`);
+      /* 1.9.2 (Rodrigo, 26/10: "está aparecendo dobrado"): a tela inicial é desenhada duas
+         vezes seguidas, e as duas chamadas passavam pela checagem do início ANTES de qualquer
+         uma inserir o cartão (há leituras do storage no meio). Reconfere aqui, já sem espera. */
+      if (corpo.querySelector("#cx-novidades")) return;
       corpo.insertBefore(card, corpo.firstChild);
       card.querySelector("#cx-novidades-ok").onclick = async () => {
         try { await Store.set("novidades_pendente", null); } catch (e) { /* nada */ }
@@ -724,6 +751,7 @@
     corpo.querySelector("#cx-voltar-modo").onclick = renderModoSelecao;
     corpo.querySelector("#cx-executar-selecionados").onclick = executarSelecionados;
     wireAvisoMaisPjeRenajud();   // aviso do MaisPJE ao marcar o RENAJUD
+    avisarConfigPendente();      // 1.9.2: INFOJUD sem vara → link para os Primeiros passos
 
     // Botões de reordenação
     corpo.querySelectorAll(".cx-ord-up").forEach(btn => {
@@ -2013,7 +2041,7 @@
     botao,
     get ligado() { return ligado; }, set ligado(v) { ligado = v; },
     // 1.9.0
-    mostrarNovidades,
+    mostrarNovidades, avisarConfigPendente, renderListaConvenios,
     verificarDisponibilidade,
     renderMedicao,
     renderModoSelecao,

@@ -1,7 +1,7 @@
 # CRATOS — pasta do projeto
 
 Extensão Firefox (MV2) que unifica a execução de convênios a partir do processo
-no PJe do TRT18. Versão atual: **1.9.1**.
+no PJe do TRT18. Versão atual: **1.9.2**.
 
 ## O que é cada pasta
 

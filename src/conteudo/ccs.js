@@ -751,10 +751,14 @@
       avisar("o CCS abriu em branco — voltando pela tela inicial do CCS…");
       return io.navegar(URL_CCS.inicio);
     }
-    CratosFaixa.parar("ccs", "o CCS voltou EM BRANCO de novo, mesmo entrando pela tela inicial. " +
-      "Costuma ser cookie de uma sessão anterior do Banco Central. Clique no cadeado da barra de " +
-      "endereço → “Limpar cookies e dados do site” (www3.bcb.gov.br), feche esta aba e mande o CCS " +
-      "de novo pelo CRATOS.");
+    /* 1.9.2 (26/10, relatório de um colega): com o BCB instável, a página volta em branco
+       também fora do CRATOS — a mensagem cobre as duas causas e diz qual tela veio. */
+    CratosFaixa.parar("ccs", "o CCS voltou EM BRANCO duas vezes, mesmo entrando pela tela inicial. " +
+      "Nada foi certificado. Pode ser: (1) instabilidade do Banco Central — abra o CCS à mão " +
+      "(www3.bcb.gov.br/ccs); se vier em branco também, é o BCB: tente mais tarde; ou (2) cookie de " +
+      "uma sessão anterior — se o CCS abrir normal à mão, clique no cadeado da barra de endereço → " +
+      "“Limpar cookies e dados do site” (www3.bcb.gov.br), feche esta aba e mande o CCS de novo pelo " +
+      "CRATOS. [tela: " + estruturaTela(document) + "]");
   }
 
   /* 1.9.1 — texto útil da página (sem os elementos do próprio CRATOS, scripts e estilos). */

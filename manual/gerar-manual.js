@@ -2,8 +2,8 @@
  *
  * COMO ATUALIZAR: edite este arquivo e rode `node gerar-manual.js` dentro da pasta
  * manual\ (precisa do pacote "docx"). A VERSÃO da capa sai do src\manifest.json —
- * nunca fica desatualizada. Atualizado para a 1.9.0 em 23/10/2026; o capítulo 4
- * ("Primeiros passos") será reescrito na 1.9.1, com a página nova de configuração.
+ * nunca fica desatualizada. Atualizado para a 1.9.0 em 23/10/2026; capítulo 4
+ * ("Primeiros passos") reescrito na 1.9.2 (26/10), no roteiro da página nova.
  */
 const {
   Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType,
@@ -169,7 +169,24 @@ children.push(captura("tela do Firefox confirmando a instalação da extensão")
 
 /* ═══════════════ 4. PRIMEIROS PASSOS ═══════════════ */
 children.push(h1("4. Primeiros passos"));
-children.push(corpo("Antes de usar pela primeira vez, vale abrir as Preferências e ajustar os padrões dos convênios (capítulo 6). Depois, o uso é sempre o mesmo:"));
+children.push(corpo("Logo depois da primeira instalação, o CRATOS abre sozinho a página \"Primeiros passos\": uma lista com o essencial para os convênios funcionarem. Cada item mostra se está pronto, pendente ou é opcional. Você pode parar no meio e voltar depois pelo botão \"Abrir os Primeiros passos\", no topo das Preferências. Nenhum sistema é aberto sem o seu clique."));
+children.push(captura("página Primeiros passos, com os itens pronto / pendente / opcional"));
+children.push(h2("4.1. O que configurar"));
+novaLista();
+children.push(passo([T("Tribunal. ", { bold: true }), T("Deixe em \"Automático\": o CRATOS lê o tribunal do endereço do PJe (por exemplo, pje.trt18.jus.br é a 18ª Região).", {})]));
+children.push(passo([T("INFOJUD — vara. ", { bold: true }), T("Clique em \"Ler as varas do meu e-CAC\". O e-CAC abre; entre com o seu certificado, se pedir. O CRATOS lê o menu de varas da própria tela, avisa e fecha a aba sozinho. Depois, escolha a sua vara na lista.", {})]));
+children.push(passo([T("INFOJUD — tipo de processo e justificativa. ", { bold: true }), T("Os padrões (\"Ação Trabalhista\" e \"execução\") servem para a maioria; ajuste se a sua unidade usa outro texto.", {})]));
+children.push(passo([T("INFOJUD — magistrado. ", { bold: true }), T("Só preencha se você tiver delegação de ", {}), T("mais de um magistrado", { bold: true }), T(" no INFOJUD: aí escreva o nome exatamente como aparece no e-CAC. Com um só, deixe em branco.", {})]));
+children.push(passo([T("RENAJUD. ", { bold: true }), T("Marque o(s) tipo(s) de restrição e escolha o seu órgão na lista, que já é a do seu tribunal. O magistrado não precisa ser escolhido agora: na primeira inclusão, o CRATOS para no campo do RENAJUD, você escolhe, e ele guarda para as próximas (o mesmo vale para o órgão, se ficar em branco).", {})]));
+children.push(passo([T("CNIB (opcional). ", { bold: true }), T("Vara esperada: em branco, o CRATOS só informa em que vara o CNIB está logado; preenchida, ele para se o CNIB estiver em outra.", {})]));
+children.push(passo([T("Downloads. ", { bold: true }), T("A subpasta (padrão CRATOS) vale para todos os convênios.", {})]));
+children.push(passo([T("Juntada. ", { bold: true }), T("Escolha se o CRATOS cria a minuta da certidão ao terminar a fila e para quais polos libera a visibilidade.", {})]));
+children.push(corpo("Clique em \"Salvar\". Os itens passam a \"pronto\". Os demais ajustes ficam nas Preferências (capítulo 6)."));
+children.push(caixa("Se faltar algo", [
+  "Se a vara do e-CAC não estiver configurada, o painel avisa na linha do INFOJUD, com um link para os Primeiros passos.",
+], AMARELO, "8A6D00"));
+children.push(h2("4.2. O uso de todo dia"));
+children.push(corpo("Depois de configurado, o uso é sempre o mesmo:"));
 novaLista();
 children.push(passo("Abra o processo no PJe, na tela de detalhes."));
 children.push(passo([T("Clique no botão flutuante do ", {}), T("CRATOS", { bold: true }), T(". Um painel abre no canto da tela. (Você pode arrastar o botão para onde preferir; a posição fica guardada.)", {})]));
@@ -245,14 +262,14 @@ children.push(captura("tela de Preferências do CRATOS"));
 children.push(h2("6.1. INFOJUD (eCAC / Receita)"));
 children.push(corpo("Escolha quais documentos consultar — separadamente para pessoas físicas (CPF) e jurídicas (CNPJ). Onde houver \"últimos anos\", você define quantos anos para trás a consulta abrange."));
 children.push(tabelaConfig([
-  ["Consultas para CPF", "DIRPF, DITR, DOI, DECRED, DIMOB, Informações Cadastrais e eFinanceira. Marque os que quer; ajuste os anos onde couber.", "DIRPF (3 anos)"],
-  ["Consultas para CNPJ", "DIPJ, ECF, DITR, DOI, DECRED, DIMOB, CPMF, Informações Cadastrais e eFinanceira.", "nenhuma"],
+  ["Consultas para CPF", "DIRPF, DITR, DOI, DECRED, DIMOB, Informações Cadastrais e eFinanceira. Marque os que quer; ajuste os anos onde couber.", "DIRPF 2a; DITR, DECRED, DIMOB 1a; DOI"],
+  ["Consultas para CNPJ", "DIPJ, ECF, DITR, DOI, DECRED, DIMOB, CPMF, Informações Cadastrais e eFinanceira.", "DITR, DECRED, DIMOB 1a; DOI"],
   ["Opções do eFinanceira", "Tipo de conta, tipo de relação, exibir câmbio e tipo de extrato — separadas para CPF e CNPJ. O padrão é o relatório detalhado: Todas, Todas, Sim, Contas e movimentações.", "Detalhado"],
   ["Recuperar NI (no quadro CPF)", "Antes das solicitações, pesquisa as empresas em que cada executado pessoa física é o responsável e expede uma certidão consolidada, com o endereço de cada empresa.", "Ligado"],
-  ["Vara", "A vara que assina a solicitação no eCAC. Escolha a sua na lista.", "—"],
+  ["Vara", "A vara que assina a solicitação no eCAC. O botão \"Ler as varas do meu e-CAC\" traz a lista do seu próprio e-CAC; depois é só escolher.", "—"],
   ["Tipo de processo", "Como o eCAC classifica o pedido.", "Ação Trabalhista"],
   ["Justificativa", "Texto da justificativa no eCAC.", "execução"],
-  ["Magistrado", "Nome do magistrado no eCAC (opcional).", "—"],
+  ["Magistrado", "Só para quem tem delegação de mais de um magistrado no INFOJUD: o nome exatamente como aparece no e-CAC. Com um só, deixe em branco.", "—"],
   ["Ao terminar a fila", "Se o CRATOS verifica e colhe sozinho as respostas na caixa postal, só verifica e oferece o botão de colher, ou não verifica.", "Verificar e colher"],
   ["Pasta de download", "Subpasta onde os arquivos são salvos, dentro da pasta de downloads do Firefox.", "CRATOS"],
 ]));
@@ -279,9 +296,9 @@ children.push(caixa("Observação do SAB", [
 children.push(h2("6.3. RENAJUD"));
 children.push(tabelaConfig([
   ["Tipo(s) de restrição", "Transferência, Licenciamento e/ou Circulação (Restrição Total). Marque um ou mais.", "nenhuma"],
-  ["Tribunal", "O tribunal que aparece nos Dados do Processo (lista com todos os TRTs).", "TRT da 18ª Região"],
-  ["Órgão / Unidade", "A sua unidade, na lista do TRT18.", "—"],
-  ["Magistrado", "Documento ou nome do magistrado.", "—"],
+  ["Tribunal", "O tribunal que aparece nos Dados do Processo. No automático, vem do endereço do PJe.", "Automático"],
+  ["Órgão / Unidade", "A sua unidade, na lista do RENAJUD para o seu tribunal (ela se atualiza a cada inclusão). Em branco, o CRATOS pergunta na primeira inclusão e guarda. O botão \"Perguntar de novo na próxima inclusão\" serve para quem mudou de lotação.", "—"],
+  ["Magistrado", "Documento ou nome do magistrado. Em branco, o CRATOS pergunta na primeira inclusão e guarda.", "—"],
   ["Ramo da Justiça", "O ramo que aparece nos Dados do Processo.", "Justiça do Trabalho"],
 ]));
 children.push(caixa("Observação do RENAJUD", [
@@ -374,7 +391,7 @@ children.push(h2("6.11. Novidades da versão e Sobre"));
 children.push(tabelaConfig([
   ["Mostrar novidades", "Mostra no painel o cartão de novidades depois de cada atualização.", "Ligado"],
 ]));
-children.push(corpo("No fim das Preferências fica o cartão \"Sobre o CRATOS\", com a versão instalada, o que a extensão faz com os seus dados e o botão \"Ver novidades das versões\"."));
+children.push(corpo("No fim das Preferências fica o cartão \"Sobre o CRATOS\", com a versão instalada, o que a extensão faz com os seus dados, o botão \"Ver novidades das versões\" e o botão \"Procurar atualização\": ele confere na hora a lista de versões no GitHub e, se houver versão nova, oferece \"Instalar agora\" (o Firefox pergunta e atualiza por cima, sem perder as Preferências; use quando não houver convênio rodando)."));
 
 /* ═══════════════ 7. OBSERVAÇÕES GERAIS ═══════════════ */
 children.push(new Paragraph({ children: [new PageBreak()] }));
@@ -398,7 +415,7 @@ const faq = [
   ["O CCS ou o PREVJUD não respondeu na hora.", "Também é normal. Use \"Coletar CCS\" no dia seguinte, ou \"Coletar PREVJUD\" mais tarde (veja 5.7)."],
   ["Fechei a aba do processo e a juntada não oferece mais as certidões.", "Ao fechar a aba, o CRATOS apaga os dados daquele processo. Os arquivos continuam na sua pasta de downloads: anexe à mão ou refaça o convênio (veja 5.10)."],
   ["O sistema do convênio estava fora do ar.", "Use \"Verificar disponibilidade do convênio\" no painel. Se a indisponibilidade se confirmar, você pode gerar a certidão (veja 5.8)."],
-  ["Como recebo as versões novas?", "Sozinho: o Firefox atualiza o CRATOS automaticamente. Depois de cada atualização, o painel mostra o que mudou."],
+  ["Como recebo as versões novas?", "Sozinho: o Firefox atualiza o CRATOS automaticamente, cerca de uma vez por dia. Para buscar na hora, use \"Procurar atualização\" no cartão \"Sobre\" das Preferências. Depois de cada atualização, o painel mostra o que mudou."],
   ["A certidão da juntada saiu com um documento a menos.", "Atualize para a versão mais recente do CRATOS. Se persistir, anote o processo e avise o responsável pela extensão."],
   ["Posso confiar que ele não vai enviar/assinar por engano?", "Sim. Por decisão de projeto, o CRATOS nunca clica em Enviar, Confirmar ou Assinar. Ele para antes do ato."],
 ];

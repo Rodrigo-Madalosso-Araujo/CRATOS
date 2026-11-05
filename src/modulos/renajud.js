@@ -11,6 +11,14 @@
  */
 
 const ModuloRENAJUD = {
+  /* 1.9.2 (nacionalização): "https://pje.trt18.jus.br" → "TRIBUNAL REGIONAL DO TRABALHO DA
+     18A REGIAO" — o nome exato da lista do RENAJUD (recon de 26/10: id "TRT18"). */
+  tribunalDoHost(base) {
+    const m = String(base || "").match(/\/\/pje\.trt(\d{1,2})\.jus\.br/i);
+    if (!m) return "";
+    const n = parseInt(m[1], 10);
+    return n >= 1 && n <= 24 ? `TRIBUNAL REGIONAL DO TRABALHO DA ${n}A REGIAO` : "";
+  },
   id: "RENAJUD",
   label: "RENAJUD (Veículos)",
   tipo: "interativo",
@@ -34,7 +42,8 @@ const ModuloRENAJUD = {
         config: {
           tipoRestricao: cfg.tipoRestricao || [],
           ramoJustica: cfg.ramoJustica || "JUSTICA DO TRABALHO",
-          tribunal: cfg.tribunal || "",
+          /* 1.9.2: sem escolha nas Preferências, o tribunal sai do endereço do PJe */
+          tribunal: cfg.tribunal || ModuloRENAJUD.tribunalDoHost(ctx.base) || "",
           orgao: cfg.orgao || "",
           magistrado: cfg.magistrado || "",
         },
@@ -98,7 +107,8 @@ if (typeof Registro !== "undefined") {
         "TRIBUNAL REGIONAL DO TRABALHO DA 24A REGIAO",
         "TRIBUNAL SUPERIOR DO TRABALHO"
       ],
-        padrao: "TRIBUNAL REGIONAL DO TRABALHO DA 18A REGIAO",
+        padrao: "",
+        rotuloVazio: "Automático — pelo endereço do PJe",
         rotulo: "Tribunal",
       },
       orgao: {
@@ -163,9 +173,12 @@ if (typeof Registro !== "undefined") {
         "VARO DO TRABALHO DE GOIATUBA"
       ],
         padrao: "",
-        rotulo: "Órgão / Unidade (lista do TRT18)",
+        rotulo: "Órgão / Unidade",
+        listaDinamica: "renajud_orgaos",   // 1.9.2: a lista lida do RENAJUD substitui a do TRT18
+        nota: "Em branco, o CRATOS pede que você escolha o órgão na primeira inclusão e guarda aqui.",
       },
-      magistrado: { tipo: "texto", padrao: "", rotulo: "Magistrado (documento ou nome)" },
+      magistrado: { tipo: "texto", padrao: "", rotulo: "Magistrado (documento ou nome)",
+        nota: "Em branco, o CRATOS pede que você escolha o magistrado na primeira inclusão e guarda aqui." },
       ramoJustica: {
         tipo: "lista",
         opcoes: [
