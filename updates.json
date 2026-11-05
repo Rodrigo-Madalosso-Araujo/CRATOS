@@ -6,7 +6,21 @@
           "version": "1.9.1",
           "update_link": "https://github.com/Rodrigo-Madalosso-Araujo/CRATOS/releases/download/v1.9.1/cratos-1.9.1.xpi",
           "update_hash": "sha256:1e08a9d171c4d1f54283dfdd79552106f1752ae019b791617f2f2c3c9a06f2a1",
-          "browser_specific_settings": { "gecko": { "strict_min_version": "140.0" } }
+          "browser_specific_settings": {
+            "gecko": {
+              "strict_min_version": "140.0"
+            }
+          }
+        },
+        {
+          "version": "1.9.2",
+          "update_link": "https://github.com/Rodrigo-Madalosso-Araujo/CRATOS/releases/download/v1.9.2/cratos-1.9.2.xpi",
+          "update_hash": "sha256:322156532640c154682f6542c6b7e9e0a5305ea941fce2e1953bca4bba09f465",
+          "browser_specific_settings": {
+            "gecko": {
+              "strict_min_version": "140.0"
+            }
+          }
         }
       ]
     }

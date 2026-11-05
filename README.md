@@ -5,7 +5,7 @@ Extensão Firefox (Manifest V2) que captura os dados do processo no PJe e
 **prepara** a execução de convênios (consultas e registro) para o processo em
 tela, no âmbito do TRT da 18ª Região.
 
-> Versão: **1.9.1** · Compatibilidade: Firefox 140+ (ESR 140 ou superior) · Este repositório é
+> Versão: **1.9.2** · Compatibilidade: Firefox 140+ (ESR 140 ou superior) · Este repositório é
 > disponibilizado para fins de **homologação** pelo Tribunal.
 > Última versão **homologada** pela STI: **1.6.5** (release `v1.6.5`). As versões 1.7 a 1.9 estão
 > descritas abaixo e no cartão "Novidades" da própria extensão.
@@ -79,6 +79,16 @@ o CRATOS gera certidão desse fato em vez de terminar calado.
   **assinada** pela Mozilla, conferindo o SHA-256. Nessa consulta não vai nenhum
   dado de processo. Só entra no `updates.json` a versão que o responsável decidir
   distribuir. Rotina em [`distribuicao/LEIA-ME.md`](./distribuicao/LEIA-ME.md).
+- **"Procurar atualização" (desde a 1.9.2).** Em Preferências → Sobre, o botão faz
+  a própria extensão ler esse mesmo `updates.json` (sem cookies, só no clique) e,
+  havendo versão nova, "Instalar agora" abre o `.xpi` assinado da release deste
+  repositório — nenhum outro endereço é aceito. Também aqui não vai dado de processo.
+- **Listas lidas das telas (desde a 1.9.2).** Para as Preferências, o CRATOS guarda
+  só **nomes**: a lista de varas do e-CAC do próprio usuário (lida da tela, quando ele
+  clica em "Ler as varas do meu e-CAC") e os nomes de órgãos e magistrados que o
+  RENAJUD já devolve ao formulário durante uma tarefa do CRATOS. Documentos de
+  magistrados não são guardados. A lista de órgãos do RENAJUD dos 24 TRTs vem
+  embutida no pacote (`src/modulos/renajud-orgaos.js`, só nomes públicos de unidades).
 - A extensão **não manuseia senhas, tokens ou certificados**: o login (inclusive
   certificado digital e token por e-mail) é sempre feito pelo usuário.
 - Todo HTML montado com dado externo passa por `CratosHTML` (escape
@@ -130,7 +140,7 @@ cd testes
 node teste-<nome>.js # roda uma suíte
 ```
 
-Há **43 suítes / 1147 asserções**. A `teste-cnib.js` é lenta (~5 min, usa relógio
+Há **44 suítes / 1197 asserções**. A `teste-cnib.js` é lenta (~5 min, usa relógio
 real); as demais são rápidas. Cada suíte imprime o próprio placar. O padrão do
 projeto é que **teste novo reprove a versão anterior** — várias aceitam
 `CRATOS_SRC=<pasta do .xpi descompactado>` para serem apontadas a uma versão
@@ -149,6 +159,7 @@ src/            código da extensão (é o que vira o .xpi)
   conteudo/     content scripts + grampos de API (contexto da página)
   modulos/      um por convênio (registro no catálogo + orquestração)
   opcoes/       tela de Preferências
+  primeiros/    página "Primeiros passos" (abre na primeira instalação)
   icones/
 testes/         suítes Node/jsdom + INVENTARIO.md
 manual/         gerar-manual.js (gera o "CRATOS - Manual do Usuario.docx" da raiz)

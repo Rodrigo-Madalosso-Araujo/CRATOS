@@ -72,6 +72,59 @@
   let _idxAtual = -1;                 // índice do executado em que o fluxo parou (tem veículo)
   let _prepInclusaoTravada = false;   // trava o auto-preenchimento da inclusão; rearmado por parte
 
+  /* ═══ 1.9.2 — LISTAS DO RENAJUD (nacionalização) ═══
+     O formulário pede à API os órgãos do tribunal escolhido e os magistrados delegantes.
+     O CRATOS não chama a API (exigiria a credencial do login, que ele não lê): só escuta
+     a resposta que a página já recebeu — e só guarda com TAREFA ATIVA. Guarda só NOMES
+     (o documento do magistrado fica de fora). As Preferências passam a oferecer a lista. */
+  document.addEventListener("cratos:renajud:lista", async (ev) => {
+    if (!_cratosLigado) return;
+    let env = null;
+    try { env = JSON.parse(ev.detail); } catch (e) { return; }
+    try {
+      const est = await Store.get("renajud_estado");
+      if (!est || !est.ativo) return;
+      const j = JSON.parse(env.corpo || "null");
+      if (!Array.isArray(j)) return;
+      const atual = (await Store.get("renajud_listas")) || {};
+      const nomes = (arr) => Array.from(new Set(arr.map((x) => String((x && x.nome) || "").replace(/\s+/g, " ").trim()).filter(Boolean))).sort();
+      if (/\/orgaos\//.test(env.url)) {
+        const t = (j[0] && j[0].tribunal) || {};
+        Object.assign(atual, { orgaos: nomes(j), tribunal: { id: String(t.id || ""), nome: String(t.nome || "") }, emOrgaos: Date.now() });
+      } else if (/magistrados-delegantes/.test(env.url)) {
+        Object.assign(atual, { magistrados: nomes(j), emMagistrados: Date.now() });
+      } else return;
+      await Store.set("renajud_listas", atual);
+    } catch (e) { /* lista é conveniência: nunca atrapalha o fluxo */ }
+  });
+
+  /* 1.9.2 — APRENDER NA PRIMEIRA INCLUSÃO: campo vazio nas Preferências (órgão ou magistrado)
+     → o CRATOS para no campo, pede na faixa que você escolha, e GUARDA a escolha nas
+     Preferências. Espera até 10 min; sem escolha, segue (o RENAJUD valida). */
+  async function aprenderCampo(seletorNg, chaveCfg, rotulo) {
+    const lido = () => {
+      const ng = document.querySelector(seletorNg);
+      const v = ng && ng.querySelector(".ng-value-label, .ng-value");
+      const t = v ? String(v.textContent || "").replace(/\s+/g, " ").replace(/×/g, "").trim() : "";
+      return t || null;
+    };
+    if (!document.querySelector(seletorNg)) return null;
+    if (!lido()) {
+      _faixa("alertar", `escolha o ${rotulo} no formulário do RENAJUD. Eu guardo a escolha nas Preferências e, ` +
+        "nas próximas vezes, preencho sozinho.");
+    }
+    const v = await esperar(lido, APRENDER_MS);
+    if (!v) return null;
+    try {
+      const cfg = (await Store.get(CHAVES.config)) || {};
+      cfg.renajud = Object.assign({}, cfg.renajud || {}, { [chaveCfg]: v });
+      await Store.set(CHAVES.config, cfg);
+      _faixa("dizer", `guardei o ${rotulo} "${v}" nas Preferências. Nas próximas, ele vem sozinho.`);
+    } catch (e) { /* nada */ }
+    return v;
+  }
+  const APRENDER_MS = 10 * 60 * 1000;
+
   document.addEventListener("cratos:renajud:restricao", (ev) => {
     if (!_cratosLigado) return;   // extensão desligada: não fabrica folha
     let env = null;
@@ -441,11 +494,13 @@
     await preencherEscolha('#ramoJustica input', c.ramoJustica || "JUSTICA DO TRABALHO"); await sleep(500);
     if (c.tribunal)   { await preencherEscolha('#tribunal input', c.tribunal); await sleep(500); }
     if (c.orgao)      { await preencherEscolha('#orgao input', c.orgao); await sleep(500); }
+    else await aprenderCampo("#orgao", "orgao", "órgão");                       // 1.9.2
     // Nº do processo: OBRIGATÓRIO nesta tela de inclusão (seção "Dados do
     // Processo"). O "não lançar processo" de antes valia só para a tela de BUSCA
     // (que pesquisa por CPF/CNPJ). Aqui vai só os dígitos (padrão do maisPJe).
     await preencher('input[id="numeroProcesso"]', soDigitos(est.numProcesso)); await sleep(500);
     if (c.magistrado) { await preencherEscolha('#documentoMagistrado input', c.magistrado); await sleep(500); }
+    else await aprenderCampo("#documentoMagistrado", "magistrado", "magistrado");   // 1.9.2
 
     // PREPARAR: aciona "Inserir" e PARA. Confirmação é do usuário.
     await clicar("button", "Inserir");
@@ -611,8 +666,10 @@
     await preencherEscolha('#ramoJustica input', c.ramoJustica || "JUSTICA DO TRABALHO"); await sleep(500);
     if (c.tribunal)   { await preencherEscolha('#tribunal input', c.tribunal); await sleep(500); }
     if (c.orgao)      { await preencherEscolha('#orgao input', c.orgao); await sleep(500); }
+    else await aprenderCampo("#orgao", "orgao", "órgão");                       // 1.9.2
     colarComMascara('input[id="numeroProcesso"]', est.numProcesso); await sleep(500);
     if (c.magistrado) { await preencherEscolha('#documentoMagistrado input', c.magistrado); await sleep(500); }
+    else await aprenderCampo("#documentoMagistrado", "magistrado", "magistrado");   // 1.9.2
     console.log("CRATOS/RENAJUD: Dados do Processo preenchidos. Confira e clique 'Retirar'.");
     /* Idem baixa: a folha vem do grampo, na resposta do DELETE. */
   }
@@ -1098,7 +1155,7 @@
       get idxAtual() { return _idxAtual; },
       set idxAtual(v) { _idxAtual = v; },
       prepararBaixa, aguardarResultadoBaixa, concluirBuscaBaixa, alertaNenhumaRestricao,
-      fabricarCertidaoNadaARetirar,
+      fabricarCertidaoNadaARetirar, aprenderCampo,
     };
   }
 })();

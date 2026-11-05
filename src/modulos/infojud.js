@@ -52,11 +52,12 @@ const ModuloInfojud = {
       cpf: {
         rotulo: "Consultas para CPF (pessoa física)",
         campos: {
-          dirpf:   { tipo: "toggle_anos", padrao: { ativo: true,  anos: 3 }, rotulo: "DIRPF / IRPF — últimos anos" },
-          ditr:    { tipo: "toggle_anos", padrao: { ativo: false, anos: 2 }, rotulo: "DITR — últimos anos" },
-          doi:     { tipo: "toggle",      padrao: { ativo: false },          rotulo: "DOI — operações imobiliárias" },
-          decred:  { tipo: "toggle_anos", padrao: { ativo: false, anos: 2 }, rotulo: "DECRED — últimos anos" },
-          dimob:   { tipo: "toggle_anos", padrao: { ativo: false, anos: 2 }, rotulo: "DIMOB — últimos anos" },
+          /* 1.9.2 (Rodrigo, 26/10): padrão pós-instalação = DIRPF 2a, DITR/DECRED/DIMOB 1a, DOI */
+          dirpf:   { tipo: "toggle_anos", padrao: { ativo: true,  anos: 2 }, rotulo: "DIRPF / IRPF — últimos anos" },
+          ditr:    { tipo: "toggle_anos", padrao: { ativo: true,  anos: 1 }, rotulo: "DITR — últimos anos" },
+          doi:     { tipo: "toggle",      padrao: { ativo: true },           rotulo: "DOI — operações imobiliárias" },
+          decred:  { tipo: "toggle_anos", padrao: { ativo: true,  anos: 1 }, rotulo: "DECRED — últimos anos" },
+          dimob:   { tipo: "toggle_anos", padrao: { ativo: true,  anos: 1 }, rotulo: "DIMOB — últimos anos" },
           infocad: { tipo: "toggle",      padrao: { ativo: false },          rotulo: "Informações Cadastrais" },
           efin:    { tipo: "toggle_anos", padrao: { ativo: false, anos: 1 }, rotulo: "eFinanceira — últimos anos [assíncrona]" },
           efin_conta:   { tipo: "select", padrao: "Todas", opcoes: EFIN_CONTA,   rotulo: "eFinanceira · Tipo de conta" },
@@ -75,10 +76,11 @@ const ModuloInfojud = {
         campos: {
           dipj:    { tipo: "toggle_anos", padrao: { ativo: false, anos: 2 }, rotulo: "DIPJ / PJ SIMPL — últimos anos" },
           ecf:     { tipo: "toggle_anos", padrao: { ativo: false, anos: 2 }, rotulo: "ECF (substitui IRPJ) — últimos anos" },
-          ditr:    { tipo: "toggle_anos", padrao: { ativo: false, anos: 2 }, rotulo: "DITR — últimos anos" },
-          doi:     { tipo: "toggle",      padrao: { ativo: false },          rotulo: "DOI — operações imobiliárias" },
-          decred:  { tipo: "toggle_anos", padrao: { ativo: false, anos: 2 }, rotulo: "DECRED — últimos anos" },
-          dimob:   { tipo: "toggle_anos", padrao: { ativo: false, anos: 2 }, rotulo: "DIMOB — últimos anos" },
+          /* 1.9.2 (Rodrigo, 26/10): padrão pós-instalação = DITR/DECRED/DIMOB 1a, DOI */
+          ditr:    { tipo: "toggle_anos", padrao: { ativo: true,  anos: 1 }, rotulo: "DITR — últimos anos" },
+          doi:     { tipo: "toggle",      padrao: { ativo: true },           rotulo: "DOI — operações imobiliárias" },
+          decred:  { tipo: "toggle_anos", padrao: { ativo: true,  anos: 1 }, rotulo: "DECRED — últimos anos" },
+          dimob:   { tipo: "toggle_anos", padrao: { ativo: true,  anos: 1 }, rotulo: "DIMOB — últimos anos" },
           cpmf:    { tipo: "toggle",      padrao: { ativo: false },          rotulo: "CPMF" },
           infocad: { tipo: "toggle",      padrao: { ativo: false },          rotulo: "Informações Cadastrais" },
           efin:    { tipo: "toggle_anos", padrao: { ativo: false, anos: 1 }, rotulo: "eFinanceira — últimos anos [assíncrona]" },
@@ -109,6 +111,7 @@ const ModuloInfojud = {
            fica para a nacionalização, que vai demorar. */
     vara: {
       tipo: "lista",
+      listaDinamica: "infojud_varas",   // 1.9.2: a lista lida do e-CAC substitui a do TRT18
       opcoes: [
           { valor: "001", rotulo: "001 — 1ª Vara do Trabalho de Goiânia" },
           { valor: "002", rotulo: "002 — 2ª Vara do Trabalho de Goiânia" },
@@ -167,7 +170,9 @@ const ModuloInfojud = {
     },
     tipoProcesso:  { tipo: "texto", padrao: "Ação Trabalhista", rotulo: "Tipo de processo (eCAC)" },
     justificativa: { tipo: "texto", padrao: "execução",         rotulo: "Justificativa (eCAC)" },
-    magistrado:    { tipo: "texto", padrao: "",                 rotulo: "Magistrado (opcional — nome no eCAC)" },
+    magistrado:    { tipo: "texto", padrao: "",                 rotulo: "Magistrado (opcional — nome no eCAC)",
+      /* 1.9.2 (Rodrigo, 26/10): explicar QUANDO se preenche */
+      nota: "Só preencha se você tiver delegação de MAIS DE UM magistrado no INFOJUD: escreva o nome exatamente como aparece no e-CAC. Com um só, deixe em branco." },
     pastaDownload: { tipo: "texto", padrao: "CRATOS", rotulo: "Subpasta de downloads (padrão: CRATOS)" },
     /* ⚠ A Receita NÃO responde na hora: o retorno cai na caixa postal minutos ou
        horas depois. Então, na maioria das execuções, a verificação automática vai
@@ -183,6 +188,30 @@ const ModuloInfojud = {
       padrao: "colher",
       rotulo: "Ao terminar a fila de convênios",
     },
+  },
+
+  /* 1.9.2 — CONFIG EFETIVA: o salvo nas Preferências, e o PADRÃO onde nada foi salvo. Antes,
+     quem nunca tinha aberto as Preferências rodava o INFOJUD sem nenhum tipo (o content script
+     só lê o que está salvo) — o padrão aparecia na tela mas não valia na execução. */
+  configEfetiva(salvo) {
+    const s = salvo || {};
+    const out = {};
+    for (const [chave, esp] of Object.entries(this.config)) {
+      if (chave === "_grupos") {
+        for (const [g, grupo] of Object.entries(esp)) {
+          const sg = s[g] || {};
+          out[g] = {};
+          for (const [ck, ce] of Object.entries(grupo.campos)) {
+            out[g][ck] = sg[ck] !== undefined ? sg[ck] : JSON.parse(JSON.stringify(ce.padrao));
+          }
+        }
+        continue;
+      }
+      if (esp && esp.tipo === "aviso") continue;
+      out[chave] = s[chave] !== undefined ? s[chave] : (esp && esp.padrao !== undefined ? JSON.parse(JSON.stringify(esp.padrao)) : undefined);
+    }
+    for (const k of Object.keys(s)) if (!(k in out)) out[k] = s[k];
+    return out;
   },
 
   resumirConfig(cfg) {

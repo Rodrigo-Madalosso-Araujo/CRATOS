@@ -18,7 +18,42 @@ método que travou todo bug real desta lista.
 
 ## Situação
 
-### As que RODAM hoje (26/10/2026 — 1.9.1: CCS + teste da atualização automática): 43 suítes, 1147 asserções
+### As que RODAM hoje (26/10/2026 — 1.9.2 final: + CCS em branco com as duas causas): 44 suítes, 1197 asserções
+
+>>> 1.9.2 (26/10, 14:53): `teste-ccs-entrada.js` 23 → 24. Em branco duas vezes, a mensagem cobre a instabilidade
+    do BCB (abrir à mão; se vier em branco, tentar mais tarde) além do cookie, e traz `[tela: …]` sem parâmetros.
+    Reprova a 1.9.1.
+
+### Antes (26/10/2026 — 1.9.2: + padrão do INFOJUD + "Procurar atualização"): 44 suítes, 1196 asserções
+
+>>> 1.9.2 (26/10, fim da tarde): `teste-primeiros-passos.js` 40 → 48. Cobre:
+    - o padrão pós-instalação do INFOJUD (o do Rodrigo);
+    - a config efetiva (sem Preferências salvas, roda com o padrão);
+    - o botão "Procurar atualização": lê o updates.json, compara, descarta link fora do repositório; "Instalar agora"
+      só abre a release do CRATOS; não usa a requestUpdateCheck, que o Firefox não tem.
+
+### Antes (26/10/2026 — 1.9.2 + órgãos do RENAJUD dos 24 TRTs embutidos): 44 suítes, 1188 asserções
+
+>>> 1.9.2 (26/10, tarde): `teste-primeiros-passos.js` 34 → 40. Cobre:
+    - a lista embutida (24 TRTs, só nomes);
+    - Preferências: no automático, a lista do TRT do endereço do PJe; trocar o tribunal troca a lista; "Perguntar de novo"
+      limpa órgão e magistrado;
+    - Primeiros passos: órgão escolhido na lista e salvo.
+
+### Antes (26/10/2026 — 1.9.2: Primeiros passos + listas lidas das telas): 44 suítes, 1182 asserções
+
+>>> 1.9.2 (26/10): nova `teste-primeiros-passos.js` (34), com nomes fictícios e o formato do recon do RENAJUD. Trava:
+    - INFOJUD: varas lidas da tela (código sem espaços, sem "Selecione") e o "Ler as varas" (lê, avisa, fecha; pedido de
+      10 min; só no e-CAC);
+    - limpeza mantém as listas;
+    - RENAJUD: tribunal pelo host; grampo só GET de órgãos/magistrados; só NOMES e só com tarefa; órgão aprendido na
+      primeira inclusão;
+    - Preferências: lista lida com data; escolha fora da lista avisada; "Automático"; notas; botões; refresh ao vivo;
+    - Primeiros passos: só na instalação; situação; salva mesclando; pasta para todos; nada abre sozinho;
+    - painel: aviso de INFOJUD sem vara.
+    Reprova a 1.9.1. `teste-novidades.js` 18 → 19 (cartão dobrado; a janela da regex do onInstalled foi alargada).
+
+### Antes (26/10/2026 — 1.9.1: CCS + teste da atualização automática): 43 suítes, 1147 asserções
 
 >>> 1.9.1 (26/10): `teste-ccs-entrada.js` 20 → 23 (a tabela abaixo dizia 19, defasada): a tela desconhecida vem
     identificada pela estrutura (caminho, título, cabeçalho, tamanho), sem números; a página praticamente vazia
@@ -291,10 +326,11 @@ método que travou todo bug real desta lista.
 |---|---|---|
 | `teste-baixa-nada-a-cancelar.js` | 35 | rápida |
 | `teste-ccs-coleta.js` | 58 | rápida |
-| `teste-ccs-entrada.js` | 23 | rápida |
+| `teste-ccs-entrada.js` | 24 | rápida |
 | `teste-sniper.js` | 70 | rápida |
 | `teste-prevjud.js` | 95 | rápida |
-| `teste-novidades.js` | 18 | rápida |
+| `teste-novidades.js` | 19 | rápida |
+| `teste-primeiros-passos.js` | 48 | rápida (~12 s) |
 | `teste-disponibilidade.js` | 31 | rápida |
 | `teste-endurecimento.js` | 22 | rápida |
 | `teste-ccs-marcacao.js` | 19 | rápida |

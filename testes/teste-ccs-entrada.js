@@ -122,6 +122,10 @@ const estado = (t) => t.mem["cratos:ccs_estado"] || {};
     checar(!t.nav.length, "⛔ em branco DE NOVO: não navega mais (sem loop)");
     checar(/em branco/i.test(p) && /cookies/i.test(p) && /www3\.bcb\.gov\.br/.test(p),
       "⛔ para com a instrução de limpar os cookies do site do BCB");
+    checar(/instabilidade do Banco Central/.test(p) && /à mão/.test(p) && /tente mais tarde/i.test(p) &&
+      /\[tela: caminho \/ccs\/iniciar\.do · 0 caracteres\]/.test(p) && !/method=/.test(p),
+      "1.9.2: em branco duas vezes → a mensagem cobre também a instabilidade do BCB (abrir o CCS à mão; " +
+      "se vier em branco, tentar mais tarde) e diz qual tela veio (sem parâmetros)");
     checar(!t.msgs.some((m) => /certid|pulso|orq_conv/i.test(JSON.stringify(m))),
       "falha técnica: nenhuma certidão e nenhum pulso ao painel (regra de ferro)");
   }

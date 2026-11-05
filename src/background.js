@@ -36,6 +36,16 @@ browser.runtime.onMessage.addListener((msg, sender) => {
       return fecharAbaEcac(sender);
     case "ecac_sou_registro":
       return souAbaRegistroEcac(sender);
+    case "infojud_ler_varas":
+      return abrirEcacParaVaras();
+    case "fechar_esta_aba":
+      return fecharEstaAba(sender);
+    case "abrir_primeiros":
+      return abrirPrimeirosPassos();
+    case "verificar_atualizacao":
+      return verificarAtualizacao();
+    case "instalar_atualizacao":
+      return instalarAtualizacao(msg);
     case "sab_abrir_ordem":
       return abrirOrdemSab(msg);
     case "sab_certidao":
@@ -216,7 +226,7 @@ async function abrirEcacERegistrar(plano) {
   // grava a fila que o content script do eCAC vai consumir
   await Store.set("ecac_fila", {
     partes,
-    config: plano.config || {},
+    config: ModuloInfojud.configEfetiva(plano.config),   // 1.9.2: as duas portas com o padrão aplicado
     idx: 0,
     criadoEm: new Date().toISOString(),
   });
@@ -232,6 +242,67 @@ async function abrirEcacERegistrar(plano) {
      O INFOJUD é longo como o CNIB e o SerasaJUD, e agora se comporta como eles:
      o painel mostra "⏸ Aguardando conclusão…" e espera o usuário. */
   return { ok: true, aguardando: true, tabId: aba.id, total: partes.length };
+}
+
+/* 1.9.2 — "Ler as varas do meu e-CAC" (Preferências / Primeiros passos): abre o serviço; o
+   content script entra em "Registrar Solicitação", guarda o menu de varas e pede para fechar. */
+async function abrirEcacParaVaras() {
+  await Store.set("infojud_ler_varas", { em: Date.now() });
+  const aba = await browser.tabs.create({ url: ECAC_SOLICITACAO_URL, active: true });
+  await Store.set("ecac_aba", aba.id);
+  return { ok: true, tabId: aba.id };
+}
+/* 1.9.2 — fecha a aba de quem pede, SÓ se for do e-CAC (a aba aberta para ler as varas). */
+async function fecharEstaAba(sender) {
+  const tabId = sender && sender.tab && sender.tab.id;
+  const url = String((sender && (sender.url || (sender.tab && sender.tab.url))) || "");
+  if (tabId == null || !/^https:\/\/cav\.receita\.fazenda\.gov\.br\//.test(url)) return { ok: false };
+  try { await browser.tabs.remove(tabId); return { ok: true }; } catch (e) { return { ok: false, erro: String(e.message || e) }; }
+}
+/* 1.9.2 — botão "Procurar atualização" das Preferências (Rodrigo, 26/10). O Firefox NÃO tem
+   runtime.requestUpdateCheck (só o Chrome): a extensão lê ela mesma o updates.json do
+   update_url (a mesma lista pública que o Firefox lê uma vez por dia; nenhum dado de
+   processo vai junto) e compara com a versão instalada. Só aceita link de release do
+   repositório do CRATOS. */
+const LINK_RELEASE = /^https:\/\/github\.com\/Rodrigo-Madalosso-Araujo\/CRATOS\/releases\/download\/v[\d.]+\/cratos-[\d.]+\.xpi$/;
+function _cmpVersao(a, b) {
+  const x = String(a || "0").split(".").map((n) => parseInt(n, 10) || 0), y = String(b || "0").split(".").map((n) => parseInt(n, 10) || 0);
+  for (let i = 0; i < Math.max(x.length, y.length); i++) { const d = (x[i] || 0) - (y[i] || 0); if (d) return d; }
+  return 0;
+}
+async function verificarAtualizacao(io) {
+  const f = (io && io.fetch) || fetch;
+  const man = browser.runtime.getManifest();
+  const atual = man.version;
+  const gecko = (man.browser_specific_settings || man.applications || {}).gecko || {};
+  if (!gecko.update_url) return { ok: false, atual, status: "sem_endereco" };
+  try {
+    const r = await f(gecko.update_url, { cache: "no-store", credentials: "omit" });
+    if (!r.ok) return { ok: false, atual, status: "erro", erro: "HTTP " + r.status };
+    const j = await r.json();
+    const lista = (((j || {}).addons || {})[gecko.id] || {}).updates || [];
+    let melhor = null;
+    for (const u of lista) if (u && u.version && (!melhor || _cmpVersao(u.version, melhor.version) > 0)) melhor = u;
+    if (!melhor || _cmpVersao(melhor.version, atual) <= 0) return { ok: true, status: "no_update", atual };
+    const link = String(melhor.update_link || "");
+    return { ok: true, status: "update_available", versao: melhor.version, atual, link: LINK_RELEASE.test(link) ? link : "" };
+  } catch (e) {
+    return { ok: false, atual, status: "erro", erro: String(e.message || e) };
+  }
+}
+/* "Instalar agora": abre o .xpi assinado da release (o Firefox pergunta e instala por cima,
+   sem perder as Preferências). Só o link de release do CRATOS. */
+async function instalarAtualizacao(msg) {
+  const link = String((msg && msg.link) || "");
+  if (!LINK_RELEASE.test(link)) return { ok: false, erro: "link fora do repositório do CRATOS" };
+  await browser.tabs.create({ url: link, active: true });
+  return { ok: true };
+}
+
+/* 1.9.2 — página "Primeiros passos" (abre sozinha só na 1ª instalação; depois, pelo botão). */
+async function abrirPrimeirosPassos() {
+  await browser.tabs.create({ url: browser.runtime.getURL("primeiros/primeiros.html"), active: true });
+  return { ok: true };
 }
 
 /* 1.9.0 — a aba que pergunta é a que o CRATOS abriu para o registro do INFOJUD? */
@@ -994,7 +1065,7 @@ async function executarInfojud(ctx, operacao) {
   if (!processo) return { ok: false, motivo: "Processo não capturado." };
 
   const cfgTudo = (await Store.get(CHAVES.config)) || {};
-  const cfg = cfgTudo.infojud || {};
+  const cfg = ModuloInfojud.configEfetiva(cfgTudo.infojud);   // 1.9.2: padrão onde nada foi salvo
   /* `.filter(Boolean)` não bastava: `mapearParte` SEMPRE devolve objeto, mesmo
      para parte sem documento — então quem não tinha CPF/CNPJ entrava na fila com
      NI vazio e ia parar no eCAC assim. O corte tem de ser pelo NI: 11 dígitos
@@ -1410,6 +1481,10 @@ if (typeof Limpeza !== "undefined") {
 /* Limpa estado de execução pendente ao instalar/atualizar (mesma higiene da maisPJe). */
 browser.runtime.onInstalled.addListener(async (detalhes) => {
   await Store.remove(CHAVES.execucao);
+  /* 1.9.2: na PRIMEIRA instalação (não em atualização), abre os Primeiros passos */
+  if (detalhes && detalhes.reason === "install") {
+    try { await abrirPrimeirosPassos(); } catch (e) { console.warn("CRATOS: primeiros passos:", e.message); }
+  }
   /* 1.9.0: depois de ATUALIZAÇÃO, o painel mostra uma vez as novidades */
   try {
     if (typeof CratosNovidades !== "undefined") {

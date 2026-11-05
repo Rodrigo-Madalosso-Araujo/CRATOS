@@ -16,6 +16,15 @@
 
   /* da mais nova para a mais velha */
   const VERSOES = [
+    { versao: "1.9.2", data: "26/10/2026", itens: [
+      "Primeiros passos: uma página com o essencial para configurar (vara do e-CAC, RENAJUD, pasta, juntada). Abre na primeira instalação e fica num botão das Preferências.",
+      "INFOJUD: o botão \"Ler as varas do meu e-CAC\" traz a lista de varas do seu próprio e-CAC para as Preferências.",
+      "RENAJUD: o tribunal vem do endereço do PJe; o órgão e o magistrado, se estiverem em branco, são perguntados na primeira inclusão e guardados.",
+      "INFOJUD: novo padrão de consultas (CPF: DIRPF 2 anos, DITR, DECRED e DIMOB 1 ano, DOI; CNPJ: DITR, DECRED e DIMOB 1 ano, DOI), que vale mesmo sem abrir as Preferências.",
+      "Preferências → Sobre: botão \"Procurar atualização\", que confere na hora se há versão nova e oferece \"Instalar agora\".",
+      "CCS: quando o Banco Central devolve a página em branco duas vezes, o aviso explica as duas causas possíveis (instabilidade do BCB ou cookie antigo) e o que fazer em cada uma.",
+      "Correção: o cartão de novidades não aparece mais dobrado.",
+    ] },
     { versao: "1.9.1", data: "26/10/2026", itens: [
       "CCS: quando o Banco Central devolve uma página vazia, o CRATOS avisa que é instabilidade do CCS e pede para tentar o Coletar CCS mais tarde.",
       "CCS: se aparecer uma tela que o CRATOS não conhece, o aviso e o relatório de problema dizem qual tela foi (sem dados de pessoas).",

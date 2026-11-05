@@ -723,6 +723,35 @@ function extrairNomeEcac() {
  * Ao terminar o registro de cada parte, clica Enviar e trata a página de confirmação.
  */
 
+/* 1.9.2 — o pedido "Ler as varas do meu e-CAC" vale 10 minutos. */
+const VARAS_PEDIDO_MS = 10 * 60 * 1000;
+async function pedidoVarasAtivo() {
+  try {
+    const p = await Store.get("infojud_ler_varas");
+    return p && p.em && (Date.now() - Number(p.em)) < VARAS_PEDIDO_MS ? p : null;
+  } catch (e) { return null; }
+}
+/* Lê o menu de varas (siglavara/nomevara) e guarda {opcoes:[{valor, rotulo}], em}. O valor
+   vem do e-CAC com espaços à direita; o "Selecione" (valor vazio) fica de fora. */
+function varasDaTela(doc) {
+  const sel = doc.querySelector('select[name="siglavara"], select[name="nomevara"]');
+  if (!sel) return [];
+  const vistos = new Set(), lista = [];
+  for (const o of Array.from(sel.options)) {
+    const valor = String(o.value || "").trim();
+    const rotulo = String(o.text || "").replace(/\s+/g, " ").trim();
+    if (!valor || !rotulo || /selecione/i.test(rotulo) || vistos.has(valor)) continue;
+    vistos.add(valor);
+    lista.push({ valor, rotulo: rotulo.indexOf(valor) === 0 ? rotulo : valor + " — " + rotulo });
+  }
+  return lista;
+}
+async function guardarVarasDaTela(doc) {
+  const opcoes = varasDaTela(doc);
+  if (opcoes.length) { try { await Store.set("infojud_varas", { opcoes, em: Date.now() }); } catch (e) { /* nada */ } }
+  return opcoes.length;
+}
+
 /* Esta aba é a que o CRATOS abriu para o registro? (o fundo guarda o id da aba). */
 async function souAbaDoRegistro() {
   try { const r = await browser.runtime.sendMessage({ tipo: "ecac_sou_registro" }); return !!(r && r.sim); } catch (e) { return false; }
@@ -769,12 +798,16 @@ async function iniciarRegistroEcac() {
     (async () => {
       let fila = null;
       try { fila = await Store.get("ecac_fila"); } catch (e) {}
-      if (!fila || !fila.partes || fila.idx >= fila.partes.length) return;  // não é nosso
+      const filaAtiva = !!(fila && fila.partes && fila.idx < fila.partes.length);
+      /* 1.9.2: sem fila, o menu também serve ao "Ler as varas do meu e-CAC" (Preferências /
+         Primeiros passos): entra em "Registrar Solicitação" só para ler o menu de varas. */
+      const pedidoVaras = !filaAtiva && (await pedidoVarasAtivo());
+      if (!filaAtiva && !pedidoVaras) return;  // não é nosso
       if (window.__cratosEntrouMenu) return;
       if (!(await souAbaDoRegistro())) return;   // 1.9.0: menu aberto à mão com fila pendurada não é nosso
       /* 1.9.0 — SÓ RECUPERAR NI (Rodrigo, 23/10): nenhum executado com pedido marcado.
          Não abre "Registrar Solicitação": pesquisa daqui mesmo e encerra. */
-      if (!(fila.partes || []).some((p) => temPedidos(p, fila.config))) {
+      if (filaAtiva && !(fila.partes || []).some((p) => temPedidos(p, fila.config))) {
         window.__cratosEntrouMenu = true;
         console.log("CRATOS/INFOJUD: nenhum pedido marcado — só Recuperar NI, a partir do menu (sem abrir 'Registrar Solicitação').");
         await soRecuperarNi(fila);
@@ -836,12 +869,14 @@ async function iniciarRegistroEcac() {
       (async () => {
         let fila = null;
         try { fila = await Store.get("ecac_fila"); } catch (e) {}
-        if (!fila || !fila.partes || fila.idx >= fila.partes.length) return;
+        const filaAtiva = !!(fila && fila.partes && fila.idx < fila.partes.length);
+        const pedidoVaras = filaAtiva ? null : await pedidoVarasAtivo();   // 1.9.2
+        if (!filaAtiva && !pedidoVaras) return;
         /* 1.9.0 — o vigia só age na aba que o CRATOS ABRIU para o registro. Antes, a aba
            da caixa postal (que abre em /ecac/) ou uma visita sua ao e-CAC com fila
            pendurada podiam levar a reclamação — e até a navegação sozinha. */
         if (!(await souAbaDoRegistro())) return;
-        const nascimento = Date.parse(fila.criadoEm || "") || 0;
+        const nascimento = filaAtiva ? (Date.parse(fila.criadoEm || "") || 0) : (Number(pedidoVaras.em) || 0);
 
         /* ═══ ENTRAR SOZINHO DEPOIS DO LOGIN (pedido do Rodrigo, 02/09) ═══
          * O caso real: o CRATOS abre o serviço, a Receita joga para o login do
@@ -881,9 +916,11 @@ async function iniciarRegistroEcac() {
         try { prog = await Store.get("ecac_progresso"); } catch (e) {}
         if (prog && prog.em >= nascimento) return;   // o frame chegou: nada a reclamar
         if (location.href.includes("solicitacao.asp")) return;
-        let filaAgora = null;
-        try { filaAgora = await Store.get("ecac_fila"); } catch (e) {}
-        if (!filaAgora || !filaAgora.partes || filaAgora.idx >= filaAgora.partes.length) return;   // já terminou
+        if (filaAtiva) {
+          let filaAgora = null;
+          try { filaAgora = await Store.get("ecac_fila"); } catch (e) {}
+          if (!filaAgora || !filaAgora.partes || filaAgora.idx >= filaAgora.partes.length) return;   // já terminou
+        } else if (!(await pedidoVarasAtivo())) return;   // a lista de varas já foi lida
         window.__cratosAvisouEcac = true;
         CratosFaixa.parar("infojud",
           "o eCAC não abriu a tela de solicitação do INFOJUD — caí em " +
@@ -902,6 +939,26 @@ async function iniciarRegistroEcac() {
       !document.querySelector('input[name="novocpfcnpj"]')) {
     console.debug("CRATOS/INFOJUD: contexto sem formulário de registro, ignorando.");
     return;
+  }
+
+  /* 1.9.2 — VARAS LIDAS DA PRÓPRIA TELA (nacionalização): toda vez que a tela de registro
+     abre, o menu de varas do e-CAC é guardado (código + nome; é dado institucional). As
+     Preferências e os Primeiros passos passam a oferecer ESTA lista. Se a aba foi aberta
+     só para isso ("Ler as varas do meu e-CAC"), avisa e fecha. */
+  const nVaras = await guardarVarasDaTela(document);
+  const pedidoVaras = await pedidoVarasAtivo();
+  if (pedidoVaras) {
+    try { await Store.set("infojud_ler_varas", null); } catch (e) {}
+    let fx = null;
+    try { fx = await Store.get("ecac_fila"); } catch (e) {}
+    if (!(fx && fx.partes && fx.idx < fx.partes.length)) {
+      try { await Store.set("ecac_progresso", { em: Date.now(), onde: "varas" }); } catch (e) {}
+      CratosFaixa.mostrar("infojud", nVaras
+        ? `lista de varas do e-CAC atualizada: ${nVaras} vara(s). Escolha a sua nas Preferências ou nos Primeiros passos. Esta aba fecha em instantes.`
+        : "não encontrei o menu de varas nesta tela do e-CAC. Escolha a vara à mão nas Preferências.", nVaras ? "#4ade80" : "#facc15");
+      setTimeout(() => { browser.runtime.sendMessage({ tipo: "fechar_esta_aba" }).catch(() => {}); }, 3000);
+      return;
+    }
   }
 
   const resp = await browser.runtime.sendMessage({ tipo: "ecac_pronto" }).catch((e) => {
@@ -1999,6 +2056,6 @@ if (document.readyState === "loading") {
 
 /* Gancho de teste (mundo isolado: a página não enxerga). Exposto de propósito,
    para o harness exercitar as funções REAIS — cópia testada é teste de si mesma. */
-window.__cratosEcac = { selecionarVara, selecionarOpcaoTexto, fecharAvisoEncerramentoEcac, limiteExcedidoNaTela, finalizarRegistro, gerarListaPedidos, colherEFinanceiraZip, colherDownloadDireto, fabricarCertidaoEfinPendente, colherTodosItens, recuperarEmpresasDosExecutados, soRecuperarNi, temPedidos, resumoEmpresas, souAbaDoRegistro };
+window.__cratosEcac = { selecionarVara, selecionarOpcaoTexto, fecharAvisoEncerramentoEcac, limiteExcedidoNaTela, finalizarRegistro, gerarListaPedidos, colherEFinanceiraZip, colherDownloadDireto, fabricarCertidaoEfinPendente, colherTodosItens, recuperarEmpresasDosExecutados, soRecuperarNi, temPedidos, resumoEmpresas, souAbaDoRegistro, varasDaTela, guardarVarasDaTela, pedidoVarasAtivo };
 
 } // fim de iniciarEcacInfojud
