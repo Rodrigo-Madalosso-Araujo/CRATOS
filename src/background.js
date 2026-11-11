@@ -42,6 +42,8 @@ browser.runtime.onMessage.addListener((msg, sender) => {
       return fecharEstaAba(sender);
     case "abrir_primeiros":
       return abrirPrimeirosPassos();
+    case "abrir_manual":
+      return abrirManual(msg);
     case "verificar_atualizacao":
       return verificarAtualizacao();
     case "instalar_atualizacao":
@@ -83,6 +85,8 @@ browser.runtime.onMessage.addListener((msg, sender) => {
       return ModuloDisponibilidade.certidao(msg, fabricarCertidaoTexto);
     case "orq_fechar_aba":
       return fecharAbaConvenio(msg.convenioId);
+    case "orq_refazer":
+      return prepararRefazer(msg);
     case "coletar_achar":
       return coletarAchar(msg.numeroProcesso);
     case "coletar_colher":
@@ -305,6 +309,16 @@ async function abrirPrimeirosPassos() {
   return { ok: true };
 }
 
+/* 1.9.3 — o Manual do Usuário vai DENTRO do pacote (manual/manual.html, página estática,
+   sem script). `secao` é a âncora (#cfg-infojud etc.); só letras minúsculas, dígitos e
+   hífen — qualquer outra coisa abre o manual do começo. */
+async function abrirManual(msg) {
+  const secao = String((msg && msg.secao) || "");
+  const url = browser.runtime.getURL("manual/manual.html") + (/^[a-z0-9-]{1,40}$/.test(secao) ? "#" + secao : "");
+  await browser.tabs.create({ url, active: true });
+  return { ok: true };
+}
+
 /* 1.9.0 — a aba que pergunta é a que o CRATOS abriu para o registro do INFOJUD? */
 async function souAbaRegistroEcac(sender) {
   const id = await Store.get("ecac_aba");
@@ -350,6 +364,40 @@ const HOST_CONVENIO = {
   SERASAJUD: "https://serasa-judicial.serasaexperian.com.br/*",
   CCS: "https://www3.bcb.gov.br/ccs/*",
 };
+/* REFAZER (1.9.3). O painel devolveu um convênio ao fim da fila. Antes da 2ª tentativa:
+   1. os arquivos que a 1ª tentativa deixou no diário são marcados SUBSTITUÍDOS (não
+      entram na certidão de juntada nem nos anexos — nada de juntar em duplicidade; o
+      diário guarda o rastro);
+   2. o estado do convênio é zerado (uma fase velha — ex.: o "investigando" do SNIPER —
+      barraria a nova tentativa);
+   3. a aba do convênio fecha (inclusive SNIPER e PREVJUD, que o painel não fecha em
+      falha: aqui quem pediu foi o usuário). SAB e INFOJUD não têm aba própria a fechar. */
+const ESTADO_CONVENIO = {
+  SAB: "sab_estado", RENAJUD: "renajud_estado", CNIB: "cnib_estado", CENSEC: "censec_estado",
+  SERASAJUD: "serasajud_estado", CCS: "ccs_estado", SNIPER: "sniper_estado", PREVJUD: "prevjud_estado",
+};
+const ABA_REFAZER = Object.assign({}, HOST_CONVENIO, {
+  SNIPER: "https://sniper.pdpj.jus.br/*",
+  PREVJUD: "https://previdenciario.pdpj.jus.br/*",
+});
+async function prepararRefazer(msg) {
+  const id = String((msg && msg.convenioId) || "").toUpperCase();
+  if (!id) return { ok: false };
+  const desde = Number(msg.desde) || 0;
+  let substituidos = 0;
+  try { substituidos = await Diario.marcarSubstituidos(msg.numProcesso, id, desde); } catch (e) { /* segue */ }
+  if (ESTADO_CONVENIO[id]) { try { await Store.set(ESTADO_CONVENIO[id], null); } catch (e) { /* segue */ } }
+  let fechadas = 0;
+  const host = ABA_REFAZER[id];
+  if (host) {
+    try {
+      const abas = await browser.tabs.query({ url: host });
+      for (const a of abas) { try { await browser.tabs.remove(a.id); fechadas++; } catch (e) { /* nada */ } }
+    } catch (e) { /* nada */ }
+  }
+  return { ok: true, substituidos, fechadas };
+}
+
 async function fecharAbaConvenio(convenioId) {
   const host = HOST_CONVENIO[String(convenioId || "").toUpperCase()];
   if (!host) return { ok: true, fechadas: 0 };   // convênio sem aba própria (ex.: SAB)
@@ -674,6 +722,29 @@ const Diario = {
     return proximo;
   },
   async limpar(numProcesso) { await Store.set(this._chave(numProcesso), null); },
+
+  /* 1.9.3 — REFAZER: o que o convênio registrou desde `desde` (a 1ª tentativa) e ainda
+     não foi juntado é carimbado `substituidoEm`. Não apaga: o diário conta a história. */
+  marcarSubstituidos(numProcesso, convenio, desde) {
+    const proximo = this._fila.then(async () => {
+      const k = this._chave(numProcesso);
+      const atual = await Store.get(k);
+      if (!atual || !Array.isArray(atual.itens)) return 0;
+      const agora = new Date().toISOString();
+      let n = 0;
+      for (const it of atual.itens) {
+        if (it.juntadoEm || it.substituidoEm) continue;
+        if (String(it.convenio || "").toUpperCase() !== String(convenio || "").toUpperCase()) continue;
+        if (Date.parse(it.em) < Number(desde || 0)) continue;
+        it.substituidoEm = agora;
+        n++;
+      }
+      if (n) await Store.set(k, atual);
+      return n;
+    });
+    this._fila = proximo.catch(() => {});
+    return proximo;
+  },
 };
 
 /* ═══ A CERTIDÃO CONSOLIDADA, EM HTML ═══
@@ -748,7 +819,7 @@ function montarCertidoes(diario) {
   /* Item já juntado NÃO reaparece. É isto que impede a certidão de agosto de
      listar as inclusões de março — e é melhor do que apagar o diário: o
      histórico fica, mas sai da fila. */
-  const itens = ((diario && diario.itens) || []).filter((i) => !i.juntadoEm);
+  const itens = ((diario && diario.itens) || []).filter((i) => !i.juntadoEm && !i.substituidoEm);   // 1.9.3: refazer
   if (!itens.length) return [];
 
   const p = (txt) => `<p class="corpo" ${_P_CORPO}>${txt}</p>`;
@@ -1626,7 +1697,7 @@ function montarNomePdf(pasta, numProcesso, nomeAbrev, tipoLabel, ext, ni) {
 browser.runtime.onMessage.addListener((msg) => {
   if (msg && msg.tipo === "fabricar_pdf") {
     try {
-      const bytes = gerarPDFTexto(msg.linhas || [], msg.titulo || "CRATOS");
+      const bytes = pdfDesenhado(msg) || gerarPDFTexto(msg.linhas || [], msg.titulo || "CRATOS", paginasExtras(msg));
       const blob = new Blob([bytes], { type: "application/pdf" });
       const url = URL.createObjectURL(blob);
       // mesma presunção de sucesso do baixar_pdf_base64 (blob URL rejeita a Promise no FF)
@@ -1640,6 +1711,38 @@ browser.runtime.onMessage.addListener((msg) => {
     }
   }
 });
+
+/* Páginas desenhadas que vão DEPOIS do texto (1.9.3): o grafo de vínculos do SNIPER
+   (comum/grafo-sniper.js). O content script manda o MODELO (dados), nunca o desenho
+   pronto: quem escreve operadores de PDF é só o fundo. Modelo inválido = sem páginas
+   extras, e o relatório já diz em texto que o grafo não pôde ser obtido. */
+function paginasExtras(msg) {
+  if (!msg || !msg.grafoSniper || typeof CratosGrafoSniper === "undefined") return [];
+  try {
+    return CratosGrafoSniper.paginas(msg.grafoSniper, { W: _W_HELV, WB: _W_HELV_BOLD });
+  } catch (e) {
+    console.warn("[CRATOS] grafo do SNIPER fora do PDF:", e && e.message);
+    return [];
+  }
+}
+
+/* Relatório do SNIPER DESENHADO (1.9.3): blocos → páginas no padrão do grafo, depois as
+   páginas do grafo, e o rodapé "página k de N" em todas. Qualquer falha → null, e o
+   relatório sai no texto corrido de sempre (as `linhas` vêm junto na mensagem). */
+function pdfDesenhado(msg) {
+  if (!msg || !Array.isArray(msg.relatorioSniper) || typeof CratosGrafoSniper === "undefined") return null;
+  try {
+    const ctx = { W: _W_HELV, WB: _W_HELV_BOLD };
+    const meta = (msg.relatorioSniperMeta && typeof msg.relatorioSniperMeta === "object") ? msg.relatorioSniperMeta : {};
+    const texto = CratosGrafoSniper.relatorio(msg.relatorioSniper, meta, ctx);
+    if (!texto.length) return null;
+    const todas = CratosGrafoSniper.rodape(texto.concat(paginasExtras(msg)), meta, ctx);
+    return montarPDF(todas);
+  } catch (e) {
+    console.warn("[CRATOS] relatório desenhado do SNIPER falhou; vai o texto corrido:", e && e.message);
+    return null;
+  }
+}
 
 /* Mesma fabricação do `fabricar_pdf`, chamada de dentro do fundo (certidão de
    indisponibilidade, 1.9.0): Cofre + diário + pulso, nome no padrão CRATOS/. */
@@ -1749,9 +1852,11 @@ function quebrarPorLargura(texto, largura, tamanho, negrito) {
  *  2. quebrava linha por contagem de caracteres, então o texto encostava na
  *     borda direita da folha (margem esquerda de 50pt, margem direita de zero).
  * Agora a quebra é por LARGURA REAL e a caixa de texto é simétrica.
- * ASSINATURA INALTERADA: gerarPDFTexto(arrayDeLinhas, tituloString).
+ * ASSINATURA: gerarPDFTexto(arrayDeLinhas, tituloString[, extras]).
+ * `extras` (1.9.3): content streams prontos (mesmas fontes /F1 e /F2), cada um uma
+ * página A4 a mais DEPOIS do texto — hoje, o grafo de vínculos do SNIPER.
  */
-function gerarPDFTexto(linhas, titulo) {
+function gerarPDFTexto(linhas, titulo, extras) {
   const LARGURA_PAG = 595, ALTURA_PAG = 842;      // A4 em pontos
   const marginX = 50, lineH = 20;
   const LARGURA_UTIL = LARGURA_PAG - 2 * marginX;  // 495pt — a mesma sobra dos dois lados
@@ -1792,7 +1897,17 @@ function gerarPDFTexto(linhas, titulo) {
     st += "ET\n";
     return st;
   });
+  for (const ex of (Array.isArray(extras) ? extras : [])) {
+    if (typeof ex === "string" && ex) streams.push(ex);
+  }
+  return montarPDF(streams);
+}
 
+/* Monta o arquivo PDF 1.4 a partir dos content streams (um por página A4), com as
+   duas fontes /F1 Helvetica e /F2 Helvetica-Bold (WinAnsi). Separado do
+   gerarPDFTexto na 1.9.3 para o relatório desenhado do SNIPER. */
+function montarPDF(streams) {
+  const paginas = streams;
   /* Numeração dos objetos:
      1 = Catalog, 2 = Pages, depois por página (Page, Contents) em pares,
      e por fim as duas fontes. */

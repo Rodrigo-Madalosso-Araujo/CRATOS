@@ -18,7 +18,36 @@ método que travou todo bug real desta lista.
 
 ## Situação
 
-### As que RODAM hoje (26/10/2026 — 1.9.2 final: + CCS em branco com as duas causas): 44 suítes, 1197 asserções
+### As que RODAM hoje (11/11/2026 — 1.9.3 em construção: manual, grafo e relatório desenhado do SNIPER, exportar/importar, Refazer, chaves de processos/grafo): 48 suítes, 1347 asserções
+
+>>> 1.9.3 (11/11): `teste-sniper.js` 87 → 95 — chaves "Juntar os processos" e "Juntar o grafo" (ligadas de fábrica, chegam ao
+    estado; desligadas: nenhuma aba aberta, "não incluído(s), por configuração" no relatório, na certidão e nos blocos,
+    sem páginas de grafo; chaves independentes).
+
+>>> 1.9.3 (10/11, 2ª leva): novas `teste-config-io.js` (31) e `teste-painel-refazer.js` (31), que reprovam a 1.9.2.
+    config-io: exportar só o schema (valor efetivo), recusas inteiras (tamanho, não-JSON, marca, versão, campo extra,
+    profundidade), descartes item a item (desconhecido, tipo, opções, texto longo, marcação, "../"), ida e volta,
+    lotação mantida, e a tela (diferenças antes do Aplicar). refazer: fim da fila, um por convênio, ato com marco
+    bloqueado (mesmo com o botão forçado), marco velho/alheio não bloqueia, consulta com marco avisa, trava da CNIB,
+    diário "substituído", estado zerado, aba fechada, e o marco antes do clique em cada convênio.
+    `teste-sniper-grafo.js` 36 → 45 (relatório desenhado: quebra com cabeçalho repetido, selos, rodapé paginado,
+    pdfDesenhado com reserva em texto, qpdf/pdftotext). `teste-sniper.js` 81 → 87 (blocos, selos, sem ID de bloqueio,
+    certidão em texto, marco do SNIPER).
+
+>>> 1.9.3 (10/11): nova `teste-sniper-grafo.js` (36), que reprova a 1.9.2. Trava o modelo do grafo (componentes na
+    ordem das partes, só vizinhos diretos, nó "*" fora, tom claro/escuro, fichas só de terceiros com data de entrada,
+    parte sem ligação), a falha ("não pôde ser obtido", nunca grafo parcial), o desenho em camadas, as páginas (WinAnsi,
+    parênteses escapados, ficha longa continua) e o fundo (páginas depois do texto; PDF passa no qpdf; texto legível no
+    pdftotext). `teste-sniper.js` 70 → 81: harness com a aba "Grafo" (lida, já carregada, faltando /grafo/node, /partes/
+    com erro) e a certidão sem a aba ("não pôde ser obtido").
+
+>>> 1.9.3 (05/11): nova `teste-manual.js` (18), que reprova a 1.9.2. Trava o manual em HTML no pacote (estático, sem
+    script, sem recurso externo, versão do manifesto), uma âncora #cfg-<nome> por convênio do Registro, a mensagem
+    "abrir_manual" (âncora válida na URL; qualquer outra coisa descartada), o botão nas Preferências e nos Primeiros
+    passos, o "?" por convênio e o HTML gerado do texto único (manual/conteudo.js). `teste-primeiros-passos.js`: a
+    asserção da versão passa a aceitar 1.9.2 ou mais nova.
+
+### Antes (26/10/2026 — 1.9.2 final: + CCS em branco com as duas causas): 44 suítes, 1197 asserções
 
 >>> 1.9.2 (26/10, 14:53): `teste-ccs-entrada.js` 23 → 24. Em branco duas vezes, a mensagem cobre a instabilidade
     do BCB (abrir à mão; se vier em branco, tentar mais tarde) além do cookie, e traz `[tela: …]` sem parâmetros.
@@ -327,7 +356,11 @@ método que travou todo bug real desta lista.
 | `teste-baixa-nada-a-cancelar.js` | 35 | rápida |
 | `teste-ccs-coleta.js` | 58 | rápida |
 | `teste-ccs-entrada.js` | 24 | rápida |
-| `teste-sniper.js` | 70 | rápida |
+| `teste-manual.js` | 18 | rápida |
+| `teste-sniper.js` | 95 | rápida |
+| `teste-sniper-grafo.js` | 45 | rápida |
+| `teste-config-io.js` | 31 | rápida |
+| `teste-painel-refazer.js` | 31 | rápida |
 | `teste-prevjud.js` | 95 | rápida |
 | `teste-novidades.js` | 19 | rápida |
 | `teste-primeiros-passos.js` | 48 | rápida (~12 s) |

@@ -117,5 +117,74 @@ const PROCESSOS_PF_PAG = [
 /* tudo o que aparece no fixture e é "dado" — para conferir o que NÃO pode sair do relatório */
 const ID_BLOQUEIO = "99887766554433";
 
-module.exports = { PROCESSOS_PJ, PROCESSOS_PF_PAG, ID_PARTE_PJ, ID_PARTE_PF, INFO, PROC, PROC_FMT, OUTRO_PROC, ID, CNPJ, CPF, NOME_PJ, NOME_PF, FONTES_TELA, telaInicial, PARTES,
+/* ── GRAFO DE VÍNCULOS (1.9.3) — 100% fictício, no FORMATO das respostas da API
+   (/v2/investigacao/{id}/partes/, /v2/grafo/node/{uuid}, …/relationships).
+   Grafo 1: 3 partes (P1 empresa, P2 e P3 pessoas) + 2 terceiros (T1 sócia de P1, com uma
+            relação fora do desenho; C1 candidatura de P2).
+   Grafo 2: 1 parte (P4 empresa) + 4 terceiros (T2 holding sócia, T3 administrador, T5
+            empresa de que P4 é sócia — com uma entrada fora do desenho —, T6 sócio).
+   P5: parte sem nenhuma ligação. */
+const GN = (id, group, label, properties) => ({ id, group, extra: {}, properties, label });
+const GE = (from, to, label, data, n) => ({ name: "is_partner", from, to, id: `is_partner|${from}|${n || "01"}`, label,
+  properties: Object.assign({ "Qualificação": label }, data ? { "Data de entrada na sociedade": data } : {}, { "Tipo de sócio": "fictício" }) });
+const GRAFO_NOS = {
+  p1: GN("g-p1", "company", NOME_PJ, { "Razão social": NOME_PJ, "CNPJ": CNPJ, "Situação cadastral": "ATIVA" }),
+  p2: GN("g-p2", "person", NOME_PF, { "Nome": NOME_PF, "CPF": CPF }),
+  p3: GN("g-p3", "person", "BELTRANA FICTICIA SOUZA", { "Nome": "BELTRANA FICTICIA SOUZA", "CPF": "11122233396" }),
+  p4: GN("g-p4", "company", "COMERCIO FICTICIO S.A.", { "Razão social": "COMERCIO FICTICIO S.A.", "CNPJ": "99888777000166" }),
+  p5: GN("g-p5", "person", "CICRANO ISOLADO FICTICIO", { "Nome": "CICRANO ISOLADO FICTICIO", "CPF": "55566677788" }),
+  t1: GN("g-t1", "person", "SICRANA TERCEIRA FICTICIA", { "Nome": "SICRANA TERCEIRA FICTICIA", "CPF": "44455566677", "Município": "CIDADE FICTICIA" }),
+  c1: GN("g-c1", "candidacy", "CANDIDATURA FICTICIA 2024", { "Cargo": "VEREADOR", "Ano": "2024", "Situação": "NÃO ELEITO" }),
+  t2: GN("g-t2", "company", "HOLDING FICTICIA (PARTICIPACOES) LTDA", { "Razão social": "HOLDING FICTICIA (PARTICIPACOES) LTDA", "CNPJ": "12312312000112",
+    "Endereço": "RUA DAS FICCOES, 100, SALA 2 — BAIRRO INVENTADO — CIDADE FICTICIA/GO", "Capital social": "R$ 100.000,00" }),
+  t3: GN("g-t3", "person", "ADMINISTRADOR FICTICIO NETO", { "Nome": "ADMINISTRADOR FICTICIO NETO", "CPF": "32132132100" }),
+  t5: GN("g-t5", "company", "ESSENCIA FICTICIA DO COURO LTDA", { "Razão social": "ESSENCIA FICTICIA DO COURO LTDA", "CNPJ": "45645645000145", "Situação cadastral": "BAIXADA" }),
+  t6: GN("g-t6", "person", "SOCIO FICTICIO JUNIOR", { "Nome": "SOCIO FICTICIO JUNIOR", "CPF": "65465465400" }),
+  fora: GN("g-fora", "company", "EMPRESA FORA DO DESENHO LTDA", { "Razão social": "EMPRESA FORA DO DESENHO LTDA" }),
+};
+const N = GRAFO_NOS;
+const GRAFO_ARESTAS = {
+  p2p1: GE("g-p2", "g-p1", "Sócio-Administrador", "10/03/2012"),
+  p3p1: GE("g-p3", "g-p1", "Sócio", "10/03/2012"),
+  t1p1: GE("g-t1", "g-p1", "Sócio", "01/02/2015"),
+  p2c1: { name: "is_candidate", from: "g-p2", to: "g-c1", id: "is_candidate|g-p2|01", label: "Candidato", properties: {} },
+  t2p4: GE("g-t2", "g-p4", "Sócio", "05/06/2019"),
+  t3p4: GE("g-t3", "g-p4", "Administrador", ""),
+  p4t5: GE("g-p4", "g-t5", "Sócio", "20/11/2020"),
+  t6p4: GE("g-t6", "g-p4", "Sócio", "05/06/2019", "02"),
+  /* fora do desenho (só no /relationships): o "*" do SNIPER */
+  t1fora: GE("g-t1", "g-fora", "Sócio", "07/07/2007", "09"),
+  forat5: GE("g-fora", "g-t5", "Sócio", "08/08/2008", "08"),
+};
+const A = GRAFO_ARESTAS;
+const comGrafo = (no, nos, arestas) => Object.assign({}, no, { graph: { nodes: nos, edges: arestas } });
+const GRAFO = {
+  PARTES: [
+    { id: 701, selecionada: true, uuid: "g-p1" }, { id: 702, selecionada: true, uuid: "g-p2" },
+    { id: 703, selecionada: true, uuid: "g-p3" }, { id: 704, selecionada: true, uuid: "g-p4" },
+    { id: 705, selecionada: true, uuid: "g-p5" }, { id: 706, selecionada: false, uuid: "g-nao-selecionada" },
+  ],
+  NO: {
+    "g-p1": comGrafo(N.p1, [N.p2, N.p3, N.t1], [A.p2p1, A.p3p1, A.t1p1]),
+    "g-p2": comGrafo(N.p2, [N.p1, N.c1], [A.p2p1, A.p2c1]),
+    "g-p3": comGrafo(N.p3, [N.p1], [A.p3p1]),
+    "g-p4": comGrafo(N.p4, [N.t2, N.t3, N.t5, N.t6], [A.t2p4, A.t3p4, A.p4t5, A.t6p4]),
+    "g-p5": comGrafo(N.p5, [], []),
+  },
+  REL: {
+    "g-p1": {
+      "g-p1": comGrafo(N.p1, [N.p2, N.p3, N.t1], [A.p2p1, A.p3p1, A.t1p1]),
+      "g-t1": comGrafo(N.t1, [N.p1, N.fora], [A.t1p1, A.t1fora]),
+      "g-fora": comGrafo(N.fora, [N.t1, N.t5], [A.t1fora, A.forat5]),
+    },
+    "g-p2": { "g-c1": comGrafo(N.c1, [N.p2], [A.p2c1]) },
+    "g-p4": {
+      "g-t2": comGrafo(N.t2, [N.p4], [A.t2p4]),
+      "g-t3": comGrafo(N.t3, [N.p4], [A.t3p4]),
+      "g-t5": comGrafo(N.t5, [N.p4, N.fora], [A.p4t5, A.forat5]),
+    },
+  },
+};
+
+module.exports = { GRAFO, PROCESSOS_PJ, PROCESSOS_PF_PAG, ID_PARTE_PJ, ID_PARTE_PF, INFO, PROC, PROC_FMT, OUTRO_PROC, ID, CNPJ, CPF, NOME_PJ, NOME_PF, FONTES_TELA, telaInicial, PARTES,
   respostaFonte, MODOS, ID_BLOQUEIO };

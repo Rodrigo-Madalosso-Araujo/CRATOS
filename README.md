@@ -5,7 +5,7 @@ Extensão Firefox (Manifest V2) que captura os dados do processo no PJe e
 **prepara** a execução de convênios (consultas e registro) para o processo em
 tela, no âmbito do TRT da 18ª Região.
 
-> Versão: **1.9.2** · Compatibilidade: Firefox 140+ (ESR 140 ou superior) · Este repositório é
+> Versão: **1.9.3** · Compatibilidade: Firefox 140+ (ESR 140 ou superior) · Este repositório é
 > disponibilizado para fins de **homologação** pelo Tribunal.
 > Última versão **homologada** pela STI: **1.6.5** (release `v1.6.5`). As versões 1.7 a 1.9 estão
 > descritas abaixo e no cartão "Novidades" da própria extensão.
@@ -89,6 +89,21 @@ o CRATOS gera certidão desse fato em vez de terminar calado.
   RENAJUD já devolve ao formulário durante uma tarefa do CRATOS. Documentos de
   magistrados não são guardados. A lista de órgãos do RENAJUD dos 24 TRTs vem
   embutida no pacote (`src/modulos/renajud-orgaos.js`, só nomes públicos de unidades).
+- **Exportar/importar configurações (desde a 1.9.3).** O arquivo `.json` exportado
+  pelas Preferências leva **só** as opções de configuração — nenhum dado de processo,
+  de parte ou de identificação de quem exportou. A importação é uma **lista branca**
+  derivada do próprio catálogo das Preferências (`src/comum/config-io.js`): arquivo
+  grande, que não seja do CRATOS ou alterado fora dele é recusado inteiro; opção
+  desconhecida, valor fora do previsto, texto longo ou com marcação e pasta com `../`
+  são descartados; nada é gravado sem o usuário conferir as diferenças e confirmar.
+- **SNIPER (desde a 1.9.3).** O relatório traz o grafo de vínculos redesenhado a partir
+  das respostas que a própria tela do SNIPER recebe (o grampo é só de leitura), com a
+  ficha de cada terceiro; o anexo é juntado sigiloso. Processos das partes (DataJud) e
+  grafo podem ser desligados nas Preferências — aí nem são buscados (minimização), e o
+  relatório e a certidão registram "não incluído, por configuração".
+- **"Refazer" da fila (desde a 1.9.3).** Cada convênio registra o ponto a partir do qual
+  a ordem pode ter chegado ao sistema; daí em diante, nos atos de constrição, o painel
+  **não** permite refazer — não há ordem em dobro.
 - A extensão **não manuseia senhas, tokens ou certificados**: o login (inclusive
   certificado digital e token por e-mail) é sempre feito pelo usuário.
 - Todo HTML montado com dado externo passa por `CratosHTML` (escape
@@ -140,7 +155,7 @@ cd testes
 node teste-<nome>.js # roda uma suíte
 ```
 
-Há **44 suítes / 1197 asserções**. A `teste-cnib.js` é lenta (~5 min, usa relógio
+Há **48 suítes / 1347 asserções**. A `teste-cnib.js` é lenta (~5 min, usa relógio
 real); as demais são rápidas. Cada suíte imprime o próprio placar. O padrão do
 projeto é que **teste novo reprove a versão anterior** — várias aceitam
 `CRATOS_SRC=<pasta do .xpi descompactado>` para serem apontadas a uma versão

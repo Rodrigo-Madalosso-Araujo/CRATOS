@@ -428,8 +428,8 @@ function paginaExtensao(corpoHtml, mem, catalogo) {
   /* ── 7. novidades ──────────────────────────────────────────────────────── */
   {
     const nov = ler("comum", "novidades.js");
-    checar(/versao: "1\.9\.2"/.test(nov) && /Primeiros passos/.test(nov) && JSON.parse(ler("manifest.json")).version === "1.9.2",
-      "novidades da 1.9.2 e versão 1.9.2 no manifesto");
+    checar(/versao: "1\.9\.2"/.test(nov) && /Primeiros passos/.test(nov) && /^1\.9\.([2-9]|\d\d)$|^(1\.(\d\d|[1-9]\d)|[2-9])\./.test(JSON.parse(ler("manifest.json")).version),
+      "novidades da 1.9.2 e manifesto na 1.9.2 ou mais nova");
   }
 
   console.log(`\n=== ${NOME} ===`);

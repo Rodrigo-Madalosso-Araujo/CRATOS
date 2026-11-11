@@ -38,8 +38,15 @@ function _sniperConfig(cfg) {
   const fontes = SNIPER_FONTES
     .filter((f) => { const t = c["fonte_" + f.slug]; return !(t && t.ativo === false); })
     .map((f) => f.slug);
+  /* 1.9.3 (11/11, pedido do Rodrigo): juntar ou não o grafo (com as fichas dos terceiros)
+     e os processos das partes (DataJud). Ausente = ligado (o relatório de sempre).
+     Desligado = o CRATOS nem abre a aba correspondente, e o relatório e a certidão dizem
+     "não incluído, por configuração" — nunca "sem vínculos" / "sem processos". */
+  const ligado = (k) => !(c[k] && c[k].ativo === false);
   return {
     fontes,
+    processos: ligado("juntarProcessos"),
+    grafo: ligado("juntarGrafo"),
     pasta: String(c.pasta || "CRATOS").replace(/[\\:*?"<>|]/g, "").trim() || "CRATOS",
   };
 }
@@ -125,8 +132,12 @@ if (typeof Registro !== "undefined") {
           "que vale: ele não devolve resultado depois.",
         "<b>Dados cadastrais e processos:</b> o relatório começa com o cadastro da Receita e os " +
           "processos em nome de cada parte (abas Dados e Processos do \"Mais detalhes\" do SNIPER). " +
-          "<b>O grafo de vínculos não entra</b>; a certidão indica o nº da investigação para consulta " +
-          "no próprio SNIPER.",
+          "Os <b>processos</b> e o <b>grafo</b> podem ser desligados abaixo: aí o CRATOS nem os busca, e o " +
+          "relatório e a certidão dizem que não foram incluídos por configuração. O cadastro entra sempre. " +
+          "<b>Grafo de vínculos (1.9.3):</b> no fim do relatório, cada grafo da aba \"Grafo\" do SNIPER " +
+          "redesenhado numa página (legenda do SNIPER), e uma ficha por terceiro vinculado (\"Detalhes do " +
+          "objeto\" e relações, com a data de entrada). Vínculos não expandidos (*) não entram. Se o grafo " +
+          "não carregar, o relatório diz que não pôde ser obtido — nunca \"sem vínculos\".",
         "<b>Enquanto trabalha</b>, o CRATOS cobre a aba do SNIPER com um aviso (não clique nela). " +
           "Ao terminar, a aba <b>fecha sozinha</b>; se algo der errado, ela fica aberta para você conferir.",
         "<b>Sigilo:</b> os anexos entram <b>sigilosos</b> nos autos.",
@@ -140,6 +151,16 @@ if (typeof Registro !== "undefined") {
       rotulo: "Consultar " + f.rotulo,
     };
   }
+  config.juntarProcessos = {
+    tipo: "toggle",
+    padrao: { ativo: true },
+    rotulo: "Juntar os processos em nome das partes (DataJud — aba Processos do \"Mais detalhes\")",
+  };
+  config.juntarGrafo = {
+    tipo: "toggle",
+    padrao: { ativo: true },
+    rotulo: "Juntar o grafo de vínculos (com a ficha de cada terceiro vinculado)",
+  };
   config.pasta = {
     tipo: "texto",
     padrao: "CRATOS",

@@ -162,6 +162,7 @@
       throw new Error("o CCS voltou ao Termo de Uso depois do aceite" + motivoDaPagina() + ".");
     }
     if (!confereProcesso(est)) throw new Error("o número do processo na tela não é o deste processo.");
+    await Store.marco("CCS", est.numProcesso, "a requisição foi preparada no CCS para envio");   // 1.9.3
     const termo = campo("assinaturaTermoResponsabilidade");
     const btn = botao(/requisitar\s+consulta/i);
     if (!termo || !btn) throw new Error("não achei o Termo de Uso ou o botão Requisitar Consulta (CCSFW0502).");

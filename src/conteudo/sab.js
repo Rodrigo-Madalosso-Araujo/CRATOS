@@ -90,6 +90,8 @@
       return;
     }
 
+    /* 1.9.3 — a minuta já existe no SAB (nº na URL): refazer criaria outra determinação. */
+    Store.marco("SAB", est.numProcesso, `a minuta da determinação nº ${idDeterminacao} já foi salva no SAB`);
     console.log("CRATOS/SAB: monitorando conclusão da determinação", idDeterminacao);
     const base = location.origin;
     const t0 = Date.now();
@@ -204,6 +206,7 @@
       return CratosFaixa.parar("sab", "preenchi a justificativa mas não achei o 'Confirmar' do "
         + "pop-up. A interrupção NÃO foi confirmada — confirme à mão.");
     }
+    await Store.marco("SAB", est.numProcesso, "o CRATOS confirmou a interrupção da determinação no SAB");   // 1.9.3
     btnConfirmar.click();
     console.log("CRATOS/SAB baixa: interrupção confirmada; aguardando mudança de situação.");
 
