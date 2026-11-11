@@ -305,6 +305,7 @@
       const antes = capturas.length;
       const clicadoEm = io.agora();
       await salvar(est, { emVoo: d.cpf, emVooEm: clicadoEm });
+      await Store.marco("PREVJUD", est.numProcesso, "o dossiê já foi solicitado ao PREVJUD");   // 1.9.3
       clicarSeguro(btn);
       const r = await aguardar(() => conferirSolicitacoes(est, inicio) || respostaDoCpf(d.cpf, antes, est), ESPERA_SOLICITAR_MS);
       if (r && r.trava) throw new Error(r.trava);

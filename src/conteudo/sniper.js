@@ -20,8 +20,13 @@
  *    assim (o SNIPER não devolve nada depois — Rodrigo, 21/10).
  *  - Falha técnica (botão que não habilita, investigação que não cria) = faixa, NUNCA
  *    certidão.
- *  - O grafo de vínculos fica FORA. O cadastro da Receita de cada parte ("Mais detalhes") ENTRA
- *    no começo do relatório (1.7.1, pedido do Rodrigo: o juiz defere e espera todos os dados).
+ *  - O cadastro da Receita de cada parte ("Mais detalhes") ENTRA no começo do relatório
+ *    (1.7.1, pedido do Rodrigo: o juiz defere e espera todos os dados).
+ *  - O GRAFO DE VÍNCULOS ENTRA no fim do relatório (1.9.3, pedido do Rodrigo, 10/11): o
+ *    CRATOS abre a aba "Grafo", lê o que a tela recebeu (/partes/ e /grafo/node/…) e o
+ *    fundo REDESENHA cada grafo numa página, mais a ficha de cada terceiro
+ *    (comum/grafo-sniper.js). Grafo que não carregou = "não pôde ser obtido", NUNCA
+ *    "sem vínculos"; e a falha do grafo não derruba o relatório nem a certidão.
  *  - HTML dinâmico: este script não monta HTML (só a faixa, por textContent).
  */
 (function iniciarSniper() {
@@ -35,6 +40,8 @@
   const ESPERA_FONTES_MS = 120 * 1000;
   const FOLGA_FINAL_MS = 3000;
   const ESPERA_INFO_MS = 15 * 1000;
+  const ESPERA_GRAFO_MS = 45 * 1000;       // /partes/ + /grafo/node/{uuid} de cada parte
+  const ESPERA_RELACOES_MS = 8 * 1000;     // /relationships (só o tom claro/escuro)
   const PAUSA_ANTES_DE_FECHAR_MS = 2500;
   const AVISO_CORTINA = "O CRATOS está fazendo a investigação no SNIPER. Aguarde — não feche nem clique nesta aba.";
   const PASSO_MS = 500;
@@ -159,6 +166,7 @@
       await salvar(est, { fase: "investigando", iniciadaEm: new Date(io.agora()).toISOString() });
       avisar("iniciando a investigação…");
       cortina();
+      await Store.marco("SNIPER", est.numProcesso, "a investigação foi iniciada no SNIPER");   // 1.9.3
       clicarSeguro(botao);
 
       /* 6. a investigação criada */
@@ -201,8 +209,18 @@
          que a tela recebeu (/v2/investigacao/{idParte}/info/) e volta aos resultados. */
       avisar("lendo os dados cadastrais de cada parte (Mais detalhes)…");
       cortina();
-      const infos = await lerCadastros(investigadas.length);
+      /* 1.9.3 (11/11) — Preferências: processos e grafo podem ficar de fora (nem são buscados) */
+      const querProcessos = !est.config || est.config.processos !== false;
+      const querGrafo = !est.config || est.config.grafo !== false;
+      const infos = await lerCadastros(investigadas.length, querProcessos);
       const cadastros = casarCadastros(investigadas, infos);
+      /* 1.9.3 — o grafo de vínculos (aba "Grafo"); nunca lança */
+      let grafo = { ok: false, omitido: true };
+      if (querGrafo) {
+        avisar("lendo o grafo de vínculos…");
+        cortina();
+        grafo = await lerGrafo(id, est.numProcesso || formatarProcesso(est.numeroDigitos));
+      }
       const naoListadas = (est.docsPainel || []).filter((p) => !partes.some((x) => x.doc === p.doc));
       const naoConsultadas = FONTES.map((f) => f.slug).filter((s) => enviadas.indexOf(s) < 0);
       const dados = {
@@ -217,12 +235,16 @@
         fontes,
         naoConsultadas,
         naoListadas,
+        grafo,
+        semProcessos: !querProcessos,
       };
 
       const base = `${pasta(est)}/${est.numeroDigitos}_${doisPrimeiros((investigadas[0] || {}).nome) || "parte"}`;
       const nomeRelatorio = `${base} SNIPER relatorio.pdf`.replace(/\s+/g, " ");
       const nomeCertidao = `${base} SNIPER certidao.pdf`.replace(/\s+/g, " ");
-      await enviarPdf(est, "RELATÓRIO DE INVESTIGAÇÃO PATRIMONIAL — SNIPER (CNJ)", montarRelatorio(dados), nomeRelatorio, "relatorio");
+      await enviarPdf(est, "RELATÓRIO DE INVESTIGAÇÃO PATRIMONIAL — SNIPER (CNJ)", montarRelatorio(dados), nomeRelatorio, "relatorio",
+        grafo && grafo.ok && grafo.grafos.length ? grafo : null, montarRelatorioBlocos(dados),
+        { processo: dados.numProcesso, investigacao: id, consultaEm: dados.consultaEm.toISOString() });
       await enviarPdf(est, "CERTIDÃO — INVESTIGAÇÃO PATRIMONIAL (SNIPER/CNJ)", montarCertidao(dados, nomeRelatorio), nomeCertidao, "certidao");
       await salvar(est, { ativo: false, fase: "concluido" });
       tirarCortina();
@@ -368,11 +390,65 @@
     return marcadas;
   }
 
+  /* ═══ GRAFO DE VÍNCULOS (1.9.3) ═══
+     A aba "Grafo" pede /v2/investigacao/{id}/partes/ (as partes, com o uuid de cada uma no
+     grafo), depois /v2/grafo/node/{uuid} de cada parte (o que a tela desenha: a parte e os
+     vizinhos diretos) e /v2/grafo/node/{uuid}/relationships (o levantamento maior, que só
+     diz se um nó tem relações não expandidas). O CRATOS clica na aba (via clicarSeguro),
+     lê essas respostas e monta o MODELO; o desenho é do fundo. Se já estiverem nas
+     capturas (a página às vezes carrega o grafo sozinha), nem clica. */
+  function abaGrafo() {
+    return Array.from(document.querySelectorAll('[role="tab"], .mat-mdc-tab, .mdc-tab, a, button'))
+      .find((t) => { const x = String(t.textContent || "").replace(/\s+/g, " ").trim(); return x.length <= 30 && /(^|\s)grafo$/i.test(x); }) || null;
+  }
+  async function lerGrafo(id, numProcesso) {
+    const meta = { processo: numProcesso, investigacao: id, consultaEm: new Date(io.agora()).toISOString() };
+    const falha = (motivo) => ({ ok: false, motivo, meta });
+    try {
+      if (typeof CratosGrafoSniper === "undefined") return falha("o componente do grafo não carregou");
+      const rxPartes = new RegExp(`/v2/investigacao/${id}/partes/?(\\?|$)`, "i");
+      const rxNo = /\/v2\/grafo\/node\/([^/?#]+)\/?(\?|$)/i;
+      const rxRel = /\/v2\/grafo\/node\/([^/?#]+)\/relationships\/?(\?|$)/i;
+      const ok = (c) => c.metodo === "GET" && c.status >= 200 && c.status < 300 && c.json && typeof c.json === "object";
+      const capPartes = () => capturas.filter((c) => ok(c) && rxPartes.test(c.url)).pop() || null;
+      const uuids = () => {
+        const c = capPartes();
+        return c && Array.isArray(c.json) ? c.json.filter((p) => p && p.uuid && p.selecionada !== false).map((p) => String(p.uuid)) : [];
+      };
+      const respostas = (rx) => {
+        const m = {};
+        for (const c of capturas) { if (!ok(c)) continue; const k = (c.url.match(rx) || [])[1]; if (k) m[decodeURIComponent(k)] = c.json; }
+        return m;
+      };
+      const completo = () => { const u = uuids(); const n = respostas(rxNo); return u.length && u.every((x) => n[x]) ? u : null; };
+      if (!completo()) {
+        const aba = abaGrafo();
+        if (!aba) return falha("a aba \"Grafo\" não foi encontrada na tela do SNIPER");
+        try { clicarSeguro(aba); } catch (e) { return falha("a aba \"Grafo\" não pôde ser aberta"); }
+        await aguardar(completo, ESPERA_GRAFO_MS);
+      }
+      if (!capPartes()) return falha("o SNIPER não informou as partes do grafo (a resposta não chegou)");
+      const u = uuids();
+      if (u.length) await aguardar(() => { const r = respostas(rxRel); return u.every((x) => r[x]); }, ESPERA_RELACOES_MS);
+      const nos = respostas(rxNo), rel = respostas(rxRel);
+      const modelo = CratosGrafoSniper.montar({
+        partes: u,
+        nos: Object.fromEntries(u.filter((x) => nos[x]).map((x) => [x, nos[x]])),
+        rel: Object.fromEntries(u.filter((x) => rel[x]).map((x) => [x, rel[x]])),
+        meta,
+      });
+      if (!modelo.ok) return falha(modelo.motivo || "o SNIPER não carregou o grafo");
+      return modelo;
+    } catch (e) {
+      return falha("erro ao ler o grafo (" + String((e && e.message) || e).slice(0, 120) + ")");
+    }
+  }
+
   /* ═══ CADASTRO DAS PARTES ("Mais detalhes") ═══ */
   const rxLinkParte = /investigacao-de-bens\/\d+\/parte\/(\d+)/;
   const linksParte = () => Array.from(document.querySelectorAll('a[href*="/parte/"]'))
     .filter((a) => rxLinkParte.test(String(a.getAttribute("href") || a.href || "")));
-  async function lerCadastros(esperadas) {
+  async function lerCadastros(esperadas, querProcessos) {
     const lidos = [];
     const ids = [];
     /* os cartões das partes podem renderizar DEPOIS das respostas das fontes */
@@ -397,7 +473,7 @@
           if (!cap) cap = await aguardar(acharInfo, ESPERA_INFO_MS);
           /* 1.7.3 — aba "Processos" do "Mais detalhes" (pedido do Rodrigo, 21/10): ações em
              nome da parte. A aba é que dispara o /processos/. */
-          processos = await lerProcessos(procs);
+          if (querProcessos !== false) processos = await lerProcessos(procs);
           if (location.href !== urlAntes) {
             io.voltar();
             await aguardar(() => location.href === urlAntes && linksParte().length, 8000);
@@ -575,7 +651,8 @@
       "", `Pessoas investigadas (${d.investigadas.length}):`];
     d.investigadas.forEach((p, i) => L.push(`${i + 1}) ${p.nome ? p.nome + " - " : ""}CPF/CNPJ ${formatarDoc(p.doc)}`));
     if (d.cadastros && d.cadastros.length) {
-      L.push("", "DADOS CADASTRAIS (Receita Federal) E PROCESSOS DAS PARTES, conforme exibidos pelo SNIPER");
+      L.push("", d.semProcessos ? "DADOS CADASTRAIS (Receita Federal) DAS PARTES, conforme exibidos pelo SNIPER"
+        : "DADOS CADASTRAIS (Receita Federal) E PROCESSOS DAS PARTES, conforme exibidos pelo SNIPER");
       d.cadastros.forEach((c, i) => {
         const p = c.parte || {};
         L.push(`${i + 1}) ${p.nome ? p.nome + " - " : ""}CPF/CNPJ ${formatarDoc(p.doc)}`);
@@ -587,6 +664,7 @@
             L.push(`   ${k}: ${valorTexto(v)}`);
           }
         }
+        if (d.semProcessos) return;
         const pr = c.processos;
         if (!pr) { L.push("   Processos em nome da parte: não obtidos do SNIPER."); return; }
         if (pr.erro) { L.push(`   Processos em nome da parte: o SNIPER retornou erro (${pr.erro}).`); return; }
@@ -618,9 +696,102 @@
     if (d.naoConsultadas.length) {
       L.push("", `Fontes não consultadas, por configuração do(a) usuário(a): ${d.naoConsultadas.map(rotuloFonte).join("; ")}.`);
     }
-    L.push("", "Relatório gerado pelo CRATOS a partir dos dados exibidos pelo SNIPER no momento da consulta. " +
-      "O grafo de vínculos não é reproduzido.");
+    if (d.semProcessos) L.push("", "PROCESSOS EM NOME DAS PARTES (DataJud): não incluídos, por configuração do(a) usuário(a).");
+    L.push(...textoGrafoRelatorio(d));
+    L.push("", "Relatório gerado pelo CRATOS a partir dos dados exibidos pelo SNIPER no momento da consulta.");
     return L;
+  }
+
+  /* 1.9.3 — o MESMO relatório em BLOCOS, para o fundo desenhar no padrão do grafo
+     (comum/grafo-sniper.js → relatorio). O conteúdo é o das `linhas` acima: elas
+     continuam indo junto e são o que sai se o desenho falhar. SÓ o relatório: a
+     certidão segue em texto corrido (decisão do Rodrigo, 10/11). */
+  const TOM_FONTE = { com_resultado: "ok", sem_resultado: "vazio", erro: "erro", andamento: "andamento", sem_resposta: "andamento" };
+  const SELO_FONTE = { com_resultado: "com resultado", sem_resultado: "nenhum registro", erro: "erro da fonte", andamento: "em andamento", sem_resposta: "sem resposta" };
+  function montarRelatorioBlocos(d) {
+    const B = [];
+    const doc = (p) => formatarDoc(p.doc);
+    B.push({ t: "secao", texto: "Identificação" });
+    B.push({ t: "kv", pares: [
+      ["Processo", d.numProcesso],
+      ["Investigação no SNIPER", `nº ${d.id}` + (d.criadaEm ? ` (criada em ${dataHoraDe(d.criadaEm)})` : "")],
+      ["Data e hora da consulta", `${dataBR(d.consultaEm)} ${hm(d.consultaEm)}`],
+    ].concat(d.iniciadaEm ? [["Iniciada pelo CRATOS", dataHoraDe(d.iniciadaEm)]] : []) });
+    B.push({ t: "secao", texto: `Pessoas investigadas (${d.investigadas.length})` });
+    B.push({ t: "tabela", colunas: [{ titulo: "#", peso: 0.5 }, { titulo: "Nome", peso: 6 }, { titulo: "CPF/CNPJ", peso: 3 }],
+      linhas: d.investigadas.map((p, i) => [String(i + 1), p.nome || "—", doc(p)]) });
+    B.push({ t: "secao", texto: "Resumo das fontes" });
+    B.push({ t: "tabela", colunas: [{ titulo: "Fonte", peso: 5 }, { titulo: "Situação", peso: 3 }, { titulo: "Registros", peso: 1.6 }],
+      linhas: d.fontes.map((f) => [f.rotulo, { texto: SELO_FONTE[f.situacao] || f.situacao, tom: TOM_FONTE[f.situacao] || "vazio" },
+        f.situacao === "com_resultado" ? String(f.itens.length) + (f.parcial ? " (parcial)" : "") : "—"]) });
+    if (d.naoConsultadas.length) B.push({ t: "par", tom: "nota", texto: `Fontes não consultadas, por configuração do(a) usuário(a): ${d.naoConsultadas.map(rotuloFonte).join("; ")}.` });
+
+    if (d.cadastros && d.cadastros.length) {
+      B.push({ t: "secao", texto: d.semProcessos ? "Dados cadastrais (Receita Federal) das partes" : "Dados cadastrais (Receita Federal) e processos das partes" });
+      B.push({ t: "par", tom: "nota", texto: d.semProcessos
+        ? "Conforme exibidos pelo SNIPER (\"Mais detalhes\" de cada parte, aba Dados). Processos em nome das partes (DataJud): não incluídos, por configuração do(a) usuário(a)."
+        : "Conforme exibidos pelo SNIPER (\"Mais detalhes\" de cada parte, abas Dados e Processos)." });
+      d.cadastros.forEach((c, i) => {
+        const p = c.parte || {};
+        B.push({ t: "sub", texto: `${i + 1}) ${p.nome || "(sem nome)"}`, nota: `CPF/CNPJ ${doc(p)}` });
+        if (!c.info) B.push({ t: "par", tom: "nota", texto: "Dados cadastrais não obtidos do SNIPER." });
+        else {
+          B.push({ t: "kv", pares: Object.keys(c.info).filter((k) => !(k === "extra" && (!c.info[k] || (typeof c.info[k] === "object" && !Object.keys(c.info[k]).length))))
+            .map((k) => [k, valorTexto(c.info[k])]) });
+        }
+        if (d.semProcessos) return;
+        const pr = c.processos;
+        if (!pr) { B.push({ t: "par", tom: "nota", texto: "Processos em nome da parte: não obtidos do SNIPER." }); return; }
+        if (pr.erro) { B.push({ t: "par", tom: "alerta", texto: `Processos em nome da parte: o SNIPER retornou erro (${pr.erro}).` }); return; }
+        const parcial = pr.total != null && pr.itens.length < pr.total;
+        B.push({ t: "tabela", titulo: `Processos em nome da parte: ${parcial ? `${pr.itens.length} de ${pr.total}` : pr.itens.length}`, colunas: [{ titulo: "Número", peso: 3.4 }, { titulo: "Tribunal", peso: 1.3 }, { titulo: "Classe", peso: 2.6 }, { titulo: "Assunto", peso: 2.4 }, { titulo: "Último movimento", peso: 3.2 }],
+          linhas: pr.itens.map((x) => [x.numero || "(sem número)", x.tribunal || "—", x.classe || "—", x.assunto || "—", x.movimento || "—"]) });
+        if (parcial) B.push({ t: "par", tom: "nota", texto: `O SNIPER informou ${pr.total} processos; foram obtidos ${pr.itens.length}.` });
+      });
+    }
+
+    if (d.semProcessos && !(d.cadastros && d.cadastros.length)) {
+      B.push({ t: "par", tom: "nota", texto: "Processos em nome das partes (DataJud): não incluídos, por configuração do(a) usuário(a)." });
+    }
+    for (const f of d.fontes) {
+      B.push({ t: "secao", texto: f.rotulo, selo: { texto: resumoCurto(f), tom: TOM_FONTE[f.situacao] || "vazio" } });
+      if (f.situacao === "erro") { B.push({ t: "par", tom: "alerta", texto: `A fonte retornou erro: ${f.mensagem || "(sem mensagem)"}.` }); continue; }
+      if (f.situacao === "andamento") { B.push({ t: "par", texto: `Pesquisa em andamento no momento da consulta${f.mensagem ? ` ("${f.mensagem}")` : ""}.` }); continue; }
+      if (f.situacao === "sem_resposta") { B.push({ t: "par", texto: "O SNIPER não apresentou o resultado desta fonte até o momento da consulta." }); continue; }
+      if (f.situacao === "sem_resultado") { B.push({ t: "par", texto: "Nenhum registro encontrado." }); continue; }
+      if (f.parcial && f.mensagem) B.push({ t: "par", tom: "nota", texto: `Observação do SNIPER: ${f.mensagem}.` });
+      if (f.colunas.length && f.colunas.length <= 4) {
+        B.push({ t: "tabela", colunas: [{ titulo: "#", peso: 0.5 }].concat(f.colunas.map((c) => ({ titulo: c.title, peso: 3 }))),
+          linhas: f.itens.map((it, i) => [String(i + 1)].concat(f.colunas.map((c) => valorTexto(it ? it[c.name] : null)))) });
+      } else {
+        f.itens.forEach((it, i) => {
+          B.push({ t: "sub", texto: `Registro ${i + 1} de ${f.itens.length}` });
+          B.push({ t: "kv", pares: f.colunas.length ? f.colunas.map((c) => [c.title, valorTexto(it ? it[c.name] : null)]) : [["Registro", valorTexto(it)]] });
+        });
+      }
+    }
+
+    const g = d.grafo;
+    if (g) {
+      B.push({ t: "secao", texto: "Grafo de vínculos" });
+      for (const l of textoGrafoRelatorio(d).slice(2)) {
+        if (/^ {2}Grafo \d+ — /.test(l) || /^ {4}\d+\) /.test(l)) continue;     // vão como tabela, abaixo
+        B.push({ t: "par", texto: l.trim() });
+      }
+      if (g.ok) {
+        for (const gr of g.grafos) {
+          B.push({ t: "sub", texto: `Grafo ${gr.numero}`, nota: `Parte${gr.partes.length === 1 ? "" : "s"}: ${gr.partes.join("; ")}` });
+          B.push({ t: "tabela", colunas: [{ titulo: "Terceiro vinculado", peso: 4 }, { titulo: "CPF/CNPJ", peso: 2.4 }, { titulo: "Vínculo", peso: 4.4 }],
+            linhas: gr.terceiros.map((t) => [t.rotulo, t.doc ? t.doc.valor : "—",
+              t.saida.map((r) => `${r.relacao} de ${r.nome}${r.data ? ` desde ${r.data}` : ""}`)
+                .concat(t.entrada.map((r) => `${r.nome} é ${r.relacao}${r.data ? ` desde ${r.data}` : ""}`)).join("; ") || "—"]) });
+        }
+      }
+    }
+    B.push({ t: "espaco" });
+    B.push({ t: "par", tom: "nota", texto: "Relatório gerado pelo CRATOS a partir dos dados exibidos pelo SNIPER no momento da consulta. " +
+      "Nenhuma medida de constrição foi solicitada. O ID para bloqueio e os identificadores internos do SNIPER não são reproduzidos." });
+    return B;
   }
 
   function montarCertidao(d, nomeRelatorio) {
@@ -672,14 +843,63 @@
           : "Os processos em nome das partes investigadas, ") +
         "tal como exibidos pelo SNIPER, também constam do relatório anexo.");
     }
-    L.push("", `O grafo de vínculos não foi reproduzido; pode ser consultado no próprio SNIPER, investigação nº ${d.id}.`);
+    if (d.semProcessos) L.push("", "Os processos em nome das partes investigadas (DataJud) não foram incluídos, por configuração do(a) usuário(a).");
+    L.push("", textoGrafoCertidao(d));
     L.push("", `A investigação foi iniciada pelo CRATOS, a pedido do(a) responsável por este ato` +
       (d.iniciadaEm ? `, em ${dataHoraDe(d.iniciadaEm)}` : "") + ". Nenhuma medida de constrição foi solicitada.");
     L.push("", "Era o que me cumpria certificar.");
     return L;
   }
 
-  async function enviarPdf(est, titulo, linhas, filename, detalhe) {
+  /* Grafo no texto. Regra de ferro: falha técnica → "não pôde ser obtido"; só se diz
+     que não há vínculo quando o SNIPER RESPONDEU e o grafo dele não tinha ligação. */
+  const plural = (n, s, p) => `${n} ${n === 1 ? s : p}`;
+  function textoGrafoRelatorio(d) {
+    const g = d.grafo;
+    if (!g) return [];
+    const L = ["", "GRAFO DE VÍNCULOS (SNIPER)"];
+    if (g.omitido) { L.push("  Não incluído, por configuração do(a) usuário(a)."); return L; }
+    if (!g.ok) {
+      L.push(`  O grafo de vínculos não pôde ser obtido do SNIPER no momento da consulta (${g.motivo || "motivo não identificado"}). ` +
+        `Pode ser consultado no próprio SNIPER, investigação nº ${d.id}.`);
+      return L;
+    }
+    if (!g.grafos.length) {
+      L.push("  O grafo exibido pelo SNIPER não apresentou vínculos das partes investigadas com terceiros.");
+      return L;
+    }
+    L.push(`  O SNIPER exibiu ${plural(g.grafos.length, "grafo", "grafos")} de vínculos, com ${plural(g.totalTerceiros, "terceiro vinculado", "terceiros vinculados")} ` +
+      "às partes investigadas. Cada grafo foi redesenhado pelo CRATOS em página própria, ao final deste relatório, seguido da " +
+      "ficha de cada terceiro (os \"Detalhes do objeto\" exibidos pelo SNIPER).");
+    for (const gr of g.grafos) {
+      const ps = gr.partes.join("; ");
+      L.push(`  Grafo ${gr.numero} — parte${gr.partes.length === 1 ? "" : "s"}: ${ps}${/\.$/.test(ps) ? "" : "."}`);
+      gr.terceiros.forEach((t, i) => {
+        /* a direção importa: "Sócio de X" (o terceiro tem o vínculo) ≠ "X é Sócio" (X tem) */
+        const desde = (r) => (r.data ? ` desde ${r.data}` : "");
+        const rels = t.saida.map((r) => `${r.relacao} de ${r.nome}${desde(r)}`)
+          .concat(t.entrada.map((r) => `${r.nome} é ${r.relacao}${desde(r)}`));
+        L.push(`    ${i + 1}) ${t.rotulo}${t.doc ? ` - ${t.doc.tipo} ${t.doc.valor}` : ""}${rels.length ? ": " + rels.join("; ") : ""}`);
+      });
+    }
+    if (g.semVinculos && g.semVinculos.length) {
+      L.push(`  Sem vínculos no grafo do SNIPER: ${g.semVinculos.join("; ")}.`);
+    }
+    L.push("  Vínculos que o SNIPER não expandiu no grafo (marcados com * na impressão dele) não constam.");
+    return L;
+  }
+  function textoGrafoCertidao(d) {
+    const g = d.grafo;
+    if (g && g.omitido) return "O grafo de vínculos do SNIPER não foi incluído, por configuração do(a) usuário(a).";
+    if (!g || !g.ok) {
+      return `O grafo de vínculos não pôde ser obtido do SNIPER no momento da consulta; pode ser consultado no próprio SNIPER, investigação nº ${d.id}.`;
+    }
+    if (!g.grafos.length) return "O grafo de vínculos exibido pelo SNIPER não apresentou vínculos das partes investigadas com terceiros.";
+    return `O grafo de vínculos exibido pelo SNIPER (${plural(g.grafos.length, "grafo", "grafos")}, ${plural(g.totalTerceiros, "terceiro vinculado", "terceiros vinculados")}) ` +
+      "foi redesenhado no relatório anexo, com a ficha de cada terceiro; vínculos não expandidos pelo SNIPER não constam.";
+  }
+
+  async function enviarPdf(est, titulo, linhas, filename, detalhe, grafoSniper, blocos, metaBlocos) {
     await browser.runtime.sendMessage({
       tipo: "fabricar_pdf",
       convenio: "SNIPER",
@@ -689,6 +909,9 @@
       titulo,
       linhas,
       filename,
+      grafoSniper: grafoSniper || undefined,
+      relatorioSniper: blocos || undefined,          // 1.9.3: o relatório desenhado
+      relatorioSniperMeta: blocos ? metaBlocos : undefined,
     }).catch(() => { /* Promise rejeita no FF mesmo baixando; presunção de sucesso */ });
   }
 
@@ -771,6 +994,7 @@
     window.__cratosSniper = {
       io, processar, capturas, interpretarFonte, colunasDe, valorTexto, montarRelatorio, montarCertidao,
       clicarSeguro, ajustarFontes, formatarProcesso, casarCadastros, normalizarProcesso, paginaProcessos,
+      lerGrafo, abaGrafo, montarRelatorioBlocos,
     };
   }
 })();

@@ -159,6 +159,8 @@
   render();
   document.getElementById("pp-salvar").onclick = () => salvar().catch((e) => { document.getElementById("pp-salvo").textContent = "Não consegui salvar: " + e.message; });
   document.getElementById("pp-preferencias").onclick = () => { try { browser.runtime.openOptionsPage(); } catch (e) { /* nada */ } };
+  /* 1.9.3 — o manual vai dentro do pacote */
+  document.getElementById("pp-manual").onclick = () => browser.runtime.sendMessage({ tipo: "abrir_manual", secao: "primeiros-passos" }).catch(() => {});
 
   /* A lista de varas chega enquanto esta página está aberta: troca as opções sem perder a escolha. */
   try {

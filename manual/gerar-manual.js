@@ -1,457 +1,307 @@
-/* Gera "CRATOS - Manual do Usuario.docx" — público geral, não técnico.
+/* Gera o Manual do Usuário do CRATOS em três formatos, a partir de UM texto (conteudo.js):
  *
- * COMO ATUALIZAR: edite este arquivo e rode `node gerar-manual.js` dentro da pasta
- * manual\ (precisa do pacote "docx"). A VERSÃO da capa sai do src\manifest.json —
- * nunca fica desatualizada. Atualizado para a 1.9.0 em 23/10/2026; capítulo 4
- * ("Primeiros passos") reescrito na 1.9.2 (26/10), no roteiro da página nova.
+ *   ../src/manual/manual.html (+ img/)   — vai DENTRO da extensão (1.9.3): página estática,
+ *                                          sem script, aberta pelos botões "Manual do usuário"
+ *                                          e pelos "?" das Preferências (âncoras #cfg-<convênio>)
+ *   CRATOS - Manual do Usuario.docx      — para editar/imprimir
+ *   CRATOS - Manual do Usuario.pdf       — para a release do GitHub (sai do HTML, tema claro)
+ *
+ * COMO ATUALIZAR: mude o texto em conteudo.js e rode, dentro da pasta manual\,
+ *   node gerar-manual.js            (precisa do pacote "docx"; o PDF precisa do "playwright")
+ * A versão sai do ../src/manifest.json; a data da capa, do dia em que se gera.
+ * Capturas de tela: PNG em manual/capturas/ com o nome indicado em conteudo.js. Sem o
+ * arquivo, o .docx mostra o quadro vermelho de "inserir captura"; o HTML e o PDF omitem.
  */
-const {
-  Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType,
-  Table, TableRow, TableCell, WidthType, BorderStyle, ShadingType,
-  PageBreak, LevelFormat, TableOfContents,
-} = require("docx");
+"use strict";
 const fs = require("fs");
 const path = require("path");
+const { CONTATO, blocos: TODOS } = require("./conteudo.js");
 
-/* Versão da capa = a do manifesto (../src/manifest.json); sem ele, a última conhecida. */
+const RAIZ = path.join(__dirname, "..");
 let VERSAO = "1.9.0";
-try { VERSAO = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "src", "manifest.json"), "utf8")).version || VERSAO; } catch (e) { /* fica a conhecida */ }
+try { VERSAO = JSON.parse(fs.readFileSync(path.join(RAIZ, "src", "manifest.json"), "utf8")).version || VERSAO; } catch (e) { /* fica a conhecida */ }
+/* VERSAO=1.9.2 node gerar-manual.js — gera o manual como era numa versão anterior (para a release dela). */
+if (/^\d+\.\d+\.\d+$/.test(process.env.VERSAO || "")) VERSAO = process.env.VERSAO;
+const MESES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
+const HOJE = new Date();
+const DATA_CAPA = MESES[HOJE.getMonth()] + " de " + HOJE.getFullYear();
+const CAPTURAS = path.join(__dirname, "capturas");
 
-const AZUL = "1F3A5F", VERM = "C0392B", CINZA = "6B7280", CINZACLARO = "F2F4F7";
-const AMARELO = "FFF4CE", VERDECLARO = "E8F5E9";
-
-/* ---------- helpers ---------- */
-const T = (text, o = {}) => new TextRun({ text, ...o });
-const P = (children, o = {}) =>
-  new Paragraph({ children: Array.isArray(children) ? children : [T(String(children))], ...o });
-
-function h1(txt) { return new Paragraph({ text: txt, heading: HeadingLevel.HEADING_1, spacing: { before: 320, after: 140 } }); }
-function h2(txt) { return new Paragraph({ text: txt, heading: HeadingLevel.HEADING_2, spacing: { before: 240, after: 100 } }); }
-function corpo(txt, o = {}) { return new Paragraph({ children: [T(txt)], spacing: { after: 120, line: 276 }, ...o }); }
-
-function bullet(txt) {
-  const runs = Array.isArray(txt) ? txt : [T(txt)];
-  return new Paragraph({ children: runs, numbering: { reference: "lista", level: 0 }, spacing: { after: 60, line: 264 } });
+function cmpVersao(a, b) {
+  const x = String(a).split(".").map(Number), y = String(b).split(".").map(Number);
+  for (let i = 0; i < Math.max(x.length, y.length); i++) { const d = (x[i] || 0) - (y[i] || 0); if (d) return d; }
+  return 0;
 }
-/* Cada lista de passos recomeça do 1: `novaLista()` antes do primeiro passo de cada
-   capítulo (antes, o capítulo 4 continuava a numeração do 3: 5, 6, 7). */
-let _instPassos = 1;
-function novaLista() { _instPassos++; }
-function passo(txt) {
-  const runs = Array.isArray(txt) ? txt : [T(txt)];
-  return new Paragraph({ children: runs, numbering: { reference: "passos", level: 0, instance: _instPassos }, spacing: { after: 80, line: 264 } });
+/* Blocos (e linhas de caixa) com `desde` maior que a versão do manifesto ficam de fora. */
+const BLOCOS = TODOS.filter((b) => !b.desde && !(b.caixa && b.caixa.desde) ||
+  cmpVersao(VERSAO, b.desde || b.caixa.desde) >= 0);
+const temCaptura = (arq) => !!arq && fs.existsSync(path.join(CAPTURAS, arq));
+
+/* **negrito** → partes [{t, b}] */
+function partes(txt) {
+  return String(txt).split(/(\*\*[^*]+\*\*)/).filter(Boolean)
+    .map((s) => (s.startsWith("**") ? { t: s.slice(2, -2), b: true } : { t: s, b: false }));
 }
 
-/* Caixa de destaque (uma linha de título + linhas de texto), com cor de fundo. */
-function caixa(titulo, linhas, fundo, corTitulo) {
-  const filhos = [];
-  if (titulo) filhos.push(new Paragraph({ children: [T(titulo, { bold: true, color: corTitulo || AZUL })], spacing: { after: 60 } }));
-  (linhas || []).forEach((l) => filhos.push(new Paragraph({
-    children: Array.isArray(l) ? l : [T(l)], spacing: { after: 40, line: 264 },
-  })));
-  return new Table({
-    width: { size: 9360, type: WidthType.DXA },
-    columnWidths: [9360],
-    borders: {
-      top: { style: BorderStyle.SINGLE, size: 2, color: fundo === AMARELO ? "E6B800" : "CBD5E1" },
-      bottom: { style: BorderStyle.SINGLE, size: 2, color: fundo === AMARELO ? "E6B800" : "CBD5E1" },
-      left: { style: BorderStyle.SINGLE, size: 12, color: fundo === AMARELO ? "E6B800" : (corTitulo || AZUL) },
-      right: { style: BorderStyle.SINGLE, size: 2, color: fundo === AMARELO ? "E6B800" : "CBD5E1" },
-      insideHorizontal: { style: BorderStyle.NONE }, insideVertical: { style: BorderStyle.NONE },
+/* ═══════════════════════════ HTML ═══════════════════════════ */
+const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+const inl = (txt) => partes(txt).map((p) => (p.b ? "<b>" + esc(p.t) + "</b>" : esc(p.t))).join("");
+
+function corpoHtml() {
+  const out = [];
+  let novaPagina = false;
+  for (const b of BLOCOS) {
+    if (b.h1) { out.push(`<h2 id="${b.id}"${novaPagina ? ' class="nova-pagina"' : ""}>${esc(b.h1)}</h2>`); novaPagina = false; }
+    else if (b.h2) out.push(`<h3 id="${b.id}">${esc(b.h2)}</h3>`);
+    else if (b.p) out.push(`<p>${inl(b.p)}</p>`);
+    else if (b.passos) out.push("<ol>" + b.passos.map((l) => `<li>${inl(l)}</li>`).join("") + "</ol>");
+    else if (b.bullets) out.push("<ul>" + b.bullets.map((l) => `<li>${inl(l)}</li>`).join("") + "</ul>");
+    else if (b.caixa) out.push(`<div class="caixa ${b.caixa.tipo || "info"}">` +
+      (b.caixa.titulo ? `<div class="caixa-tit">${esc(b.caixa.titulo)}</div>` : "") +
+      b.caixa.linhas.map((l) => `<p>${inl(l)}</p>`).join("") + "</div>");
+    else if (b.tabela) out.push('<table><colgroup><col style="width:26%"><col style="width:56%"><col style="width:18%"></colgroup><thead><tr><th>Opção</th><th>O que faz</th><th>Padrão</th></tr></thead><tbody>' +
+      b.tabela.map((r) => `<tr><td><b>${esc(r[0])}</b></td><td>${inl(r[1])}</td><td class="padrao">${esc(r[2] || "—")}</td></tr>`).join("") +
+      "</tbody></table>");
+    else if (b.captura) { if (temCaptura(b.captura.arquivo)) out.push(`<figure><img src="img/${esc(b.captura.arquivo)}" alt="${esc(b.captura.desc)}"><figcaption>${esc(b.captura.desc)}</figcaption></figure>`); }
+    else if (b.faq) out.push(b.faq.map(([q, a]) => `<div class="faq"><h4>${esc(q)}</h4><p>${inl(a)}</p></div>`).join(""));
+    else if (b.quebra) novaPagina = true;
+  }
+  return out.join("\n");
+}
+
+function sumarioHtml() {
+  const itens = [];
+  for (const b of BLOCOS) {
+    if (b.h1) itens.push(`<li class="n1"><a href="#${b.id}">${esc(b.h1)}</a></li>`);
+    else if (b.h2 && /^6\./.test(b.h2)) itens.push(`<li class="n2"><a href="#${b.id}">${esc(b.h2.replace(/^6\.\d+\.\s*/, ""))}</a></li>`);
+  }
+  return `<nav class="sumario" aria-label="Sumário"><div class="sum-tit">Sumário</div><ul>${itens.join("")}</ul></nav>`;
+}
+
+function paginaHtml() {
+  return `<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CRATOS — Manual do Usuário</title>
+<!-- Gerado por manual/gerar-manual.js a partir de manual/conteudo.js. Não edite à mão. -->
+<style>
+:root { --verm:#e11d1d; --borda:#2a2a2a; --txt:#e8e8e8; --sub:#b8b8b8; --fundo:#000; --cartao:#0f0f0f; }
+* { box-sizing:border-box; }
+html { scroll-behavior:smooth; }
+body { margin:0; background:var(--fundo); color:var(--txt); font:16px/1.6 system-ui, "Segoe UI", sans-serif; }
+.topo { border-bottom:1px solid var(--borda); padding:28px 24px 22px; }
+.topo-in { max-width:1180px; margin:0 auto; }
+.marca { font-size:30px; font-weight:800; letter-spacing:.06em; margin:0; }
+.marca span { color:var(--verm); }
+.sub { color:var(--sub); margin:4px 0 0; }
+.versao { color:#8a8a8a; font-size:13px; margin-top:6px; }
+.grade { max-width:1180px; margin:0 auto; display:grid; grid-template-columns:250px 1fr; gap:40px; padding:0 24px 64px; }
+.sumario { position:sticky; top:0; align-self:start; max-height:100vh; overflow:auto; padding:24px 0; font-size:14px; }
+.sum-tit { color:#8a8a8a; text-transform:uppercase; letter-spacing:.12em; font-size:12px; margin-bottom:8px; }
+.sumario ul { list-style:none; margin:0; padding:0; }
+.sumario li.n1 { margin-top:8px; }
+.sumario li.n2 { padding-left:14px; font-size:13px; }
+.sumario a { color:#cfcfcf; text-decoration:none; }
+.sumario a:hover { color:#fff; text-decoration:underline; }
+main { max-width:820px; padding-top:8px; }
+h2 { font-size:24px; margin:40px 0 12px; padding-top:8px; border-top:1px solid var(--borda); scroll-margin-top:12px; }
+h3 { font-size:18px; margin:28px 0 8px; color:#f2f2f2; scroll-margin-top:12px; }
+h3:target, h2:target { color:#fff; background:linear-gradient(90deg, rgba(225,29,29,.22), transparent 70%); border-radius:6px; padding-left:8px; }
+p { margin:0 0 12px; }
+b { color:#fff; }
+ol, ul { margin:0 0 14px; padding-left:24px; }
+li { margin-bottom:6px; }
+.caixa { border:1px solid var(--borda); border-left:4px solid #3a78c2; background:var(--cartao); border-radius:8px; padding:14px 16px; margin:14px 0; }
+.caixa.aviso { border-left-color:#e6b800; }
+.caixa.ok { border-left-color:#22a05b; }
+.caixa p:last-child { margin-bottom:0; }
+.caixa-tit { font-weight:700; margin-bottom:6px; color:#fff; }
+table { width:100%; table-layout:fixed; border-collapse:collapse; margin:10px 0 16px; font-size:14px; }
+th { text-align:left; background:#1a1a1a; color:#fff; padding:8px 10px; border-bottom:2px solid var(--verm); }
+td { padding:8px 10px; border-bottom:1px solid var(--borda); vertical-align:top; }
+td.padrao { color:var(--sub); font-style:italic; }
+figure { margin:16px 0; }
+figure img { max-width:100%; border:1px solid var(--borda); border-radius:8px; display:block; }
+figcaption { color:#8a8a8a; font-size:13px; margin-top:6px; }
+.faq h4 { margin:18px 0 4px; font-size:16px; color:#fff; }
+.rodape { color:#8a8a8a; font-size:13px; border-top:1px solid var(--borda); margin-top:48px; padding-top:14px; }
+@media (max-width: 900px) { .grade { grid-template-columns:1fr; } .sumario { position:static; max-height:none; } }
+/* Impressão e PDF: tema claro, sem sumário lateral */
+@media print {
+  :root { --borda:#d6d6d6; --txt:#1d1d1f; --sub:#555; --fundo:#fff; --cartao:#f6f7f9; }
+  body { font-size:11pt; }
+  b, h2, h3, .faq h4, .caixa-tit, h3:target, h2:target { color:#111; background:none; }
+  .marca span { color:#c0392b; }
+  .topo { border:0; padding:60mm 0 18mm; text-align:center; }
+  .marca { font-size:46pt; }
+  .sub { font-size:13pt; }
+  .versao { font-size:11pt; margin-top:10mm; }
+  .grade { display:block; padding:0; }
+  .sumario { position:static; max-height:none; padding:0; columns:2; font-size:10.5pt; break-before:page; break-after:page; }
+  .sum-tit { font-size:14pt; color:#1f3a5f; column-span:all; margin-bottom:4mm; }
+  main > h2:first-child { border-top:0; }
+  .sumario a { color:#1d1d1f; }
+  th { background:#1f3a5f; border-bottom:0; }
+  h2 { break-after:avoid; } h3 { break-after:avoid; }
+  tr, .caixa, figure, .faq { break-inside:avoid; }
+  figure img { max-height:115mm; width:auto; margin:0 auto; }
+  figcaption { text-align:center; }
+  thead { display:table-header-group; }
+  h2.nova-pagina { break-before:page; }
+}
+</style>
+</head>
+<body>
+<header class="topo"><div class="topo-in">
+<p class="marca">CRA<span>TOS</span></p>
+<p class="sub">Manual do Usuário — execução unificada de convênios a partir do processo no PJe</p>
+<div class="versao">Versão ${esc(VERSAO)} · ${esc(DATA_CAPA)} · Tribunal Regional do Trabalho da 18ª Região</div>
+</div></header>
+<div class="grade">
+${sumarioHtml()}
+<main>
+${corpoHtml()}
+<p class="rodape">CRATOS ${esc(VERSAO)} · ${esc(CONTATO)}</p>
+</main>
+</div>
+</body>
+</html>
+`;
+}
+
+function gerarHtml() {
+  const dest = path.join(RAIZ, "src", "manual");
+  fs.mkdirSync(path.join(dest, "img"), { recursive: true });
+  for (const f of fs.readdirSync(path.join(dest, "img"))) fs.unlinkSync(path.join(dest, "img", f));
+  for (const b of BLOCOS) if (b.captura && temCaptura(b.captura.arquivo)) {
+    fs.copyFileSync(path.join(CAPTURAS, b.captura.arquivo), path.join(dest, "img", b.captura.arquivo));
+  }
+  const html = paginaHtml();
+  fs.writeFileSync(path.join(dest, "manual.html"), html);
+  return path.join(dest, "manual.html");
+}
+
+/* ═══════════════════════════ DOCX ═══════════════════════════ */
+async function gerarDocx() {
+  const {
+    Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType, ImageRun,
+    Table, TableRow, TableCell, WidthType, BorderStyle, ShadingType, PageBreak, LevelFormat,
+  } = require("docx");
+  const AZUL = "1F3A5F", VERM = "C0392B", CINZA = "6B7280", CINZACLARO = "F2F4F7";
+  const FUNDO = { aviso: "FFF4CE", ok: "E8F5E9", info: CINZACLARO };
+  const BORDA = { aviso: "E6B800", ok: "1E7E34", info: AZUL };
+  const T = (text, o = {}) => new TextRun({ text, ...o });
+  const runs = (txt, o = {}) => partes(txt).map((p) => T(p.t, { ...o, bold: p.b || o.bold }));
+  const par = (txt, o = {}) => new Paragraph({ children: runs(txt), spacing: { after: 120, line: 276 }, ...o });
+  let lista = 0;
+
+  function caixa(c) {
+    const filhos = [];
+    if (c.titulo) filhos.push(new Paragraph({ children: [T(c.titulo, { bold: true, color: BORDA[c.tipo] || AZUL })], spacing: { after: 60 } }));
+    c.linhas.forEach((l) => filhos.push(new Paragraph({ children: runs(l), spacing: { after: 40, line: 264 } })));
+    const fina = { style: BorderStyle.SINGLE, size: 2, color: c.tipo === "aviso" ? "E6B800" : "CBD5E1" };
+    return new Table({ width: { size: 9360, type: WidthType.DXA }, columnWidths: [9360],
+      borders: { top: fina, bottom: fina, right: fina, left: { style: BorderStyle.SINGLE, size: 12, color: BORDA[c.tipo] || AZUL },
+        insideHorizontal: { style: BorderStyle.NONE }, insideVertical: { style: BorderStyle.NONE } },
+      rows: [new TableRow({ children: [new TableCell({ width: { size: 9360, type: WidthType.DXA },
+        shading: { type: ShadingType.CLEAR, fill: FUNDO[c.tipo] || CINZACLARO },
+        margins: { top: 120, bottom: 120, left: 160, right: 160 }, children: filhos })] })] });
+  }
+  function captura(c) {
+    if (temCaptura(c.arquivo)) {
+      const buf = fs.readFileSync(path.join(CAPTURAS, c.arquivo));
+      const w = buf.readUInt32BE(16), h = buf.readUInt32BE(20);          // cabeçalho PNG
+      const L = Math.min(600, w), A = Math.round(h * L / w);
+      return [new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 120 }, children: [new ImageRun({ type: "png", data: buf, transformation: { width: L, height: A }, altText: { title: c.desc, description: c.desc, name: c.arquivo } })] }),
+        new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 160 }, children: [T(c.desc, { italics: true, color: CINZA, size: 18 })] })];
+    }
+    const tr = { style: BorderStyle.DASHED, size: 6, color: VERM };
+    return [new Table({ width: { size: 9360, type: WidthType.DXA }, columnWidths: [9360], borders: { top: tr, bottom: tr, left: tr, right: tr },
+      rows: [new TableRow({ children: [new TableCell({ width: { size: 9360, type: WidthType.DXA }, shading: { type: ShadingType.CLEAR, fill: "FDECEA" },
+        margins: { top: 100, bottom: 100, left: 160, right: 160 },
+        children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [T("[INSERIR CAPTURA] ", { bold: true, color: VERM }), T(c.desc, { italics: true, color: VERM })] })] })] })] })];
+  }
+  function tabela(linhas) {
+    const W = [2600, 5560, 1200];
+    const cel = (conteudo, i, fill, o = {}) => new TableCell({ width: { size: W[i], type: WidthType.DXA }, shading: { type: ShadingType.CLEAR, fill },
+      margins: { top: 60, bottom: 60, left: 100, right: 100 }, children: [new Paragraph({ children: conteudo })], ...o });
+    const head = new TableRow({ tableHeader: true, children: ["Opção", "O que faz", "Padrão"].map((t, i) => cel([T(t, { bold: true, color: "FFFFFF", size: 19 })], i, AZUL)) });
+    const rows = linhas.map((l, k) => { const f = k % 2 ? CINZACLARO : "FFFFFF"; return new TableRow({ children: [
+      cel([T(l[0], { size: 19, bold: true })], 0, f), cel(runs(l[1], { size: 19 }), 1, f), cel([T(l[2] || "—", { size: 19, italics: true, color: CINZA })], 2, f)] }); });
+    return new Table({ width: { size: 9360, type: WidthType.DXA }, columnWidths: W, rows: [head, ...rows] });
+  }
+
+  const ch = [];
+  /* capa */
+  ch.push(new Paragraph({ spacing: { before: 2600 }, alignment: AlignmentType.CENTER, children: [T("CRATOS", { bold: true, size: 76, color: AZUL })] }));
+  ch.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 120 }, children: [T("Manual do Usuário", { size: 36, color: CINZA })] }));
+  ch.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 60 }, children: [T("Execução unificada de convênios a partir do processo no PJe", { size: 22, italics: true, color: CINZA })] }));
+  ch.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 1800 }, children: [T("Tribunal Regional do Trabalho da 18ª Região", { size: 22 })] }));
+  ch.push(new Paragraph({ alignment: AlignmentType.CENTER, children: [T("Versão " + VERSAO + "     •     " + DATA_CAPA, { size: 20, color: CINZA })] }));
+  ch.push(new Paragraph({ children: [new PageBreak()] }));
+  /* sumário */
+  ch.push(new Paragraph({ children: [T("Sumário", { bold: true, size: 30, color: AZUL })], spacing: { after: 200 } }));
+  BLOCOS.filter((b) => b.h1).forEach((b) => ch.push(new Paragraph({ children: [T(b.h1, { size: 24, color: "2E5A88" })], spacing: { after: 120 } })));
+  ch.push(new Paragraph({ children: [new PageBreak()] }));
+
+  for (const b of BLOCOS) {
+    if (b.h1) ch.push(new Paragraph({ text: b.h1, heading: HeadingLevel.HEADING_1, spacing: { before: 320, after: 140 } }));
+    else if (b.h2) ch.push(new Paragraph({ text: b.h2, heading: HeadingLevel.HEADING_2, spacing: { before: 240, after: 100 } }));
+    else if (b.p) ch.push(par(b.p));
+    else if (b.passos) { lista++; b.passos.forEach((l) => ch.push(new Paragraph({ children: runs(l), numbering: { reference: "passos", level: 0, instance: lista }, spacing: { after: 80, line: 264 } }))); }
+    else if (b.bullets) b.bullets.forEach((l) => ch.push(new Paragraph({ children: runs(l), numbering: { reference: "lista", level: 0 }, spacing: { after: 60, line: 264 } })));
+    else if (b.caixa) { ch.push(caixa(b.caixa)); ch.push(new Paragraph({ children: [], spacing: { after: 80 } })); }
+    else if (b.tabela) { ch.push(tabela(b.tabela)); ch.push(new Paragraph({ children: [], spacing: { after: 80 } })); }
+    else if (b.captura) ch.push(...captura(b.captura));
+    else if (b.faq) b.faq.forEach(([q, a]) => { ch.push(new Paragraph({ children: [T(q, { bold: true, color: AZUL })], spacing: { before: 120, after: 40 } })); ch.push(par(a)); });
+    else if (b.quebra) ch.push(new Paragraph({ children: [new PageBreak()] }));
+  }
+  ch.push(new Paragraph({ spacing: { before: 400 }, alignment: AlignmentType.CENTER, children: [T("— CRATOS • TRT18 —", { color: CINZA, size: 18 })] }));
+
+  const doc = new Document({
+    creator: "TRT18", title: "CRATOS — Manual do Usuário",
+    styles: {
+      default: { document: { run: { font: "Calibri", size: 22, color: "222222" } } },
+      paragraphStyles: [
+        { id: "Heading1", name: "Heading 1", basedOn: "Normal", next: "Normal", quickFormat: true, run: { size: 30, bold: true, color: AZUL }, paragraph: { spacing: { before: 320, after: 140 } } },
+        { id: "Heading2", name: "Heading 2", basedOn: "Normal", next: "Normal", quickFormat: true, run: { size: 25, bold: true, color: "2E5A88" }, paragraph: { spacing: { before: 240, after: 100 } } },
+      ],
     },
-    rows: [new TableRow({ children: [new TableCell({
-      width: { size: 9360, type: WidthType.DXA },
-      shading: { type: ShadingType.CLEAR, fill: fundo || CINZACLARO },
-      margins: { top: 120, bottom: 120, left: 160, right: 160 },
-      children: filhos,
-    })] })],
-  });
-}
-
-/* Marcador de captura de tela — visualmente distinto (pedido do Rodrigo). */
-function captura(desc) {
-  return new Table({
-    width: { size: 9360, type: WidthType.DXA }, columnWidths: [9360],
-    borders: {
-      top: { style: BorderStyle.DASHED, size: 6, color: VERM },
-      bottom: { style: BorderStyle.DASHED, size: 6, color: VERM },
-      left: { style: BorderStyle.DASHED, size: 6, color: VERM },
-      right: { style: BorderStyle.DASHED, size: 6, color: VERM },
-    },
-    rows: [new TableRow({ children: [new TableCell({
-      width: { size: 9360, type: WidthType.DXA },
-      shading: { type: ShadingType.CLEAR, fill: "FDECEA" },
-      margins: { top: 100, bottom: 100, left: 160, right: 160 },
-      children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [
-        T("📷 [INSERIR CAPTURA] ", { bold: true, color: VERM }),
-        T(desc, { italics: true, color: VERM }),
-      ] })],
-    })] })],
-  });
-}
-
-/* Tabela de configurações: [opção, o que faz, padrão]. */
-function tabelaConfig(linhas) {
-  const W = [2600, 5560, 1200];
-  const th = (t) => new TableCell({
-    width: { size: 0, type: WidthType.DXA }, shading: { type: ShadingType.CLEAR, fill: AZUL },
-    margins: { top: 60, bottom: 60, left: 100, right: 100 },
-    children: [new Paragraph({ children: [T(t, { bold: true, color: "FFFFFF", size: 19 })] })],
-  });
-  const td = (t, i, bold) => new TableCell({
-    width: { size: W[i], type: WidthType.DXA },
-    shading: { type: ShadingType.CLEAR, fill: "FFFFFF" },
-    margins: { top: 60, bottom: 60, left: 100, right: 100 },
-    children: [new Paragraph({ children: Array.isArray(t) ? t : [T(t, { size: 19, bold: !!bold })] })],
-  });
-  const head = new TableRow({ tableHeader: true, children: [th("Opção"), th("O que faz"), th("Padrão")] });
-  const rows = linhas.map((l, idx) => new TableRow({ children: [
-    new TableCell({ width: { size: W[0], type: WidthType.DXA }, shading: { type: ShadingType.CLEAR, fill: idx % 2 ? CINZACLARO : "FFFFFF" }, margins: { top: 60, bottom: 60, left: 100, right: 100 }, children: [new Paragraph({ children: [T(l[0], { size: 19, bold: true })] })] }),
-    new TableCell({ width: { size: W[1], type: WidthType.DXA }, shading: { type: ShadingType.CLEAR, fill: idx % 2 ? CINZACLARO : "FFFFFF" }, margins: { top: 60, bottom: 60, left: 100, right: 100 }, children: [new Paragraph({ children: [T(l[1], { size: 19 })] })] }),
-    new TableCell({ width: { size: W[2], type: WidthType.DXA }, shading: { type: ShadingType.CLEAR, fill: idx % 2 ? CINZACLARO : "FFFFFF" }, margins: { top: 60, bottom: 60, left: 100, right: 100 }, children: [new Paragraph({ children: [T(l[2] || "—", { size: 19, italics: true, color: CINZA })] })] }),
-  ] }));
-  return new Table({ width: { size: 9360, type: WidthType.DXA }, columnWidths: W, rows: [head, ...rows] });
-}
-
-const children = [];
-
-/* ═══════════════ CAPA ═══════════════ */
-children.push(new Paragraph({ spacing: { before: 2600 }, alignment: AlignmentType.CENTER, children: [T("CRATOS", { bold: true, size: 76, color: AZUL })] }));
-children.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 120 }, children: [T("Manual do Usuário", { size: 36, color: CINZA })] }));
-children.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 60 }, children: [T("Execução unificada de convênios a partir do processo no PJe", { size: 22, italics: true, color: CINZA })] }));
-children.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 1800 }, children: [T("Tribunal Regional do Trabalho da 18ª Região", { size: 22 })] }));
-children.push(new Paragraph({ alignment: AlignmentType.CENTER, children: [T("Versão " + VERSAO, { size: 20, color: CINZA }), T("     •     ", { size: 20, color: CINZA }), T("[preencher: mês/ano]", { size: 20, color: VERM, bold: true })] }));
-children.push(new Paragraph({ children: [new PageBreak()] }));
-
-/* ═══════════════ SUMÁRIO ═══════════════ */
-children.push(new Paragraph({ children: [T("Sumário", { bold: true, size: 30, color: AZUL })], spacing: { after: 200 } }));
-[
-  "1.  O que é o CRATOS",
-  "2.  A regra de ouro",
-  "3.  Instalação",
-  "4.  Primeiros passos",
-  "5.  Usando no dia a dia",
-  "6.  As configurações (Preferências)",
-  "7.  Observações importantes",
-  "8.  Perguntas frequentes",
-].forEach((s) => children.push(new Paragraph({ children: [T(s, { size: 24, color: "2E5A88" })], spacing: { after: 120 } })));
-children.push(new Paragraph({ children: [new PageBreak()] }));
-
-/* ═══════════════ 1. O QUE É ═══════════════ */
-children.push(h1("1. O que é o CRATOS"));
-children.push(corpo("O CRATOS é uma extensão para o navegador Firefox que ajuda a executar, a partir de um processo aberto no PJe, as consultas e ordens dos convênios do dia a dia da execução — INFOJUD (eCAC/Receita), SAB (bloqueio/SISBAJUD), RENAJUD, CNIB, CENSEC, SerasaJUD, CCS (Banco Central), SNIPER (investigação patrimonial do CNJ) e PREVJUD (Dossiê Previdenciário do INSS)."));
-children.push(corpo("Em vez de você abrir cada sistema, digitar o número do processo e os dados das partes um por um, o CRATOS captura tudo do processo em tela e prepara cada convênio para você. Ao final, ele ainda organiza as certidões e prepara a juntada no PJe."));
-children.push(corpo("A ideia é simples: você conduz, o CRATOS faz o trabalho repetitivo."));
-
-children.push(h1("2. A regra de ouro"));
-children.push(caixa("O CRATOS PREPARA. Você confere, assina e envia.", [
-  [T("A extensão nunca clica em ", {}), T("Enviar", { bold: true }), T(", nunca ", {}), T("Assina", { bold: true }), T(" com o seu certificado e nunca ", {}), T("Confirma", { bold: true }), T(" uma ordem no seu lugar.", {})],
-  "Em cada convênio, ela preenche os campos e PARA no ponto da decisão. O ato — o clique que produz efeito jurídico — é sempre seu.",
-  [T("Guarde esta regra: se algo parece que \"vai sozinho até o fim\", não vai. ", { }), T("O último passo é sempre humano.", { bold: true })],
-], VERDECLARO, "1E7E34"));
-
-/* ═══════════════ 3. INSTALAÇÃO ═══════════════ */
-children.push(h1("3. Instalação"));
-children.push(corpo("O CRATOS é instalado uma única vez, no Firefox. Você recebe um arquivo com final .xpi (a extensão já assinada)."));
-children.push(passo("Abra o Firefox."));
-children.push(passo([T("Arraste o arquivo ", {}), T(".xpi", { bold: true }), T(" para dentro da janela do Firefox (ou digite ", {}), T("about:addons", { bold: true }), T(" na barra de endereço, clique na engrenagem e escolha \"Instalar add-on a partir de arquivo\").", {})]));
-children.push(passo("Confirme a instalação quando o Firefox perguntar."));
-children.push(passo("Pronto: um ícone do CRATOS passa a aparecer quando você abrir um processo no PJe."));
-children.push(caixa("Observação", [
-  [T("Só a versão ", {}), T("assinada", { bold: true }), T(" (.xpi que você recebeu pronto) instala de forma permanente. Se instalar uma versão não assinada, ela some ao fechar o Firefox.", {})],
-], AMARELO, "8A6D00"));
-children.push(caixa("Atualizações automáticas", [
-  "Depois da primeira instalação, você não precisa instalar de novo: as versões novas do CRATOS chegam sozinhas pelo próprio Firefox, que consulta cerca de uma vez por dia a lista de versões publicada pelo responsável pela extensão.",
-  "Depois de cada atualização, o painel mostra uma vez o cartão \"Novidades\", com o que mudou (veja 5.11).",
-  "O CRATOS exige o Firefox 140 ou mais novo.",
-], CINZACLARO));
-children.push(captura("tela do Firefox confirmando a instalação da extensão"));
-
-/* ═══════════════ 4. PRIMEIROS PASSOS ═══════════════ */
-children.push(h1("4. Primeiros passos"));
-children.push(corpo("Logo depois da primeira instalação, o CRATOS abre sozinho a página \"Primeiros passos\": uma lista com o essencial para os convênios funcionarem. Cada item mostra se está pronto, pendente ou é opcional. Você pode parar no meio e voltar depois pelo botão \"Abrir os Primeiros passos\", no topo das Preferências. Nenhum sistema é aberto sem o seu clique."));
-children.push(captura("página Primeiros passos, com os itens pronto / pendente / opcional"));
-children.push(h2("4.1. O que configurar"));
-novaLista();
-children.push(passo([T("Tribunal. ", { bold: true }), T("Deixe em \"Automático\": o CRATOS lê o tribunal do endereço do PJe (por exemplo, pje.trt18.jus.br é a 18ª Região).", {})]));
-children.push(passo([T("INFOJUD — vara. ", { bold: true }), T("Clique em \"Ler as varas do meu e-CAC\". O e-CAC abre; entre com o seu certificado, se pedir. O CRATOS lê o menu de varas da própria tela, avisa e fecha a aba sozinho. Depois, escolha a sua vara na lista.", {})]));
-children.push(passo([T("INFOJUD — tipo de processo e justificativa. ", { bold: true }), T("Os padrões (\"Ação Trabalhista\" e \"execução\") servem para a maioria; ajuste se a sua unidade usa outro texto.", {})]));
-children.push(passo([T("INFOJUD — magistrado. ", { bold: true }), T("Só preencha se você tiver delegação de ", {}), T("mais de um magistrado", { bold: true }), T(" no INFOJUD: aí escreva o nome exatamente como aparece no e-CAC. Com um só, deixe em branco.", {})]));
-children.push(passo([T("RENAJUD. ", { bold: true }), T("Marque o(s) tipo(s) de restrição e escolha o seu órgão na lista, que já é a do seu tribunal. O magistrado não precisa ser escolhido agora: na primeira inclusão, o CRATOS para no campo do RENAJUD, você escolhe, e ele guarda para as próximas (o mesmo vale para o órgão, se ficar em branco).", {})]));
-children.push(passo([T("CNIB (opcional). ", { bold: true }), T("Vara esperada: em branco, o CRATOS só informa em que vara o CNIB está logado; preenchida, ele para se o CNIB estiver em outra.", {})]));
-children.push(passo([T("Downloads. ", { bold: true }), T("A subpasta (padrão CRATOS) vale para todos os convênios.", {})]));
-children.push(passo([T("Juntada. ", { bold: true }), T("Escolha se o CRATOS cria a minuta da certidão ao terminar a fila e para quais polos libera a visibilidade.", {})]));
-children.push(corpo("Clique em \"Salvar\". Os itens passam a \"pronto\". Os demais ajustes ficam nas Preferências (capítulo 6)."));
-children.push(caixa("Se faltar algo", [
-  "Se a vara do e-CAC não estiver configurada, o painel avisa na linha do INFOJUD, com um link para os Primeiros passos.",
-], AMARELO, "8A6D00"));
-children.push(h2("4.2. O uso de todo dia"));
-children.push(corpo("Depois de configurado, o uso é sempre o mesmo:"));
-novaLista();
-children.push(passo("Abra o processo no PJe, na tela de detalhes."));
-children.push(passo([T("Clique no botão flutuante do ", {}), T("CRATOS", { bold: true }), T(". Um painel abre no canto da tela. (Você pode arrastar o botão para onde preferir; a posição fica guardada.)", {})]));
-children.push(passo("O CRATOS captura as partes do processo e mostra a lista."));
-children.push(captura("painel do CRATOS aberto ao lado do processo, com a lista de partes"));
-
-/* ═══════════════ 5. USANDO NO DIA A DIA ═══════════════ */
-children.push(h1("5. Usando no dia a dia"));
-
-children.push(h2("5.1. Escolher as partes"));
-children.push(corpo("No painel, cada parte do processo aparece com uma caixinha de seleção. As partes do polo passivo (os executados) já vêm marcadas — são o alvo natural das pesquisas. O polo ativo vem desmarcado, para você não pesquisar o credor por engano. Marque ou desmarque como precisar."));
-
-children.push(h2("5.2. Inclusão ou Baixa"));
-children.push(corpo("Escolha o que vai fazer: INCLUSÃO (incluir restrições/ordens e fazer consultas) ou BAIXA (retirar restrições). O CRATOS mostra os convênios adequados a cada caso. As consultas — INFOJUD, CENSEC, CCS, SNIPER e PREVJUD — aparecem na INCLUSÃO; SAB, RENAJUD, CNIB e SerasaJUD aparecem nas duas."));
-
-children.push(h2("5.3. Escolher os convênios e a ordem"));
-children.push(corpo("Marque os convênios que quer executar. Você pode ajustar a ordem com as setinhas (▲▼). Depois, clique em Executar selecionados."));
-children.push(captura("painel na tela de seleção de convênios, com os botões Inclusão / Baixa"));
-
-children.push(h2("5.4. A fila que anda sozinha"));
-children.push(corpo("A partir daí, o CRATOS executa um convênio de cada vez. Quando um termina — o que ele reconhece pela chegada da certidão — a extensão passa para o próximo automaticamente e fecha a aba do convênio concluído. Você acompanha o progresso pelo painel."));
-children.push(caixa("Dois botões sempre à mão", [
-  [T("✓ Concluí — próximo: ", { bold: true }), T("use quando você terminou aquele convênio no sistema e quer seguir para o próximo.", {})],
-  [T("⏭ Pular — próximo da fila: ", { bold: true }), T("use quando quiser deixar aquele convênio para depois. A fila segue, e o convênio pulado aparece sinalizado no relatório final.", {})],
-], CINZACLARO));
-children.push(corpo("Em alguns convênios (INFOJUD, SNIPER, PREVJUD), enquanto o CRATOS trabalha, a aba do sistema fica coberta por um aviso. Não clique nela até ele terminar."));
-
-children.push(h2("5.5. O relatório do fim"));
-children.push(corpo("Quando a fila termina, o painel mostra um resumo: quantos convênios foram concluídos e quais precisam da sua atenção (por exemplo, um que você pulou, que voltou incompleto ou cujo sistema estava fora do ar). Esse resumo é a sua conferência rápida — vale sempre ler."));
-
-children.push(h2("5.6. Buscar as respostas do INFOJUD"));
-children.push(corpo("O INFOJUD não responde na hora: o pedido é registrado e a resposta chega na caixa postal do eCAC minutos ou horas depois. Ao final da fila, o CRATOS já verifica e baixa as respostas disponíveis. Se ainda não chegaram, é normal — use o botão \"Localizar resultado na caixa postal\" mais tarde para buscar."));
-
-children.push(corpo("Junto com o INFOJUD, se a opção estiver ligada (veja 6.1), o CRATOS pesquisa antes das solicitações as empresas em que cada executado pessoa física é o responsável (\"Recuperar NI – CNPJ\") e gera uma certidão consolidada, com o endereço de cada empresa. A pesquisa é feita por trás, com a sua sessão do e-CAC: a tela fica coberta por um aviso enquanto ela roda, e no fim a faixa mostra um resumo (por exemplo, \"F.S.: 3 empresas; B.P.: nenhuma\")."));
-children.push(corpo("Se só o Recuperar NI estiver marcado (nenhum tipo de declaração ligado), o CRATOS faz apenas essa pesquisa: não abre a tela de solicitação nem consulta a caixa postal, porque a resposta é imediata."));
-
-children.push(h2("5.7. Coletas posteriores: CCS e PREVJUD"));
-children.push(corpo("Dois convênios também respondem depois, e cada um tem o seu botão na tela inicial do painel:"));
-children.push(bullet([T("Coletar CCS (respostas das instituições): ", { bold: true }), T("no dia seguinte à requisição, junta o PDF de detalhamentos do próprio CCS e uma certidão com quem já respondeu e quem ainda falta responder.", {})]));
-children.push(bullet([T("Coletar PREVJUD (dossiês em processamento): ", { bold: true }), T("busca os dossiês prontos do processo (pedidos dos últimos 7 dias) e junta os PDFs do INSS, mesmo que já tenham sido juntados antes.", {})]));
-
-children.push(h2("5.8. Sistema fora do ar: certidão de indisponibilidade"));
-children.push(corpo("Na tela inicial do painel, escolha um convênio e clique em \"Verificar disponibilidade do convênio\". O CRATOS faz até 3 tentativas, testa o próprio PJe como controle e mostra o resultado. Se o sistema estiver mesmo fora do ar, aparece o botão para gerar a certidão de indisponibilidade — só com a sua confirmação."));
-children.push(corpo("Durante a fila, se um convênio falha ou fica sem resposta, o CRATOS faz essa verificação sozinho e, se for o caso, oferece a certidão."));
-children.push(caixa("Observação", [
-  "A certidão relata as tentativas, com hora e retorno, sem afirmar a causa, e diz que a diligência deve ser repetida. Se nem o PJe responder, o problema pode ser a rede da unidade, e o CRATOS não oferece certidão.",
-], AMARELO, "8A6D00"));
-
-children.push(h2("5.9. Juntar a certidão no processo"));
-children.push(corpo("Ao terminar os convênios, o CRATOS reúne o que foi feito em uma certidão e anexa os comprovantes, criando a minuta no processo. Ele cria a minuta e PARA: conferir, ajustar e assinar é você. Se preferir, use o botão \"Juntar certidão dos convênios\" para fazer isso quando quiser."));
-children.push(corpo("Inclusões e consultas saem numa certidão; cancelamentos de restrição, em outra; sistemas indisponíveis, numa terceira. Na baixa, quando o convênio não encontra restrição ativa para cancelar (CNIB e RENAJUD), também sai certidão, dizendo isso."));
-children.push(corpo("Ao criar a certidão, o CRATOS também libera a visibilidade do documento para as partes do processo (você escolhe quais polos nas Preferências — veja 6.10)."));
-children.push(caixa("Importante", [
-  [T("Depois que a minuta é criada, ", {}), T("confira e assine você mesmo", { bold: true }), T(". Na tela de juntada não existe a pergunta de confirmação que os outros convênios têm — se você já assinou algo na sessão, o clique em Assinar assina direto.", {})],
-], AMARELO, "8A6D00"));
-
-children.push(h2("5.10. Junte antes de fechar a aba do processo"));
-children.push(corpo("Por privacidade, os dados de cada processo ficam guardados só enquanto a aba dele estiver aberta. Ao fechar a aba, o CRATOS apaga tudo o que guardou daquele processo — inclusive a lista de arquivos para a juntada. O que sobrar é apagado quando o Firefox abre."));
-children.push(caixa("Na prática", [
-  [T("Faça a juntada ", {}), T("antes", { bold: true }), T(" de fechar a aba do processo. Se houver arquivo do CRATOS ainda não juntado, o Firefox pergunta se você quer mesmo sair da página.", {})],
-  "Se fechar sem juntar, os arquivos continuam na sua pasta de downloads, mas o CRATOS não os oferece mais para juntada: anexe à mão ou refaça o convênio.",
-], AMARELO, "8A6D00"));
-
-children.push(h2("5.11. Novidades da versão"));
-children.push(corpo("Depois de cada atualização, o painel mostra uma vez o cartão \"Novidades\", com o que mudou. Clique em \"Entendi\" para fechar; \"ver versões anteriores\" mostra o histórico. O mesmo histórico está nas Preferências, no botão \"Ver novidades das versões\" (veja 6.11)."));
-
-/* ═══════════════ 6. CONFIGURAÇÕES ═══════════════ */
-children.push(new Paragraph({ children: [new PageBreak()] }));
-children.push(h1("6. As configurações (Preferências)"));
-children.push(corpo("As Preferências definem os padrões de cada convênio — como o que consultar, quais restrições aplicar e de onde vem o valor. Você ajusta uma vez e o CRATOS passa a usar esses padrões em todos os processos. Para abrir: clique com o botão direito no ícone do CRATOS e escolha Preferências (ou em about:addons, no CRATOS, aba Preferências)."));
-children.push(captura("tela de Preferências do CRATOS"));
-
-children.push(h2("6.1. INFOJUD (eCAC / Receita)"));
-children.push(corpo("Escolha quais documentos consultar — separadamente para pessoas físicas (CPF) e jurídicas (CNPJ). Onde houver \"últimos anos\", você define quantos anos para trás a consulta abrange."));
-children.push(tabelaConfig([
-  ["Consultas para CPF", "DIRPF, DITR, DOI, DECRED, DIMOB, Informações Cadastrais e eFinanceira. Marque os que quer; ajuste os anos onde couber.", "DIRPF 2a; DITR, DECRED, DIMOB 1a; DOI"],
-  ["Consultas para CNPJ", "DIPJ, ECF, DITR, DOI, DECRED, DIMOB, CPMF, Informações Cadastrais e eFinanceira.", "DITR, DECRED, DIMOB 1a; DOI"],
-  ["Opções do eFinanceira", "Tipo de conta, tipo de relação, exibir câmbio e tipo de extrato — separadas para CPF e CNPJ. O padrão é o relatório detalhado: Todas, Todas, Sim, Contas e movimentações.", "Detalhado"],
-  ["Recuperar NI (no quadro CPF)", "Antes das solicitações, pesquisa as empresas em que cada executado pessoa física é o responsável e expede uma certidão consolidada, com o endereço de cada empresa.", "Ligado"],
-  ["Vara", "A vara que assina a solicitação no eCAC. O botão \"Ler as varas do meu e-CAC\" traz a lista do seu próprio e-CAC; depois é só escolher.", "—"],
-  ["Tipo de processo", "Como o eCAC classifica o pedido.", "Ação Trabalhista"],
-  ["Justificativa", "Texto da justificativa no eCAC.", "execução"],
-  ["Magistrado", "Só para quem tem delegação de mais de um magistrado no INFOJUD: o nome exatamente como aparece no e-CAC. Com um só, deixe em branco.", "—"],
-  ["Ao terminar a fila", "Se o CRATOS verifica e colhe sozinho as respostas na caixa postal, só verifica e oferece o botão de colher, ou não verifica.", "Verificar e colher"],
-  ["Pasta de download", "Subpasta onde os arquivos são salvos, dentro da pasta de downloads do Firefox.", "CRATOS"],
-]));
-children.push(caixa("Observações do INFOJUD", [
-  "A eFinanceira é assíncrona: a resposta pode demorar. Isso é do sistema, não da extensão.",
-  [T("Recuperar NI: ", { bold: true }), T("se o INFOJUD avisar que há mais de 50 empresas, o CRATOS refaz a pesquisa por UF (27 pesquisas, cerca de um minuto). Se a consulta falhar, a certidão diz que não pôde ser concluída e deve ser repetida — nunca que não há empresas.", {})],
-  [T("O INFOJUD funciona dentro do e-CAC, que a Receita vem migrando para um novo portal. Enquanto a consulta judicial não existir no portal novo, o e-CAC atual continua no ar. ", {}), T("Vale acompanhar esse prazo.", { bold: true })],
-], AMARELO, "8A6D00"));
-
-children.push(h2("6.2. SAB (bloqueio / SISBAJUD)"));
-children.push(tabelaConfig([
-  ["Valor da obrigação", "Atualizar o valor para a data de hoje, ou usar o valor do cálculo sem atualizar.", "Atualizar p/ hoje"],
-  ["Repetição contínua", "Por teimosinhas ou por automação.", "Teimosinhas"],
-  ["Bloquear conta salário?", "Se inclui a conta salário no bloqueio.", "Não"],
-  ["Utilizar conta única?", "Se usa a conta única.", "Sim"],
-  ["Justificativa da baixa", "Texto usado ao interromper a determinação.", "Determinação judicial"],
-  ["Chip ao concluir", "Aplica o marcador \"SISBAJUD - aguardar resposta\" ao concluir a inclusão.", "Desligado"],
-  ["Atividade no GIGS", "Lança a atividade \"SISBAJUD - SAB em processamento\" no GIGS.", "Desligado"],
-]));
-children.push(caixa("Observação do SAB", [
-  "Quando você escolhe atualizar o valor para hoje, o CRATOS usa o mesmo fator do PJe-Calc e mostra um aviso de que o valor foi atualizado. Confira sempre o valor antes de confirmar.",
-], AMARELO, "8A6D00"));
-
-children.push(h2("6.3. RENAJUD"));
-children.push(tabelaConfig([
-  ["Tipo(s) de restrição", "Transferência, Licenciamento e/ou Circulação (Restrição Total). Marque um ou mais.", "nenhuma"],
-  ["Tribunal", "O tribunal que aparece nos Dados do Processo. No automático, vem do endereço do PJe.", "Automático"],
-  ["Órgão / Unidade", "A sua unidade, na lista do RENAJUD para o seu tribunal (ela se atualiza a cada inclusão). Em branco, o CRATOS pergunta na primeira inclusão e guarda. O botão \"Perguntar de novo na próxima inclusão\" serve para quem mudou de lotação.", "—"],
-  ["Magistrado", "Documento ou nome do magistrado. Em branco, o CRATOS pergunta na primeira inclusão e guarda.", "—"],
-  ["Ramo da Justiça", "O ramo que aparece nos Dados do Processo.", "Justiça do Trabalho"],
-]));
-children.push(caixa("Observação do RENAJUD", [
-  "Na baixa, se o RENAJUD não encontrar restrição ativa para cancelar, o CRATOS gera certidão dizendo isso.",
-], CINZACLARO));
-
-children.push(h2("6.4. CNIB (indisponibilidade)"));
-children.push(tabelaConfig([
-  ["Vara esperada", "Se preenchida, o CRATOS bloqueia caso o CNIB esteja logado em outra vara. Em branco, apenas informa.", "em branco"],
-  ["Informar o valor da dívida?", "Se inclui o valor na ordem.", "Não"],
-  ["De onde vem o valor", "Do PJe-Calc (último cálculo) ou um valor fixo.", "PJe-Calc"],
-  ["Valor fixo", "Usado se você escolher valor fixo.", "—"],
-  ["Nome do Processo", "Como a tela 1 do CNIB classifica o processo.", "Execução judicial"],
-  ["Priorizar prenotação?", "Na Justiça do Trabalho não se usa.", "Não"],
-]));
-children.push(caixa("Observações do CNIB", [
-  "Inclusão e cancelamento TOTAL: o CRATOS prepara e para no envio/assinatura, que são seus.",
-  [T("Cancelamento PARCIAL é feito 100% à mão", { bold: true }), T(", fora da extensão: escolher quais matrículas saem é decisão jurídica caso a caso.", {})],
-  "No cancelamento, se não houver ordem ativa a cancelar (não localizada ou já cancelada), o CRATOS gera certidão dizendo isso.",
-], CINZACLARO));
-
-children.push(h2("6.5. CENSEC (Escrituras e Procurações)"));
-children.push(tabelaConfig([
-  ["Gerar certidão negativa?", "Se cria a certidão também quando não há atos (negativa).", "Sim"],
-  ["Listar as partes de cada ato", "Inclui na certidão as partes de cada ato (nome, CPF/CNPJ e qualidade).", "Desligado"],
-  ["Pasta de download", "Subpasta onde os arquivos são salvos.", "CRATOS"],
-]));
-children.push(caixa("Observações do CENSEC", [
-  "O login é seu (certificado digital + token por e-mail). O CRATOS abre a aba, espera você entrar e retoma sozinho.",
-  "Consulta as partes que você marcou, de qualquer polo (é consulta, não constrição). Uma certidão por parte, inclusive a negativa.",
-  "Se o site pedir um captcha, o CRATOS congela e espera você resolver — não tenta contornar.",
-], CINZACLARO));
-
-children.push(h2("6.6. SerasaJUD (negativação)"));
-children.push(tabelaConfig([
-  ["Prazo de atendimento", "5, 3, 2 ou 1 dia. O padrão do próprio SerasaJUD é 5 dias.", "5 dias"],
-  ["De onde vem o valor", "Do PJe-Calc (último cálculo) ou um valor fixo.", "PJe-Calc"],
-  ["Valor fixo", "Usado se você escolher valor fixo.", "—"],
-  ["Gerar certidão depois de confirmar?", "Se emite a certidão após você confirmar a ordem.", "Sim"],
-  ["Pasta de download", "Subpasta onde os arquivos são salvos.", "CRATOS"],
-]));
-children.push(caixa("Observações do SerasaJUD", [
-  "Uma ordem por processo, com todos os executados como titulares. Se algum não entrar, o CRATOS para e avisa.",
-  [T("Negativar é constrição: ", {}), T("se você marcar uma parte do polo ativo, ela entra (a marcação é sua), mas com aviso em vermelho na tela.", {})],
-  "Se o processo não tiver cálculo do PJe-Calc, o CRATOS abre uma janela e espera, sem prazo, você informar o valor (e, na baixa, a data da dívida) à mão. A certidão registra que o dado foi informado por você.",
-], CINZACLARO));
-
-children.push(h2("6.7. CCS (Banco Central)"));
-children.push(tabelaConfig([
-  ["Aceitar o Termo de Uso", "Se o CRATOS aceita o termo por você ou para para você aceitar.", "Não (para)"],
-  ["Enviar o detalhamento", "Se marca os relacionamentos e envia sozinho (só se a marcação sair limpa) ou marca e para para você clicar.", "Não (para)"],
-  ["Quais relacionamentos detalhar", "Todos os detalháveis ou só os ativos (sem Data Fim).", "Todos"],
-  ["Esconder inativos", "Só muda a exibição na tela, não a marcação.", "Não"],
-  ["Chip \"CCS - aguardar resposta\"", "Aplica o chip no processo depois que o detalhamento é enviado. A etiqueta precisa existir na vara.", "Ligado"],
-  ["Motivo da consulta", "Texto do motivo (o número do processo já vai no campo próprio).", "Execução trabalhista"],
-  ["Pasta de download", "Subpasta onde os arquivos são salvos.", "CRATOS"],
-]));
-children.push(caixa("Observações do CCS", [
-  "O login é seu (ADFS do Banco Central). Uma requisição por processo, com todos os executados.",
-  "No dia seguinte, use \"Coletar CCS\" no painel (veja 5.7). Só o PDF do próprio CCS é juntado, e os anexos entram sigilosos.",
-], CINZACLARO));
-
-children.push(h2("6.8. SNIPER (investigação patrimonial)"));
-children.push(tabelaConfig([
-  ["Fontes", "Sisbajud (contas), Renajud (veículos), SERP/ONR (imóveis), AnacJud (aeronaves), Tribunal Marítimo (embarcações), TSE (bens declarados), SNGB (bens apreendidos) e CGU (sanções). Marque as que quer consultar.", "Todas"],
-  ["Pasta de download", "Subpasta onde os arquivos são salvos.", "CRATOS"],
-]));
-children.push(caixa("Observações do SNIPER", [
-  "O login é seu (PDPJ). O CRATOS só faz investigação: nunca clica em bloqueio, restrição ou outra constrição.",
-  "Saem o relatório (com o cadastro da Receita e os processos de cada parte) e a certidão, fonte por fonte. Erro de uma fonte nunca vira \"nada encontrado\". Os anexos entram sigilosos.",
-], CINZACLARO));
-
-children.push(h2("6.9. PREVJUD (Dossiê Previdenciário)"));
-children.push(tabelaConfig([
-  ["Documentos a juntar", "Declaração de Benefícios, Carta de Concessão, Dados Cadastrais, Quadro Resumo, Extrato CNIS, Histórico de Créditos e outros que o PREVJUD passar a oferecer. Ligue ou desligue cada um.", "Todos"],
-  ["Pasta de download", "Subpasta onde os arquivos são salvos.", "CRATOS"],
-]));
-children.push(caixa("Observações do PREVJUD", [
-  "O login é seu (jus.br). Só o Dossiê Previdenciário, para executados pessoa física; o CRATOS nunca abre o Dossiê Médico.",
-  "O CRATOS espera até 15 minutos. O que não ficar pronto vai na certidão como \"em processamento\" e é buscado depois por \"Coletar PREVJUD\" (veja 5.7). Os anexos entram sigilosos.",
-], CINZACLARO));
-
-children.push(h2("6.10. Juntada da certidão"));
-children.push(tabelaConfig([
-  ["Ao terminar os convênios", "Criar a minuta da certidão automaticamente, ou deixar para você criar pelo botão do painel.", "Criar"],
-  ["Dar visibilidade às partes", "Liberar a certidão para o polo ativo e/ou o polo passivo. Marcando os dois, todas as partes enxergam.", "Ambos"],
-]));
-
-children.push(h2("6.11. Novidades da versão e Sobre"));
-children.push(tabelaConfig([
-  ["Mostrar novidades", "Mostra no painel o cartão de novidades depois de cada atualização.", "Ligado"],
-]));
-children.push(corpo("No fim das Preferências fica o cartão \"Sobre o CRATOS\", com a versão instalada, o que a extensão faz com os seus dados, o botão \"Ver novidades das versões\" e o botão \"Procurar atualização\": ele confere na hora a lista de versões no GitHub e, se houver versão nova, oferece \"Instalar agora\" (o Firefox pergunta e atualiza por cima, sem perder as Preferências; use quando não houver convênio rodando)."));
-
-/* ═══════════════ 7. OBSERVAÇÕES GERAIS ═══════════════ */
-children.push(new Paragraph({ children: [new PageBreak()] }));
-children.push(h1("7. Observações importantes"));
-children.push(bullet([T("O CRATOS não assina nada. ", { bold: true }), T("Confirmar, enviar e assinar é sempre seu — em todos os convênios e na juntada.", {})]));
-children.push(bullet([T("Confira antes de confirmar. ", { bold: true }), T("Valores, partes e restrições preenchidos pelo CRATOS devem ser conferidos na tela antes do seu clique.", {})]));
-children.push(bullet([T("Login nos sistemas é seu. ", { bold: true }), T("Certificado digital e tokens são inseridos por você; o CRATOS espera e retoma.", {})]));
-children.push(bullet([T("Leia o relatório do fim da fila. ", { bold: true }), T("É onde aparece o que precisa da sua atenção — um convênio pulado ou incompleto.", {})]));
-children.push(bullet([T("Falha técnica nunca vira certidão negativa. ", { bold: true }), T("Se um sistema não responder como esperado, a certidão diz que a consulta não pôde ser concluída e deve ser repetida.", {})]));
-children.push(bullet([T("Os arquivos ficam na sua pasta de downloads, ", {}), T("na subpasta CRATOS (ou a que você configurar).", {})]));
-children.push(bullet([T("Junte antes de fechar a aba do processo. ", { bold: true }), T("Ao fechar a aba, os dados daquele processo são apagados do navegador (veja 5.10).", {})]));
-children.push(bullet([T("Dados de processo não saem da sua máquina. ", { bold: true }), T("O CRATOS não tem servidor próprio nem telemetria — ele só opera os sistemas oficiais, com o seu login. A única consulta externa é a do Firefox à lista de versões do CRATOS, para a atualização automática, e nela não vai nenhum dado de processo.", {})]));
-
-/* ═══════════════ 8. PERGUNTAS FREQUENTES ═══════════════ */
-children.push(h1("8. Perguntas frequentes"));
-const faq = [
-  ["Instalei e o botão do CRATOS não aparece.", "Abra um processo no PJe, na tela de detalhes — o botão flutuante do CRATOS aparece nesse contexto. Se mesmo assim não surgir, confirme em about:addons se a extensão está ativada."],
-  ["A extensão sumiu depois que fechei o Firefox.", "Isso acontece com versões não assinadas. Use o arquivo .xpi assinado que você recebeu."],
-  ["Um convênio não avançou sozinho.", "Alguns exigem uma ação sua (login, confirmação, assinatura). Conclua no sistema e clique em \"Concluí — próximo\", ou use \"Pular\" para seguir e voltar depois."],
-  ["A resposta do INFOJUD não veio.", "É normal: o INFOJUD responde depois, na caixa postal. Tente de novo mais tarde pelo botão \"Localizar resultado na caixa postal\"."],
-  ["O CCS ou o PREVJUD não respondeu na hora.", "Também é normal. Use \"Coletar CCS\" no dia seguinte, ou \"Coletar PREVJUD\" mais tarde (veja 5.7)."],
-  ["Fechei a aba do processo e a juntada não oferece mais as certidões.", "Ao fechar a aba, o CRATOS apaga os dados daquele processo. Os arquivos continuam na sua pasta de downloads: anexe à mão ou refaça o convênio (veja 5.10)."],
-  ["O sistema do convênio estava fora do ar.", "Use \"Verificar disponibilidade do convênio\" no painel. Se a indisponibilidade se confirmar, você pode gerar a certidão (veja 5.8)."],
-  ["Como recebo as versões novas?", "Sozinho: o Firefox atualiza o CRATOS automaticamente, cerca de uma vez por dia. Para buscar na hora, use \"Procurar atualização\" no cartão \"Sobre\" das Preferências. Depois de cada atualização, o painel mostra o que mudou."],
-  ["A certidão da juntada saiu com um documento a menos.", "Atualize para a versão mais recente do CRATOS. Se persistir, anote o processo e avise o responsável pela extensão."],
-  ["Posso confiar que ele não vai enviar/assinar por engano?", "Sim. Por decisão de projeto, o CRATOS nunca clica em Enviar, Confirmar ou Assinar. Ele para antes do ato."],
-];
-faq.forEach(([q, a]) => {
-  children.push(new Paragraph({ children: [T(q, { bold: true, color: AZUL })], spacing: { before: 120, after: 40 } }));
-  children.push(corpo(a));
-});
-
-children.push(new Paragraph({ spacing: { before: 400 }, alignment: AlignmentType.CENTER, children: [T("— CRATOS • TRT18 —", { color: CINZA, size: 18 })] }));
-
-/* ---------- documento ---------- */
-const doc = new Document({
-  creator: "TRT18",
-  title: "CRATOS — Manual do Usuário",
-  styles: {
-    default: { document: { run: { font: "Calibri", size: 22, color: "222222" } } },
-    paragraphStyles: [
-      { id: "Heading1", name: "Heading 1", basedOn: "Normal", next: "Normal", quickFormat: true,
-        run: { size: 30, bold: true, color: AZUL }, paragraph: { spacing: { before: 320, after: 140 } } },
-      { id: "Heading2", name: "Heading 2", basedOn: "Normal", next: "Normal", quickFormat: true,
-        run: { size: 25, bold: true, color: "2E5A88" }, paragraph: { spacing: { before: 240, after: 100 } } },
-    ],
-  },
-  numbering: {
-    config: [
+    numbering: { config: [
       { reference: "lista", levels: [{ level: 0, format: LevelFormat.BULLET, text: "•", alignment: AlignmentType.LEFT, style: { paragraph: { indent: { left: 460, hanging: 260 } } } }] },
       { reference: "passos", levels: [{ level: 0, format: LevelFormat.DECIMAL, text: "%1.", alignment: AlignmentType.LEFT, style: { paragraph: { indent: { left: 460, hanging: 260 } } } }] },
-    ],
-  },
-  sections: [{
-    properties: { page: { size: { width: 12240, height: 15840 }, margin: { top: 1200, bottom: 1200, left: 1440, right: 1440 } } },
-    children,
-  }],
-});
+    ] },
+    sections: [{ properties: { page: { size: { width: 12240, height: 15840 }, margin: { top: 1200, bottom: 1200, left: 1440, right: 1440 } } }, children: ch }],
+  });
+  const buf = await Packer.toBuffer(doc);
+  const saida = path.join(__dirname, "CRATOS - Manual do Usuario.docx");
+  fs.writeFileSync(saida, buf);
+  return saida;
+}
 
-Packer.toBuffer(doc).then((buf) => {
-  fs.writeFileSync("CRATOS - Manual do Usuario.docx", buf);
-  console.log("OK:", buf.length, "bytes");
-});
+/* ═══════════════════════════ PDF (do HTML) ═══════════════════════════ */
+async function gerarPdf(htmlPath) {
+  let chromium;
+  try { ({ chromium } = require("playwright")); } catch (e) { return null; }
+  const b = await chromium.launch();
+  const p = await b.newPage();
+  await p.goto("file://" + htmlPath);
+  const saida = path.join(__dirname, "CRATOS - Manual do Usuario.pdf");
+  await p.pdf({ path: saida, format: "A4", printBackground: true, margin: { top: "18mm", bottom: "18mm", left: "16mm", right: "16mm" },
+    displayHeaderFooter: true, headerTemplate: "<span></span>",
+    footerTemplate: `<div style="width:100%;font:8pt system-ui,sans-serif;color:#888;text-align:center">CRATOS ${esc(VERSAO)} — Manual do Usuário — <span class="pageNumber"></span>/<span class="totalPages"></span></div>` });
+  await b.close();
+  return saida;
+}
+
+(async () => {
+  const html = gerarHtml();
+  console.log("HTML:", path.relative(RAIZ, html));
+  try { console.log("DOCX:", path.basename(await gerarDocx())); } catch (e) { console.log("DOCX não gerado:", e.message); }
+  const pdf = await gerarPdf(html);
+  console.log(pdf ? "PDF: " + path.basename(pdf) : "PDF não gerado (sem playwright)");
+  const faltam = BLOCOS.filter((b) => b.captura && !temCaptura(b.captura.arquivo)).map((b) => b.captura.arquivo);
+  if (faltam.length) console.log("Capturas que faltam em manual/capturas/:", faltam.join(", "));
+})();

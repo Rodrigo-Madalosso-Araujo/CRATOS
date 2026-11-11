@@ -416,6 +416,8 @@ async function incluirPedido(ni, tipo, opcoes) {
     return { ok: false, tipo, semBotao: true };
   }
 
+  /* 1.9.3 — "Incluir Pedido" grava a solicitação no e-CAC: refazer registra outra. */
+  await Store.marco("INFOJUD", "", "o pedido já foi incluído no e-CAC");
   btns[btns.length - 1].click();
 
   let incluido = false;

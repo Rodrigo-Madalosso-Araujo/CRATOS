@@ -16,6 +16,14 @@
 
   /* da mais nova para a mais velha */
   const VERSOES = [
+    { versao: "1.9.3", data: "10/11/2026", itens: [
+      "Manual do usuário dentro do CRATOS: botão nas Preferências e nos Primeiros passos, abre sem internet e sempre na versão instalada.",
+      "Nas Preferências, o \"?\" ao lado de cada convênio abre o manual direto na seção dele.",
+      "O botão \"Localizar resultado na caixa postal\" passa a se chamar \"Coletar INFOJUD (resultados na caixa postal)\", como os de CCS e PREVJUD.",
+      "SNIPER: o relatório ganha visual novo (seções em azul, tabelas, selo por fonte, páginas numeradas) e passa a trazer o grafo de vínculos, redesenhado, com uma ficha por terceiro vinculado. Nas Preferências, você escolhe se junta o grafo e os processos das partes (DataJud).",
+      "Preferências: \"Exportar configurações\" e \"Importar configurações\" — backup, outro computador ou o padrão da unidade, conferindo o que muda antes de aplicar.",
+      "Fila: novo botão \"Refazer — no fim da fila\" quando um convênio dá erro (nos atos, só enquanto a ordem não pode ter chegado ao sistema).",
+    ] },
     { versao: "1.9.2", data: "26/10/2026", itens: [
       "Primeiros passos: uma página com o essencial para configurar (vara do e-CAC, RENAJUD, pasta, juntada). Abre na primeira instalação e fica num botão das Preferências.",
       "INFOJUD: o botão \"Ler as varas do meu e-CAC\" traz a lista de varas do seu próprio e-CAC para as Preferências.",

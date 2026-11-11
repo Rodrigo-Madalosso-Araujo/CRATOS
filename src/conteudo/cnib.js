@@ -296,6 +296,7 @@
     marcarPorRotulo("priorityOrder", c.priorizarPrenotacao ? "Sim" : "Não");
     await sleep(300);
 
+    await Store.marco("CNIB", est.numProcesso, "a ordem foi preparada na CNIB para o seu envio e assinatura");   // 1.9.3
     console.log("%cCRATOS/CNIB: ordem PREPARADA. Confira e clique 'Enviar Indisponibilidade' " +
       "e assine. Depois volte ao PJe e clique 'Concluí'.", "color:#4ade80;font-weight:bold");
     avisar("ordem PREPARADA. Confira, clique 'Enviar Indisponibilidade' e assine.\n" +
@@ -629,6 +630,7 @@
      nativa. Não existe campo de "dados do advogado" neste perfil (o manual do
      TJBA menciona; na Justiça do Trabalho não aparece). */
   async function etapaConfirmacaoBaixa(est) {
+    if (est) await Store.marco("CNIB", est.numProcesso, "o cancelamento foi preparado na CNIB para o seu envio e assinatura");   // 1.9.3
     await guardaConexao();
     const a = est.ordemAtual || {};
     const posicao = a.total > 1 ? ` (${a.indice} de ${a.total})` : "";

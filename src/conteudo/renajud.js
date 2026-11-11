@@ -503,6 +503,7 @@
     else await aprenderCampo("#documentoMagistrado", "magistrado", "magistrado");   // 1.9.2
 
     // PREPARAR: aciona "Inserir" e PARA. Confirmação é do usuário.
+    await Store.marco("RENAJUD", est.numProcesso, "a restrição foi preparada no RENAJUD para a sua confirmação");   // 1.9.3
     await clicar("button", "Inserir");
     console.log("CRATOS/RENAJUD: campos preenchidos e 'Inserir' acionado. " +
                 "Confira e clique 'Confirmar'. Depois volte ao PJe e clique 'Concluí'.");

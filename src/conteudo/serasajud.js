@@ -181,6 +181,7 @@
     const rotulo = ehBaixa ? "Baixar Dívida" : "Incluir Dívida";
     const enviar = await esperarHabilitado(() => botaoAzul(rotulo), 10000);
     if (!enviar) return falhar(new Error(`o botão "${rotulo}" não habilitou — algum campo obrigatório ficou vazio`));
+    await Store.marco("SERASAJUD", est.numProcesso, `o CRATOS acionou "${rotulo}" no SerasaJUD`);   // 1.9.3
     enviar.click();
 
     const dlg = await esperar(() => dialogoCom(/confirmar (inclus|baix)/i), 10000);

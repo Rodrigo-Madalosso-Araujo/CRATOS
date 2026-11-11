@@ -40,6 +40,21 @@ if (typeof globalThis.CRATOS_NS === "undefined") {
     return (await this.get("extensao_ligada")) !== false;
   },
 
+  /* MARCO IRREVERSÍVEL (1.9.3). Gravado pelo convênio no ponto a partir do qual o
+     pedido PODE ter chegado ao sistema: o CRATOS vai clicar em enviar, ou entregou o
+     formulário pronto para a confirmação do usuário. O painel lê para decidir o
+     "Refazer": ato com marco não refaz (nada de ordem em dobro). Nunca derruba o fluxo. */
+  async marco(convenio, numProcesso, oque) {
+    try {
+      await this.set("orq_marco", {
+        convenio: String(convenio || "").toUpperCase(),
+        numProcesso: String(numProcesso || ""),
+        oque: String(oque || "").slice(0, 160),
+        em: Date.now(),
+      });
+    } catch (e) { /* nada */ }
+  },
+
   /* Escuta mudanças de UMA chave específica (já com namespace resolvido).
      Devolve uma função para cancelar a escuta. */
   onChange(chave, callback) {

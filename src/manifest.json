@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "CRATOS",
-  "version": "1.9.2",
+  "version": "1.9.3",
   "description": "Captura dados do processo no PJe e automatiza parcialmente a execução de convênios (consultas e registro) para o processo em tela. Quem confirma, assina e envia é sempre você.",
   "browser_specific_settings": {
     "gecko": {
@@ -54,6 +54,7 @@
       "modulos/serasajud.js",
       "modulos/ccs.js",
       "modulos/sniper.js",
+      "comum/grafo-sniper.js",
       "modulos/prevjud.js",
       "modulos/disponibilidade.js",
       "modulos/juntada.js",
@@ -173,6 +174,7 @@
         "comum/storage.js",
         "comum/relatorio.js",
         "comum/faixa.js",
+        "comum/grafo-sniper.js",
         "conteudo/sniper.js"
       ],
       "run_at": "document_idle"

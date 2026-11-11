@@ -42,9 +42,11 @@
     topo.className = "campo";
     topo.id = "cx-topo-primeiros";
     CratosHTML.definir(topo, html`<button id="cx-primeiros" style="padding:7px 14px;background:#1a1a1a;color:#e8e8e8;border:1px solid #e11d1d;border-radius:7px;cursor:pointer">Abrir os Primeiros passos</button>
-      <span class="nota">configuração guiada do essencial (vara do e-CAC, RENAJUD, pasta, juntada)</span>`);
+      <button id="cx-manual" style="padding:7px 14px;background:#1a1a1a;color:#e8e8e8;border:1px solid #444;border-radius:7px;cursor:pointer;margin-left:8px">Manual do usuário</button>
+      <span class="nota">configuração guiada do essencial (vara do e-CAC, RENAJUD, pasta, juntada) · o <b>?</b> ao lado de cada convênio abre o manual na seção dele</span>`);
     alvo.appendChild(topo);
     topo.querySelector("#cx-primeiros").onclick = () => browser.runtime.sendMessage({ tipo: "abrir_primeiros" }).catch(() => {});
+    topo.querySelector("#cx-manual").onclick = () => browser.runtime.sendMessage({ tipo: "abrir_manual" }).catch(() => {});
   }
   const dataBR = (ms) => { try { return new Date(Number(ms)).toLocaleDateString("pt-BR"); } catch (e) { return "?"; } };
   /* Troca as opções de um campo "lista" pela lista lida da tela, quando houver. */
@@ -85,7 +87,9 @@
     const div = document.createElement("div");
     div.className = "modulo";
     div.dataset.modulo = mod.nome;
-    CratosHTML.definir(div, html`<h2>${mod.rotulo}</h2>`);
+    /* 1.9.3 — "?" abre o manual na seção do convênio (âncora #cfg-<nome>, gerada pelo manual). */
+    CratosHTML.definir(div, html`<h2>${mod.rotulo} <button class="cx-ajuda" data-secao="cfg-${mod.nome}" title="Ver no manual" aria-label="Ver ${mod.rotulo} no manual" style="margin-left:6px;width:22px;height:22px;padding:0;border-radius:50%;background:#1a1a1a;color:#e8e8e8;border:1px solid #555;cursor:pointer;font-size:12px;font-weight:700;vertical-align:middle">?</button></h2>`);
+    div.querySelector(".cx-ajuda").onclick = (ev) => browser.runtime.sendMessage({ tipo: "abrir_manual", secao: ev.currentTarget.dataset.secao }).catch(() => {});
     const cfgMod = configSalva[mod.nome] || {};
 
     for (let [chave, esp] of Object.entries(mod.config || {})) {
@@ -206,9 +210,21 @@
   barra.style.cssText = "margin-top:20px;display:flex;gap:12px;align-items:center";
   barra.innerHTML = `
     <button id="cx-salvar" style="padding:9px 18px;background:#e11d1d;color:#fff;border:none;border-radius:7px;font-weight:600;cursor:pointer">Salvar configurações</button>
-    <span id="cx-salvo" style="color:#4ade80;font-size:13px"></span>`;
+    <span id="cx-salvo" style="color:#4ade80;font-size:13px"></span>
+    <span style="flex:1"></span>
+    <button id="cx-exportar" type="button" class="botao-novidades" title="Salva um arquivo com as suas Preferências (backup, outro computador, colegas da unidade)">Exportar configurações</button>
+    <button id="cx-importar" type="button" class="botao-novidades" title="Lê um arquivo exportado pelo CRATOS e mostra o que muda antes de aplicar">Importar configurações</button>
+    <input id="cx-arquivo-config" type="file" accept=".json,application/json" style="display:none">`;
   alvo.appendChild(barra);
   document.getElementById("cx-salvar").onclick = salvar;
+  /* 1.9.3 — exportar / importar (comum/config-io.js faz a lista branca) */
+  document.getElementById("cx-exportar").onclick = () => exportarConfig().catch((e) => dizerIO("Não consegui exportar: " + e.message, "#ff6b6b"));
+  document.getElementById("cx-importar").onclick = () => document.getElementById("cx-arquivo-config").click();
+  document.getElementById("cx-arquivo-config").onchange = (ev) => {
+    const f = ev.target.files && ev.target.files[0];
+    ev.target.value = "";
+    if (f) importarConfig(f).catch((e) => dizerIO("Não consegui importar: " + e.message, "#ff6b6b"));
+  };
 
   /* 1.9.2 — a lista de varas chega enquanto as Preferências estão abertas (botão "Ler as
      varas do meu e-CAC"): troca as opções do menu SEM perder o que já foi escolhido aqui. */
@@ -334,6 +350,85 @@
     const fechar = () => j.remove();
     j.querySelector("#fechar-novidades").onclick = fechar;
     j.onclick = (ev) => { if (ev.target === j) fechar(); };
+  }
+
+  /* ═══ EXPORTAR / IMPORTAR (1.9.3) ═══
+     Exporta o que está SALVO (não o que foi mexido na tela e não salvo). Importa em
+     duas etapas: lê e confere (CratosConfigIO.ler: lista branca do schema), mostra as
+     diferenças e só grava com o "Aplicar". */
+  function dizerIO(t, cor) {
+    const el = document.getElementById("cx-salvo");
+    if (!el) return;
+    el.textContent = t;
+    el.style.color = cor || "#4ade80";
+  }
+  async function exportarConfig() {
+    const IO = CratosConfigIO;
+    const cfg = (await Store.get(CHAVES.config)) || {};
+    let versao = "";
+    try { versao = browser.runtime.getManifest().version; } catch (e) { /* nada */ }
+    const agora = new Date();
+    const obj = IO.exportar(cfg, modulos, versao, agora.toISOString());
+    const url = URL.createObjectURL(new Blob([JSON.stringify(obj, null, 2)], { type: "application/json" }));
+    try {
+      await browser.downloads.download({ url, filename: IO.nomeArquivo(agora), saveAs: true });
+      dizerIO("✓ arquivo de configurações salvo");
+    } catch (e) {
+      if (!/cancel/i.test(String(e && e.message))) throw e;
+    } finally {
+      setTimeout(() => URL.revokeObjectURL(url), 60 * 1000);
+    }
+  }
+  async function importarConfig(arquivo) {
+    const IO = CratosConfigIO;
+    if (arquivo.size > IO.TAMANHO_MAX) { dizerIO(`Arquivo recusado: maior que ${IO.TAMANHO_MAX / 1024} KB — não é um arquivo de configurações do CRATOS.`, "#ff6b6b"); return; }
+    const texto = await arquivo.text();
+    const r = IO.ler(texto, modulos);
+    if (!r.ok) { dizerIO("Arquivo recusado: " + r.motivo + ". Nada foi alterado.", "#ff6b6b"); return; }
+    const atual = (await Store.get(CHAVES.config)) || {};
+    abrirJanelaImportacao(atual, r);
+  }
+  function abrirJanelaImportacao(atual, r) {
+    const IO = CratosConfigIO;
+    if (document.getElementById("janela-novidades")) return;
+    const temLotacao = IO.lotacaoDiferente(atual, r.aceitos, modulos);
+    const j = document.createElement("div");
+    j.id = "janela-novidades";            // mesma moldura da janela de novidades
+    const linha = (d) => html`<tr${d.lotacao ? html` class="cx-lotacao"` : ""}><td>${d.modulo}</td><td>${d.campo}</td><td>${d.de}</td><td>${d.para}</td></tr>`;
+    const tabela = (difs) => difs.length
+      ? html`<table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:8px">
+          <thead><tr style="text-align:left;color:#b0b0b0"><th>Convênio</th><th>Opção</th><th>Hoje</th><th>Fica</th></tr></thead>
+          <tbody>${difs.map(linha)}</tbody></table>`
+      : html`<p class="nota">Nenhuma diferença: as suas Preferências já são iguais às do arquivo.</p>`;
+    const desc = r.descartados.length
+      ? html`<details style="margin-top:10px"><summary style="cursor:pointer;color:#facc15">${r.descartados.length} item(ns) do arquivo descartado(s)</summary>
+          <ul style="font-size:12px">${r.descartados.map((d) => html`<li>${d.rotulo || d.nome}: ${d.motivo}</li>`)}</ul></details>`
+      : "";
+    const origem = [r.versaoCratos ? `CRATOS ${r.versaoCratos}` : "", r.geradoEm ? `exportado em ${new Date(r.geradoEm).toLocaleString("pt-BR")}` : ""].filter(Boolean).join(", ");
+    CratosHTML.definir(j, html`<div class="caixa" role="dialog" aria-label="Importar configurações">
+        <strong>Importar configurações</strong>${origem ? html`<span class="nota"> — ${origem}</span>` : ""}
+        <p class="nota" style="margin:6px 0 0">Só entram as opções que o CRATOS conhece, com valores válidos. Confira o que muda:</p>
+        ${temLotacao ? html`<label style="display:flex;gap:8px;align-items:center;margin-top:10px;color:#e8e8e8;font-size:13px">
+          <input type="checkbox" id="cx-manter-lotacao" checked> Manter os dados da minha lotação (vara do e-CAC, tribunal, órgão e magistrado do RENAJUD, órgão da CNIB)</label>` : ""}
+        <div id="cx-difs"></div>${desc}
+        <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px">
+          <button class="botao-novidades" id="cx-imp-cancelar" type="button">Cancelar</button>
+          <button class="botao-novidades" id="cx-imp-aplicar" type="button" style="background:#e11d1d;border-color:#e11d1d;color:#fff">Aplicar</button>
+        </div></div>`);
+    document.body.appendChild(j);
+    const manter = () => { const c = j.querySelector("#cx-manter-lotacao"); return !!(c && c.checked); };
+    const desenhar = () => CratosHTML.definir(j.querySelector("#cx-difs"),
+      tabela(IO.diferencas(atual, IO.aplicar(atual, r.aceitos, modulos, { manterLotacao: manter() }), modulos)));
+    desenhar();
+    const cx = j.querySelector("#cx-manter-lotacao");
+    if (cx) cx.onchange = desenhar;
+    const fechar = () => j.remove();
+    j.querySelector("#cx-imp-cancelar").onclick = () => { fechar(); dizerIO("Importação cancelada. Nada foi alterado.", "#b0b0b0"); };
+    j.querySelector("#cx-imp-aplicar").onclick = async () => {
+      await Store.set(CHAVES.config, IO.aplicar(atual, r.aceitos, modulos, { manterLotacao: manter() }));
+      fechar();
+      location.reload();
+    };
   }
 
   function anosOptions(sel) {

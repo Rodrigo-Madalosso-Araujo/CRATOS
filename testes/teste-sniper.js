@@ -120,6 +120,8 @@ function montar(o) {
     }
   }, true);
 
+  const grafoJs = path.join(SRC, "comum", "grafo-sniper.js");   // 1.9.3 (o manifest carrega antes)
+  if (fs.existsSync(grafoJs)) w.eval(fs.readFileSync(grafoJs, "utf8"));
   w.eval(fs.readFileSync(path.join(SRC, "conteudo", "sniper.js"), "utf8"));
   const api = w.__cratosSniper;
   r.api = api;
@@ -127,6 +129,18 @@ function montar(o) {
   api.io.esperar = () => new Promise((res) => setTimeout(res, 1));
   api.io.voltar = () => { r.voltas++; for (const x of Array.from(w.document.querySelectorAll(".pagina-parte"))) x.remove(); };
   let parteAberta = null, paginaPf = 0;
+  /* op.grafo: "ok" (aba + respostas), "previo" (respostas chegam sozinhas, sem aba),
+     "semNo" (falta o /grafo/node de uma parte), "erro" (/partes/ com HTTP 500) */
+  const emitirGrafo = () => {
+    const G = F.GRAFO;
+    if (op.grafo === "erro") { emitir("GET", `${API}/investigacao/${F.ID}/partes/`, 500, { detail: "erro" }); return; }
+    emitir("GET", `${API}/investigacao/${F.ID}/partes/`, 200, G.PARTES);
+    for (const u of Object.keys(G.NO)) {
+      if (op.grafo === "semNo" && u === "g-p4") continue;
+      emitir("GET", `${API}/grafo/node/${u}`, 200, G.NO[u]);
+    }
+    for (const u of Object.keys(G.REL)) emitir("GET", `${API}/grafo/node/${u}/relationships?depth=1&inbound=true&outbound=true`, 200, G.REL[u]);
+  };
   api.io.clicar = (el) => {
     r.cliques.push(String(el.textContent || el.id || "").replace(/\s+/g, " ").trim() || el.id);
     if (el.type === "checkbox") { el.checked = !el.checked; return; }
@@ -149,6 +163,12 @@ function montar(o) {
       if ((op.processosFalha || []).includes(parteAberta)) return;
       if (parteAberta === F.ID_PARTE_PJ) emitir("GET", `${API}/investigacao/${parteAberta}/processos/`, 200, F.PROCESSOS_PJ);
       else { paginaPf = 0; emitir("GET", `${API}/investigacao/${parteAberta}/processos/`, 200, F.PROCESSOS_PF_PAG[0]); }
+      return;
+    }
+    /* 1.9.3 — a aba "Grafo": /partes/, /grafo/node/{uuid} de cada parte, /relationships */
+    if (el.getAttribute && el.getAttribute("role") === "tab" && /Grafo/.test(el.textContent)) {
+      r.abasGrafo = (r.abasGrafo || 0) + 1;
+      emitirGrafo();
       return;
     }
     if (el.classList && el.classList.contains("prox")) {
@@ -180,6 +200,12 @@ function montar(o) {
             a.textContent = "Mais detalhes";
             w.document.body.appendChild(a);
           }
+          if (op.grafo && op.grafo !== "previo") {
+            const aba = w.document.createElement("div");
+            aba.setAttribute("role", "tab"); aba.className = "mdc-tab"; aba.textContent = " Grafo ";
+            w.document.body.appendChild(aba);
+          }
+          if (op.grafo === "previo") emitirGrafo();
         }, 8);
       }
     }
@@ -224,6 +250,13 @@ const texto = (m) => (m && m.linhas ? m.linhas.join("\n") : "");
     const toggles = reg ? Object.keys(reg.config).filter((k) => /^fonte_/.test(k)) : [];
     checar(toggles.length === 8 && toggles.every((k) => reg.config[k].tipo === "toggle" && reg.config[k].padrao.ativo === true),
       "Preferências: 8 interruptores de fonte, todos LIGADOS de fábrica");
+    checar(est.config.processos === true && est.config.grafo === true && reg && reg.config.juntarProcessos && reg.config.juntarGrafo &&
+      reg.config.juntarProcessos.tipo === "toggle" && reg.config.juntarProcessos.padrao.ativo === true && reg.config.juntarGrafo.padrao.ativo === true,
+      "(1.9.3, 11/11) Preferências: \"Juntar os processos\" e \"Juntar o grafo\", LIGADOS de fábrica (quem atualiza recebe o relatório de sempre)");
+    mem["cratos:config"] = { sniper: { juntarProcessos: { ativo: false }, juntarGrafo: { ativo: false } } };
+    await M.executar({ numeroProcesso: F.PROC_FMT, partes }, "consulta");
+    const c3 = mem["cratos:sniper_estado"].config;
+    checar(c3.processos === false && c3.grafo === false && c3.fontes.length === 8, "(1.9.3) chaves desligadas chegam ao estado da investigação; as fontes não mudam");
     const aviso = reg ? reg.config._avisoEscopo.itens.join(" ") : "";
     checar(/Nunca/i.test(aviso) && /constrição/i.test(aviso) && /sigilosos/i.test(aviso), "Preferências: o aviso diz que não há constrição e que os anexos são sigilosos");
   } catch (e) { checar(false, "fundo: não rodou (" + e.message + ")"); }
@@ -298,8 +331,9 @@ const texto = (m) => (m && m.linhas ? m.linhas.join("\n") : "");
     checar(/SERP\/ONR \(imóveis\): pesquisa em andamento no momento da consulta \("Pesquisa em andamento nos cartórios"\), sem resultado disponível\./.test(c),
       "⛔ certidão: fonte EM ANDAMENTO é certificada assim (sem coleta posterior)");
     checar(/não tiveram resultado disponível até o momento desta certidão/.test(c), "certidão: observa que erro/andamento não tiveram resultado");
-    checar(/O grafo de vínculos não foi reproduzido; pode ser consultado no próprio SNIPER, investigação nº 4242\./.test(c),
-      "certidão: grafo fora, com o nº para consulta no SNIPER");
+    checar(/O grafo de vínculos não pôde ser obtido do SNIPER no momento da consulta; pode ser consultado no próprio SNIPER, investigação nº 4242\./.test(c) &&
+      /GRAFO DE VÍNCULOS \(SNIPER\)\n  O grafo de vínculos não pôde ser obtido do SNIPER[^\n]*aba "Grafo" não foi encontrada/.test(r) && !rel.grafoSniper,
+      "⛔ (1.9.3) tela sem a aba Grafo: \"não pôde ser obtido\" (nunca \"sem vínculos\"), e o relatório e a certidão saem assim mesmo");
     checar(/Nenhuma medida de constrição foi solicitada\./.test(c) && /iniciada pelo CRATOS, a pedido do\(a\) responsável/.test(c),
       "certidão: rastro — iniciada pelo CRATOS a pedido do responsável; nenhuma constrição");
     checar(/SNIPER relatorio\.pdf/.test(c), "certidão: aponta o relatório anexo pelo nome");
@@ -462,6 +496,94 @@ const texto = (m) => (m && m.linhas ? m.linhas.join("\n") : "");
     const r = texto(pdfs(t).find((m) => m.detalhe === "relatorio"));
     checar(/Razão social: EMPRESA FICTICIA LTDA[\s\S]*Processos em nome da parte: não obtidos do SNIPER\./.test(r) && /FULANO FICTICIO DA SILVA[\s\S]*PROCESSOS EM NOME DA PARTE \(12\)/.test(r),
       "(1.7.3) processos que não chegam: \"não obtidos\" naquela parte, o resto segue (não trava)");
+  }
+
+  /* ── 8. (1.9.3) o grafo de vínculos no relatório ──────────────────────── */
+  {
+    const t = montar({ grafo: "ok" });
+    await ate(() => pdfs(t).length >= 2, 30000);
+    const rel = pdfs(t).find((m) => m.detalhe === "relatorio") || {}, cert = pdfs(t).find((m) => m.detalhe === "certidao") || {};
+    const r = texto(rel), c = texto(cert);
+    checar(t.abasGrafo === 1 && t.cliques.filter((x) => x === "Grafo").length === 1, "o CRATOS abre a aba \"Grafo\" uma vez (por clicarSeguro)");
+    const g = rel.grafoSniper || {};
+    checar(g.ok === true && g.grafos.length === 2 && g.totalTerceiros === 6 && g.meta.investigacao === F.ID && g.meta.processo === F.PROC_FMT,
+      "o relatório leva o MODELO do grafo (2 grafos, 6 terceiros, nº da investigação) para o fundo desenhar");
+    checar(!cert.grafoSniper, "a certidão não leva páginas de grafo (só o relatório)");
+    /* (1.9.3) relatório DESENHADO: blocos para o fundo; certidão segue em texto */
+    const B = rel.relatorioSniper || [];
+    const secoes = B.filter((b) => b.t === "secao");
+    checar(Array.isArray(rel.relatorioSniper) && !cert.relatorioSniper && rel.linhas && rel.linhas.length > 10 &&
+      rel.relatorioSniperMeta && rel.relatorioSniperMeta.investigacao === F.ID,
+      "(1.9.3) relatório vai também em BLOCOS (desenho do fundo); as linhas seguem junto (reserva); a certidão NÃO muda");
+    const sng = secoes.find((b) => /SNGB/.test(b.texto)) || {}, sis = secoes.find((b) => /Sisbajud/.test(b.texto)) || {}, serp = secoes.find((b) => /SERP/.test(b.texto)) || {};
+    checar(sng.selo && sng.selo.tom === "erro" && sis.selo && sis.selo.tom === "ok" && serp.selo && serp.selo.tom === "andamento",
+      "(1.9.3) cada fonte com o seu selo: com resultado / erro da fonte / em andamento");
+    const resumo = (B.find((b) => b.t === "tabela" && b.colunas[1] && b.colunas[1].titulo === "Situação") || { linhas: [] }).linhas;
+    checar(resumo.length === 8 && resumo.some((l) => l[1].tom === "erro" && /erro da fonte/.test(l[1].texto)), "(1.9.3) resumo das fontes em tabela, com os selos");
+    checar(!JSON.stringify(B).includes(F.ID_BLOQUEIO) && !/ID para bloquear/i.test(JSON.stringify(B)),
+      "⛔ (1.9.3) blocos: o ID para bloqueio também NÃO sai");
+    checar(B.some((b) => b.t === "tabela" && b.colunas[0].titulo === "Terceiro vinculado" && b.linhas.some((l) => /COMERCIO FICTICIO S\.A\. é Sócio desde 20\/11\/2020/.test(l[2]))),
+      "(1.9.3) blocos: tabela de terceiros por grafo, com o vínculo na direção certa");
+    const mc = t.mem["cratos:orq_marco"] || {};
+    checar(mc.convenio === "SNIPER" && /investigação foi iniciada/.test(mc.oque) && t.posts === 1,
+      "(1.9.3) marco do Refazer gravado antes de \"Iniciar investigação\" (refazer avisa que cria outra)");
+    checar(/GRAFO DE VÍNCULOS \(SNIPER\)\n  O SNIPER exibiu 2 grafos de vínculos, com 6 terceiros vinculados às partes investigadas\./.test(r) &&
+      /Grafo 1 — partes: EMPRESA FICTICIA LTDA; FULANO FICTICIO DA SILVA; BELTRANA FICTICIA SOUZA\./.test(r),
+      "relatório: seção do grafo com a contagem e as partes de cada grafo");
+    checar(/ESSENCIA FICTICIA DO COURO LTDA - CNPJ 45\.645\.645\/0001-45: COMERCIO FICTICIO S\.A\. é Sócio desde 20\/11\/2020\n/.test(r) &&
+      /SICRANA TERCEIRA FICTICIA - CPF 444\.555\.666-77: Sócio de EMPRESA FICTICIA LTDA desde 01\/02\/2015\n/.test(r) &&
+      /Grafo 2 — parte: COMERCIO FICTICIO S\.A\.\n/.test(r) &&
+      !/FORA DO DESENHO/.test(r), "relatório: cada terceiro com a relação NA DIREÇÃO certa e a data de entrada; sem a relação \"*\"");
+    checar(/Sem vínculos no grafo do SNIPER: CICRANO ISOLADO FICTICIO\./.test(r), "relatório: parte sem ligação dita como tal (o SNIPER respondeu)");
+    checar(!/O grafo de vínculos não é reproduzido/.test(r) && /foi redesenhado no relatório anexo, com a ficha de cada terceiro/.test(c) &&
+      /\(2 grafos, 6 terceiros vinculados\)/.test(c), "certidão: o grafo foi redesenhado no relatório anexo (com as contagens)");
+    checar(r.indexOf(r.match(/GRAFO DE VÍNCULOS/) ? "GRAFO DE VÍNCULOS" : "@@") > r.indexOf("CGU (SANÇÕES DIVERSAS)"), "relatório: o grafo vem DEPOIS das fontes");
+  }
+  {
+    const t = montar({ grafo: "previo" });
+    await ate(() => pdfs(t).length >= 2, 30000);
+    const rel = pdfs(t).find((m) => m.detalhe === "relatorio") || {};
+    checar(!t.abasGrafo && rel.grafoSniper && rel.grafoSniper.ok && rel.grafoSniper.grafos.length === 2,
+      "grafo que a página já carregou sozinha: lido das capturas, sem clicar em nada");
+  }
+  for (const [modo, desc] of [["semNo", "falta o /grafo/node de uma parte"], ["erro", "o /partes/ do grafo volta com erro"]]) {
+    const t = montar({ grafo: modo });
+    await ate(() => pdfs(t).length >= 2, 30000);
+    const rel = pdfs(t).find((m) => m.detalhe === "relatorio") || {}, cert = pdfs(t).find((m) => m.detalhe === "certidao") || {};
+    const r = texto(rel), c = texto(cert);
+    checar(pdfs(t).length === 2 && !rel.grafoSniper && /O grafo de vínculos não pôde ser obtido do SNIPER no momento da consulta \(/.test(r) &&
+      /não pôde ser obtido do SNIPER no momento da consulta; pode ser consultado no próprio SNIPER, investigação nº 4242\./.test(c) &&
+      !/não apresentou vínculos/.test(r + c),
+      `⛔ ${desc}: "não pôde ser obtido" (nunca "sem vínculos"), sem páginas de grafo, e o relatório e a certidão saem`);
+  }
+
+  /* ── 9. (1.9.3, 11/11) Preferências: juntar ou não os processos e o grafo ── */
+  {
+    const t = montar({ grafo: "ok", estado: { config: { fontes: F.FONTES_TELA.map(([s]) => s), pasta: "CRATOS", processos: false, grafo: false } } });
+    await ate(() => pdfs(t).length >= 2, 30000);
+    const rel = pdfs(t).find((m) => m.detalhe === "relatorio") || {}, cert = pdfs(t).find((m) => m.detalhe === "certidao") || {};
+    const r = texto(rel), c = texto(cert), B = JSON.stringify(rel.relatorioSniper || []);
+    checar(!t.abasProcessos && !t.abasGrafo && !t.cliques.includes("Grafo"),
+      "processos e grafo DESLIGADOS: o CRATOS nem abre as abas \"Processos\" e \"Grafo\" (não busca o que não vai juntar)");
+    checar(pdfs(t).length === 2 && /Razão social|Nome/.test(r) && /DADOS CADASTRAIS \(Receita Federal\) DAS PARTES/.test(r),
+      "o cadastro da Receita continua entrando sempre (sem chave)");
+    checar(/PROCESSOS EM NOME DAS PARTES \(DataJud\): não incluídos, por configuração do\(a\) usuário\(a\)\./.test(r) &&
+      !/Processos em nome da parte: (não obtidos|\d)/.test(r) &&
+      /Os processos em nome das partes investigadas \(DataJud\) não foram incluídos, por configuração do\(a\) usuário\(a\)\./.test(c),
+      "⛔ processos desligados: relatório e certidão dizem \"não incluídos, por configuração\" (nunca \"não obtidos\" nem \"0\")");
+    checar(/GRAFO DE VÍNCULOS \(SNIPER\)\n  Não incluído, por configuração do\(a\) usuário\(a\)\./.test(r) && !rel.grafoSniper &&
+      /O grafo de vínculos do SNIPER não foi incluído, por configuração do\(a\) usuário\(a\)\./.test(c) &&
+      !/não pôde ser obtido|não apresentou vínculos/.test(r + c),
+      "⛔ grafo desligado: sem páginas de grafo; \"não incluído, por configuração\" (nem \"sem vínculos\" nem \"não pôde ser obtido\")");
+    checar(/Processos em nome das partes \(DataJud\): não incluídos, por configuração/.test(B) && /Não incluído, por configuração/.test(B) &&
+      !/"Número"/.test(B), "relatório desenhado: as mesmas observações, sem a tabela de processos");
+  }
+  {
+    const t = montar({ grafo: "ok", estado: { config: { fontes: F.FONTES_TELA.map(([s]) => s), pasta: "CRATOS", processos: false } } });
+    await ate(() => pdfs(t).length >= 2, 30000);
+    const rel = pdfs(t).find((m) => m.detalhe === "relatorio") || {};
+    checar(!t.abasProcessos && t.abasGrafo === 1 && rel.grafoSniper && rel.grafoSniper.grafos.length === 2,
+      "só os processos desligados: o grafo segue normal (as chaves são independentes)");
   }
 
   console.log(`\n=== ${NOME} ===`);

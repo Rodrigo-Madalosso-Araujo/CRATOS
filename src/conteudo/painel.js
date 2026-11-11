@@ -315,6 +315,15 @@
   /* Ledger da execução: uma linha por convênio rodado, com o desfecho. É o que o
      relatório de fim de fila lê. Zerado a cada nova execução. */
   let orquestraLedger = [];
+  /* 1.9.3 — convênios já devolvidos ao fim da fila nesta execução (um "Refazer" por
+     convênio: sem laço). Zerado a cada nova execução. */
+  let orquestraRefeitos = new Set();
+  /* MARCO IRREVERSÍVEL (1.9.3). Cada convênio grava `orq_marco` no ponto a partir do
+     qual o pedido PODE ter chegado ao sistema (o CRATOS clicou em enviar, ou entregou o
+     formulário pronto para você confirmar). Ato com marco = "Refazer" BLOQUEADO (decisão
+     do Rodrigo, 10/11: nada de ordem em dobro); consulta com marco = Refazer avisa que
+     registra outro pedido. Sem marco = nada saiu. */
+  const CHAVE_MARCO = "orq_marco";
 
   /* Chave do PULSO DE CONCLUSÃO. Cada convênio (menos o SAB, que já usa
      `sab_estado`) grava aqui, no ponto onde emite a certidão, um objeto
@@ -366,7 +375,7 @@
     if (dig.length !== 20) return;
     try { await browser.runtime.sendMessage({ tipo: "processo_aba", numProcesso: numero }); } catch (e) { /* nada */ }
     if (offDiario) { try { offDiario(); } catch (e) { /* nada */ } }
-    const avaliar = (d) => { pendenteJuntada = !!(d && (d.itens || []).some((it) => !it.juntadoEm)); };
+    const avaliar = (d) => { pendenteJuntada = !!(d && (d.itens || []).some((it) => !it.juntadoEm && !it.substituidoEm)); };
     try { avaliar(await Store.get("diario:" + dig)); } catch (e) { /* nada */ }
     offDiario = Store.onChange("diario:" + dig, avaliar);
   }
@@ -413,7 +422,7 @@
       <div style="border-top:1px solid #333;margin-top:12px;padding-top:10px">
         <button class="cx-acao" id="cx-localizar"
           style="background:#1a1a1a;border:1px solid #e11d1d;color:#e8e8e8;font-size:12px">
-          Localizar resultado na caixa postal
+          Coletar INFOJUD (resultados na caixa postal)
         </button>
         <div class="cx-vazio" id="cx-status" style="margin-top:8px"></div>
       </div>
@@ -823,6 +832,7 @@
     orquestraIniciadaEm = Date.now();   // 1.9.0: só vale registro do INFOJUD desta execução
     orquestraIdx = 0;
     orquestraLedger = [];
+    orquestraRefeitos = new Set();
     renderProgresso();
     await rodarProximoConvenio(ctx);
   }
@@ -849,7 +859,7 @@
       return;
     }
     const conv = orquestraFila[orquestraIdx];
-    atualizarProgresso(conv.id, "🔄 Executando…", "cinza");
+    atualizarProgresso(conv.id, orquestraRefeitos.has(conv.id) ? "🔄 Refazendo (2ª tentativa)…" : "🔄 Executando…", "cinza");
 
     /* Convênio de consulta pura (INFOJUD, CENSEC) não tem "inclusao"/"baixa":
        aparece na lista da INCLUSÃO por conveniência, mas a operação que vai no
@@ -1059,6 +1069,62 @@
     };
     area.appendChild(btnPular);
 
+    /* REFAZER (1.9.3, pedido do Rodrigo, 10/11): devolve o convênio ao FIM da fila, uma
+       vez. Ato que já passou do marco irreversível não refaz (botão desabilitado, com o
+       motivo); consulta refaz, avisando se já registrou um pedido. */
+    if (!orquestraRefeitos.has(conv.id)) {
+      const btnRefazer = document.createElement("button");
+      btnRefazer.className = "cx-acao cx-refazer";
+      btnRefazer.style.cssText = "font-size:12px;margin-top:6px;background:#1a1a1a;border:1px solid #6b7280;color:#cbd5e1";
+      btnRefazer.textContent = `↻ Refazer ${conv.label} — no fim da fila`;
+      const notaRefazer = document.createElement("div");
+      notaRefazer.className = "cx-refazer-nota";
+      notaRefazer.style.cssText = "font-size:11px;color:#9a9a9a;margin:3px 0 0";
+      let marcoAtual = null;
+      const avaliarMarco = (m) => {
+        const vale = m && String(m.convenio || "").toUpperCase() === String(conv.id).toUpperCase() &&
+          Number(m.em) >= iniciadoEm;
+        marcoAtual = vale ? m : null;
+        if (marcoAtual && ehAto) {
+          btnRefazer.disabled = true;
+          btnRefazer.style.opacity = "0.5";
+          btnRefazer.style.cursor = "not-allowed";
+          notaRefazer.style.color = "#ff6b6b";
+          notaRefazer.textContent = `Refazer bloqueado: ${marcoAtual.oque || "o pedido foi preparado"} — ele pode ter chegado ao ` +
+            `${conv.label}. Confira lá; se não chegou, use Pular e rode o ${conv.label} de novo depois.`;
+        } else if (marcoAtual) {
+          btnRefazer.disabled = false;
+          notaRefazer.style.color = "#facc15";
+          notaRefazer.textContent = `Atenção: ${marcoAtual.oque || "o pedido já foi feito"}. Refazer registra outro pedido no ${conv.label}.`;
+        } else {
+          btnRefazer.disabled = false;
+          notaRefazer.textContent = "";
+        }
+      };
+      const offMarco = Store.onChange(CHAVE_MARCO, (novo) => { if (!finalizado) avaliarMarco(novo); });
+      Store.get(CHAVE_MARCO).then((m) => avaliarMarco(m)).catch(() => {});
+      btnRefazer.onclick = async () => {
+        avaliarMarco(await Store.get(CHAVE_MARCO).catch(() => null));   // a palavra final é do marco AGORA
+        if (btnRefazer.disabled || finalizado) return;
+        finalizado = true;
+        if (vigia) clearTimeout(vigia);
+        if (off) off();
+        offMarco();
+        anotar("refazer", "1ª tentativa não concluída — refeita no fim da fila" + (marcoAtual ? ` (${marcoAtual.oque || "pedido já feito"})` : ""));
+        area.remove();
+        atualizarProgresso(conv.id, "↻ Vai ser refeito no fim da fila", "amarelo");
+        try {
+          await browser.runtime.sendMessage({ tipo: "orq_refazer", convenioId: conv.id, numProcesso: ctx.numeroProcesso, desde: iniciadoEm });
+        } catch (e) { /* o fundo limpa o que der; a fila segue */ }
+        orquestraRefeitos.add(conv.id);
+        orquestraFila.push(conv);
+        orquestraIdx++;
+        await rodarProximoConvenio(ctx);
+      };
+      area.appendChild(btnRefazer);
+      area.appendChild(notaRefazer);
+    }
+
     /* VIGIA (1.9.0): convênio sem resposta por um tempo (ex.: a aba abriu numa página
        de erro e o content script nunca achou a tela) → mede. Indisponível → marca e
        oferece a certidão aqui mesmo; a confirmação encerra o convênio e segue a fila. */
@@ -1090,9 +1156,13 @@
   function renderRelatorioFinal() {
     const prog = corpo.querySelector("#cx-progresso");
     if (!prog) return;
-    const total = orquestraLedger.length;
-    const okN = orquestraLedger.filter((e) => e.status === "ok").length;
-    const precisa = orquestraLedger.filter((e) => e.status !== "ok");
+    /* 1.9.3 — a tentativa devolvida ao fim da fila ("refazer") é rastro, não convênio:
+       aparece em cinza e não conta no placar (quem conta é a 2ª tentativa). */
+    const valem = orquestraLedger.filter((e) => e.status !== "refazer");
+    const refeitos = orquestraLedger.filter((e) => e.status === "refazer");
+    const total = valem.length;
+    const okN = valem.filter((e) => e.status === "ok").length;
+    const precisa = valem.filter((e) => e.status !== "ok");
     const div = document.createElement("div");
     div.id = "cx-relatorio";
     div.style.cssText = "margin-top:10px;padding-top:8px;border-top:1px solid #333;font-size:12px";
@@ -1108,7 +1178,8 @@
     });
     const corTopo = precisa.length ? "#facc15" : "#4ade80";
     const quemPrecisa = precisa.length ? `, ${precisa.length} precisa(m) de você` : "";
-    CratosHTML.definir(div, html`<div style="font-weight:700;color:${corTopo}">${total} convênio(s): ${okN} concluído(s)${quemPrecisa}</div>${itensPrecisa}`);
+    const itensRefeitos = refeitos.map((e) => html`<div style="color:#9a9a9a;margin-top:3px">↻ ${e.label} — ${e.detalhe}</div>`);
+    CratosHTML.definir(div, html`<div style="font-weight:700;color:${corTopo}">${total} convênio(s): ${okN} concluído(s)${quemPrecisa}</div>${itensPrecisa}${itensRefeitos}`);
     prog.appendChild(div);
     precisa.forEach((e, i) => {
       const alvo = div.querySelector(`[data-disp="${i}"]`);
@@ -1248,7 +1319,7 @@
       });
     } catch (e) { r = { ok: false, erro: String(e.message || e) }; }
     if (!r || !r.ok) {
-      return html`<div style="color:#facc15">Achei a resposta, mas não consegui colher (${(r && (r.erro || r.motivo)) || "erro"}). Use o botão "Localizar resultado na caixa postal" no pé do painel.</div>`;
+      return html`<div style="color:#facc15">Achei a resposta, mas não consegui colher (${(r && (r.erro || r.motivo)) || "erro"}). Use o botão "Coletar INFOJUD (resultados na caixa postal)" no pé do painel.</div>`;
     }
     const n = (r.baixados != null) ? r.baixados : (r.total != null ? r.total : null);
     const qtd = n != null ? ` (${n} arquivo(s))` : "";
@@ -2030,6 +2101,8 @@
     get fila() { return orquestraFila; }, set fila(v) { orquestraFila = v; },
     get idx() { return orquestraIdx; }, set idx(v) { orquestraIdx = v; },
     get ledger() { return orquestraLedger; }, set ledger(v) { orquestraLedger = v; },
+    get refeitos() { return orquestraRefeitos; }, set refeitos(v) { orquestraRefeitos = v; },
+    CHAVE_MARCO,
     setModo(m) { modoAtual = m; },
     setProcesso(p) { processoAtual = p; },
     maisPjePresente,
