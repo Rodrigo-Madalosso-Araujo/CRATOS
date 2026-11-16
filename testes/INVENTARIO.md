@@ -18,7 +18,33 @@ método que travou todo bug real desta lista.
 
 ## Situação
 
-### As que RODAM hoje (11/11/2026 — 1.9.3 em construção: manual, grafo e relatório desenhado do SNIPER, exportar/importar, Refazer, chaves de processos/grafo): 48 suítes, 1347 asserções
+### As que RODAM hoje (13/11/2026 — 1.9.5 em construção (1.9.4 + transferência enviada): respostas do SAB/SISBAJUD, lote do dia, baixa por escolha, travessão nos PDFs, Convênios em uso, transferência enviada também se junta, correções do 1º lote real): 50 suítes, 1469 asserções
+
+>>> 1.9.4 (13/11, 2ª leva): nova `teste-convenios-uso.js` (33), que reprova a 1.9.3. Regra (SAB só nos TRTs 3, 10 e 18,
+    mesmo com o config "ligado"; tribunal desconhecido não esconde; nada salvo = tudo ligado), o bloco das Preferências
+    (1º, logo depois do registro; carregado no PJe, Preferências e Primeiros passos), exportar/importar, painel
+    (botões de coleta, disponibilidade, fila de inclusão e baixa, lote, TRT5 sem SAB, ▲▼ com o vizinho visível,
+    tudo desligado), Preferências (seção acinzentada e editável, SAB escondido no TRT5) e Primeiros passos
+    ("desligado" em vez de "pendente"). `harness-painel.js` carrega `convenios-uso.js` e aceita `url`.
+
+>>> 1.9.6 (13/11): `teste-sab-respostas.js` 86 → 89 — tipo achado no catálogo (lista do processo sem ele; o ATIVO),
+    duplicidade por data E hora (manhã × tarde), juntada que falha não aparece como "juntado". Reprova a 1.9.5.
+
+>>> 1.9.5 (13/11): `teste-sab-respostas.js` 84 → 86 — transferência ENVIADA (desdobramento) é juntável e aparece como
+    "transf. enviada" com valor; bloqueio sem resposta e NAO_ENVIADA ficam fora.
+
+>>> 1.9.4 (13/11): nova `teste-sab-respostas.js` (84), que reprova a 1.9.3 (não há `comum/sab-leitura.js`).
+    Puras: datas de Brasília (com e sem fuso), dia útil anterior, escolha da baixa (nenhuma/uma/várias/escolhida
+    inativa), seletor da coleta (MINUTA fora, pré-marcação), índice dos autos (protocolo no título; "Sisbajud
+    (transferência)" sem protocolo = possível duplicidade; inativo não conta), modelo (valores do SAB), certidão
+    em blocos (aguardando = "—", não obtido = falha técnica, "verificar a garantia do juízo", nunca "juízo
+    garantido"). Cliente: paginação, COM_TRANSFERENCIAS, só GET, nunca /transicoes, recusa não-PDF, filtro do SAB
+    ignorado não deixa entrar outro processo. Fundo: uma certidão por grupo, fecho conforme os anexos,
+    marcarJuntados só do grupo, Cofre.remover, travessão/aspas/reticências em WinAnsi. Módulo: baixa com duas
+    ativas não abre nada sem escolha. Painel (jsdom, fetch falso): Coletar SAB (seletor, anexos sem duplicidade),
+    escolha da baixa (nada pré-marcado, fila parada até escolher), lote (aguardando fora, rascunho pulado,
+    encerrada antes do dia nem lida, minuta "Sisbajud (transferência)" no processo certo, GIGS só na obrigação
+    realizada, nunca assinatura). `harness-painel.js` passa a carregar `sab-leitura.js` e aceitar `fetch`.
 
 >>> 1.9.3 (11/11): `teste-sniper.js` 87 → 95 — chaves "Juntar os processos" e "Juntar o grafo" (ligadas de fábrica, chegam ao
     estado; desligadas: nenhuma aba aberta, "não incluído(s), por configuração" no relatório, na certidão e nos blocos,
@@ -360,6 +386,8 @@ método que travou todo bug real desta lista.
 | `teste-sniper.js` | 95 | rápida |
 | `teste-sniper-grafo.js` | 45 | rápida |
 | `teste-config-io.js` | 31 | rápida |
+| `teste-sab-respostas.js` | 89 | rápida |
+| `teste-convenios-uso.js` | 33 | rápida |
 | `teste-painel-refazer.js` | 31 | rápida |
 | `teste-prevjud.js` | 95 | rápida |
 | `teste-novidades.js` | 19 | rápida |

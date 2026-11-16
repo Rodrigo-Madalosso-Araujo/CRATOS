@@ -16,6 +16,22 @@
 
   /* da mais nova para a mais velha */
   const VERSOES = [
+    { versao: "1.9.6", data: "13/11/2026", itens: [
+      "Juntada: o tipo de documento passa a ser procurado também no catálogo completo do PJe — antes, processo que ainda não tinha nenhum \"Sisbajud (transferência)\" recusava a juntada.",
+      "SAB: a \"possível duplicidade\" agora compara data E hora (um documento juntado de manhã não é mais confundido com a ordem da tarde do mesmo dia).",
+      "Lote do SAB: o relatório só mostra \"juntado\" quando a minuta foi criada de fato.",
+    ] },
+    { versao: "1.9.5", data: "13/11/2026", itens: [
+      "SAB: a transferência já enviada ao banco passa a ser juntada mesmo antes da confirmação da instituição (é nela que a vara intima a parte). Na certidão consolidada ela aparece como \"transf. enviada\", com o valor.",
+    ] },
+    { versao: "1.9.4", data: "13/11/2026", itens: [
+      "SAB: novo botão \"Coletar SAB\" no processo — uma certidão consolidada por determinação (no visual do relatório do SNIPER), com os relatórios de detalhamento das ordens com transferência, obtidos pelo próprio SAB. O que já está nos autos não é juntado de novo.",
+      "SAB: \"Coletar respostas SAB\" no Meu painel — escolha o dia (vem o dia útil anterior) e o CRATOS junta, processo a processo, as transferências daquele dia, com relatório final e assinatura assistida (quem assina é você).",
+      "SAB: alerta \"obrigação realizada — verificar garantia do juízo\" quando o remanescente chega a R$ 0,00, e atividade opcional no GIGS (Preferências).",
+      "SAB: na BAIXA, com duas ou mais determinações ativas, o CRATOS pergunta qual interromper; sem nenhuma ativa, avisa.",
+      "Preferências: novo bloco \"Convênios em uso\" — desligue os convênios que você não usa e eles saem da fila e dos botões do painel. O SAB só aparece nos tribunais em que existe (TRTs 3, 10 e 18).",
+      "Certidões em PDF: travessão, aspas curvas e reticências voltam a aparecer (sumiam do texto).",
+    ] },
     { versao: "1.9.3", data: "10/11/2026", itens: [
       "Manual do usuário dentro do CRATOS: botão nas Preferências e nos Primeiros passos, abre sem internet e sempre na versão instalada.",
       "Nas Preferências, o \"?\" ao lado de cada convênio abre o manual direto na seção dele.",

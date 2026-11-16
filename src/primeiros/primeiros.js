@@ -46,7 +46,12 @@
     return v !== undefined && v !== null ? v : esp(mod, campo).padrao;
   };
   const dataBR = (ms) => { try { return new Date(Number(ms)).toLocaleDateString("pt-BR"); } catch (e) { return "?"; } };
-  const chip = (st) => html`<span class="chip ${st}">${st === "pronto" ? "pronto" : st === "pendente" ? "pendente" : "opcional"}</span>`;
+  const chip = (st) => html`<span class="chip ${st}">${st === "pronto" ? "pronto" : st === "pendente" ? "pendente" : st === "desligado" ? "desligado" : "opcional"}</span>`;
+  /* 1.9.4 — convênio desligado em "Convênios em uso" não fica "pendente": o passo dele
+     aparece apagado, com o chip "desligado" (os campos continuam lá, para quem religar). */
+  const desligado = (nome) => typeof CratosConveniosUso !== "undefined" && !CratosConveniosUso.ligado(cfg, nome, basePje);
+  const estiloPasso = (nome) => (desligado(nome) ? "opacity:0.5" : "");
+  const chipDe = (nome, st) => chip(desligado(nome) ? "desligado" : st);
   const opcoesVara = () => (varas && Array.isArray(varas.opcoes) && varas.opcoes.length) ? varas.opcoes : (esp("infojud", "vara").opcoes || []);
   const origemVara = () => (varas && varas.opcoes && varas.opcoes.length)
     ? `Lista lida do seu e-CAC em ${dataBR(varas.em)} (${varas.opcoes.length} varas).`
@@ -82,8 +87,8 @@
           <div class="nota">No automático, o CRATOS lê o tribunal do endereço do PJe (ex.: pje.trt18.jus.br → 18ª Região).</div></div>
       </section>
 
-      <section class="passo" id="pp-infojud">
-        <h2>2. INFOJUD (e-CAC) ${chip(st.infojud)}</h2>
+      <section class="passo" id="pp-infojud" style="${estiloPasso("infojud")}">
+        <h2>2. INFOJUD (e-CAC) ${chipDe("infojud", st.infojud)}</h2>
         <div class="campo"><label>Vara (a que assina a solicitação no e-CAC)</label>${selVara(val("infojud", "vara"))}
           <div class="nota" id="pp-vara-origem">${origemVara()}</div>
           <button id="pp-ler-varas" style="margin-top:6px">Ler as varas do meu e-CAC</button></div>
@@ -94,8 +99,8 @@
             aparece no e-CAC. Com um só, deixe em branco.</div></div>
       </section>
 
-      <section class="passo" id="pp-renajud">
-        <h2>3. RENAJUD ${chip(st.renajud)}</h2>
+      <section class="passo" id="pp-renajud" style="${estiloPasso("renajud")}">
+        <h2>3. RENAJUD ${chipDe("renajud", st.renajud)}</h2>
         <div class="campo"><label>Tipo(s) de restrição na inclusão</label>${tipos.map((t) =>
           html`<label class="op"><input type="checkbox" class="pp-tipo" value="${t}" ${tiposAtual.includes(t) ? "checked" : ""}> ${t}</label>`)}</div>
         <div class="campo"><label>Órgão / Unidade</label><span id="pp-orgao-caixa">${selOrgao(tribAtual, orgao)}</span>
@@ -105,8 +110,8 @@
           <div>${magR ? html`✓ ${magR}` : html`<span style="color:#facc15">Será perguntado na primeira inclusão</span>`}</div></div>
       </section>
 
-      <section class="passo" id="pp-cnib">
-        <h2>4. CNIB ${chip("opcional")}</h2>
+      <section class="passo" id="pp-cnib" style="${estiloPasso("cnib")}">
+        <h2>4. CNIB ${chipDe("cnib", "opcional")}</h2>
         <div class="campo"><label>Vara esperada no CNIB</label><input type="text" id="pp-cnib-in" value="${val("cnib", "orgaoEsperado") || ""}">
           <div class="nota">Em branco, o CRATOS só informa em que vara o CNIB está logado. Preenchida, ele para se o CNIB estiver em outra.</div></div>
       </section>

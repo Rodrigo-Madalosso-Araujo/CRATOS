@@ -58,6 +58,8 @@ browser.runtime.onMessage.addListener((msg, sender) => {
       return marcarProcessoAposSab();
     case "cnib_salvar_pdf":
       return salvarPdfCnib(msg);
+    case "sab_registrar_pdf":
+      return registrarPdfSab(msg);
     case "ccs_pdf":
       return salvarPdfCcs(msg);
     case "ccs_coletar":
@@ -98,7 +100,7 @@ browser.runtime.onMessage.addListener((msg, sender) => {
     case "diario_limpar":
       return Diario.limpar(msg.numProcesso).then(() => ({ ok: true }));
     case "diario_marcar_juntado":
-      return Diario.marcarJuntados(msg.numProcesso, msg.familia).then(() => ({ ok: true }));
+      return Diario.marcarJuntados(msg.numProcesso, msg.familia, msg.grupo).then(() => ({ ok: true }));
     /* Cofre em memória (ver o bloco do Cofre). `listar` devolve só nome+tamanho,
        para a tela decidir; `pegar` devolve os bytes, e só a juntada usa. */
     case "cofre_listar":
@@ -107,6 +109,9 @@ browser.runtime.onMessage.addListener((msg, sender) => {
       return Promise.resolve({ ok: true, arquivos: Cofre.pegar(msg.numProcesso) });
     case "cofre_limpar":
       Cofre.limpar(msg.numProcesso);
+      return Promise.resolve({ ok: true });
+    case "cofre_remover":            // 1.9.4: só os arquivos da certidão juntada
+      Cofre.remover(msg.numProcesso, msg.nomes);
       return Promise.resolve({ ok: true });
     default:
       return undefined;  // não é minha: não respondo (deixa outro listener)
@@ -702,7 +707,7 @@ const Diario = {
   /* Fecha uma família depois que a minuta foi criada nos autos. Não apaga: só
      carimba. Assim o diário continua contando a história do processo, e a
      próxima certidão só oferece o que ainda não foi. */
-  marcarJuntados(numProcesso, tipo) {
+  marcarJuntados(numProcesso, tipo, grupo) {
     const proximo = this._fila.then(async () => {
       const k = this._chave(numProcesso);
       const atual = await Store.get(k);
@@ -712,7 +717,11 @@ const Diario = {
       const agora = new Date().toISOString();
       let n = 0;
       for (const it of atual.itens) {
-        if (!it.juntadoEm && fam.operacoes.indexOf(it.operacao) >= 0) { it.juntadoEm = agora; n++; }
+        if (it.juntadoEm || fam.operacoes.indexOf(it.operacao) < 0) continue;
+        /* 1.9.4: família por grupo fecha só o grupo juntado (a outra determinação
+           continua na fila). Sem grupo na mensagem, fecha a família toda, como antes. */
+        if (grupo != null && (it.grupo == null ? "" : String(it.grupo)) !== String(grupo)) continue;
+        it.juntadoEm = agora; n++;
       }
       await Store.set(k, atual);
       console.log("CRATOS/diário:", n, "item(ns) marcados como juntados —", tipo);
@@ -809,6 +818,34 @@ const _FAMILIAS = [
     fecho: "CERTIFICO, por fim, que as certidões de indisponibilidade estão anexadas a presente " +
            "certidão, devendo as diligências ser repetidas oportunamente.",
   },
+  {
+    /* 1.9.4 — "Coletar SAB": a certidão consolidada (PDF desenhado) + os relatórios de
+       detalhamento das ordens com transferência, obtidos pelo SAB. */
+    tipo: "sab_respostas",
+    titulo: "Respostas do SAB/SISBAJUD",
+    operacoes: ["respostas_sab"],
+    abertura: "CERTIFICO E DOU FÉ, para conhecimento do MM. Juiz, que consultei no SAB (Sistema de Busca " +
+              "e Bloqueio de Ativos Financeiros) a posição das ordens de bloqueio do SISBAJUD deste processo.",
+    fecho: "CERTIFICO, por fim, que a certidão consolidada da posição das ordens e os relatórios de " +
+           "detalhamento das ordens com transferência de valores estão anexados a presente certidão.",
+    semRelacao: true,
+    porGrupo: true,      // uma certidão por determinação (ou uma por processo, no lote)
+  },
+  {
+    /* 1.9.4 — lote "só a resposta": sem certidão; o documento principal é do tipo
+       "Sisbajud (transferência)" (o que a vara já usa), com os relatórios anexos. */
+    tipo: "sab_transferencia",
+    titulo: "Sisbajud (transferência)",
+    tipoDocumento: "Sisbajud (transferência)",
+    tipoAnexo: "Sisbajud (transferência)",
+    operacoes: ["transferencia_sab"],
+    abertura: "Seguem os relatórios de detalhamento das ordens do SISBAJUD com transferência de valores, " +
+              "obtidos no SAB (Sistema de Busca e Bloqueio de Ativos Financeiros).",
+    fecho: "",
+    semRelacao: true,
+    semMoldura: true,
+    porGrupo: true,
+  },
 ];
 
 /* Devolve UMA certidão por família presente no diário. Sessão só de inclusão dá
@@ -826,8 +863,21 @@ function montarCertidoes(diario) {
   const saida = [];
 
   for (const fam of _FAMILIAS) {
-    const meus = itens.filter((i) => fam.operacoes.indexOf(i.operacao) >= 0);
-    if (!meus.length) continue;
+    const daFamilia = itens.filter((i) => fam.operacoes.indexOf(i.operacao) >= 0);
+    if (!daFamilia.length) continue;
+    /* 1.9.4 — família `porGrupo` (SAB): uma certidão por `grupo` do diário (a
+       determinação, no "Coletar SAB"; o processo inteiro, no lote). As demais
+       famílias seguem com um grupo só, como sempre. */
+    const grupos = [];
+    if (fam.porGrupo) {
+      for (const it of daFamilia) {
+        const g = it.grupo == null ? "" : String(it.grupo);
+        if (grupos.indexOf(g) < 0) grupos.push(g);
+      }
+    } else grupos.push(null);
+    for (const grupo of grupos) {
+    const meus = grupo === null ? daFamilia : daFamilia.filter((i) => (i.grupo == null ? "" : String(i.grupo)) === grupo);
+    const rotuloGrupo = grupo === null ? "" : ((meus.find((i) => i.rotuloGrupo) || {}).rotuloGrupo || "");
 
     /* Um convênio por linha, na ordem em que rodou, sem repetir. A operação NÃO
        vai entre parênteses: a frase de abertura já diz qual é o ato, e repetir
@@ -871,19 +921,35 @@ function montarCertidoes(diario) {
           p("CERTIFICO, por fim, que os comprovantes dos cancelamentos e as certidões das pesquisas " +
             "estão anexados a presente certidão.");
       }
+    } else if (fam.tipo === "sab_respostas") {
+      /* O fecho diz o que de fato vai anexo: só a certidão consolidada (nenhuma
+         transferência nova), ou ela(s) + os relatórios de detalhamento. */
+      const nCert = meus.filter((i) => i.detalhe === "certidao").length;
+      const nDet = meus.filter((i) => i.detalhe !== "certidao").length;
+      const abertura = rotuloGrupo
+        ? fam.abertura.replace(/ deste processo\.$/, ` deste processo (${_escHtml(rotuloGrupo)}).`) : fam.abertura;
+      const quais = (nCert > 1 ? "as certidões consolidadas da posição das ordens" : "a certidão consolidada da posição das ordens") +
+        (nDet ? " e os relatórios de detalhamento das ordens com transferência de valores" : "");
+      corpo = p(abertura) + p(`CERTIFICO, por fim, que ${quais} ${nDet || nCert > 1 ? "estão anexados" : "está anexada"} a presente certidão.`);
+    } else if (fam.semRelacao) {
+      corpo = p(fam.abertura) + (fam.fecho ? p(fam.fecho) : "");
     } else {
       corpo = p(fam.abertura) + relacao(nomes).map(p).join("") + p(fam.fecho);
     }
 
     saida.push({
       tipo: fam.tipo,
-      titulo: fam.titulo,
-      html: p("CERTIDÃO") + corpo + p("Era o que me cumpria certificar."),
+      grupo: grupo === null ? undefined : grupo,     // 1.9.4: volta no diario_marcar_juntado
+      titulo: rotuloGrupo ? `${fam.titulo} (${rotuloGrupo})`.slice(0, 100) : fam.titulo,
+      tipoDocumento: fam.tipoDocumento || null,     // 1.9.4: null = "Certidão"
+      tipoAnexo: fam.tipoAnexo || null,             // 1.9.4: null = "Documento Diverso"
+      html: fam.semMoldura ? corpo : p("CERTIDÃO") + corpo + p("Era o que me cumpria certificar."),
       convenios: nomes,
       /* Os arquivos de CADA certidão são só os daquela família — o comprovante
          de baixa não pode ir anexo à certidão de inclusão. */
       arquivos: [...new Set(meus.map((i) => i.arquivo).filter(Boolean))],
     });
+    }
   }
   return saida;
 }
@@ -980,6 +1046,14 @@ const Cofre = {
       .map((x) => ({ nome: x.nome, base64: x.base64, bytes: x.bytes }));
   },
   limpar(numProcesso) { this._porProcesso.delete(this._chave(numProcesso)); },
+  /* 1.9.4 — tira só os arquivos já anexados: a outra certidão do mesmo processo
+     (outra determinação do SAB, ou a baixa depois da inclusão) mantém os seus. */
+  remover(numProcesso, nomes) {
+    const k = this._chave(numProcesso);
+    const fora = new Set(Array.isArray(nomes) ? nomes : []);
+    const resto = (this._porProcesso.get(k) || []).filter((x) => !fora.has(x.nome));
+    if (resto.length) this._porProcesso.set(k, resto); else this._porProcesso.delete(k);
+  },
 };
 
 /* Gancho de teste — o cofre é a peça nova da juntada e precisa ser exercitado
@@ -1010,6 +1084,8 @@ function baixarERegistrar(url, filename, registro, base64) {
       operacao: registro.operacao || null,
       detalhe: registro.detalhe || null,
       arquivo: nomeFinal,
+      ...(registro.grupo != null ? { grupo: String(registro.grupo) } : {}),
+      ...(registro.rotuloGrupo ? { rotuloGrupo: String(registro.rotuloGrupo).slice(0, 60) } : {}),
     });
     emitirPulsoConclusao(registro, nomeFinal);
   }
@@ -1040,6 +1116,28 @@ function emitirPulsoConclusao(registro, filename) {
     arquivo: String(filename || "").split("/").pop(),
     em: Date.now(),
   }).catch((e) => console.warn("CRATOS: não consegui emitir pulso de chegada:", e.message));
+}
+
+/* 1.9.4 — relatório de detalhamento de uma ordem, baixado do SAB pelo content script
+   (mesma origem do PJe). Cai no Cofre + diário como qualquer artefato do CRATOS; a
+   operação decide a família da juntada ("respostas_sab" ou "transferencia_sab"). */
+async function registrarPdfSab(msg) {
+  try {
+    const bytes = _b64ToBytes(msg.base64);
+    if (bytes.length < 5 || String.fromCharCode(...bytes.slice(0, 5)) !== "%PDF-") {
+      return { ok: false, erro: "o SAB não devolveu um PDF" };
+    }
+    const op = msg.operacao === "transferencia_sab" ? "transferencia_sab" : "respostas_sab";
+    const blob = new Blob([bytes], { type: "application/pdf" });
+    const url = URL.createObjectURL(blob);
+    baixarERegistrar(url, msg.filename, {
+      numProcesso: msg.numProcesso, convenio: "SAB", operacao: op, detalhe: msg.detalhe || "detalhamento",
+      grupo: msg.grupo, rotuloGrupo: msg.rotuloGrupo,
+    }, msg.base64);
+    return { ok: true, filename: msg.filename };
+  } catch (e) {
+    return { ok: false, erro: String(e.message || e) };
+  }
 }
 
 async function salvarPdfCnib(msg) {
@@ -1704,6 +1802,7 @@ browser.runtime.onMessage.addListener((msg) => {
       baixarERegistrar(url, msg.filename, {
         numProcesso: msg.numProcesso, convenio: msg.convenio || "?",
         operacao: msg.operacao || null, detalhe: msg.detalhe || null,
+        grupo: msg.grupo, rotuloGrupo: msg.rotuloGrupo,
       }, _bytesParaBase64(bytes));
       return Promise.resolve({ ok: true, filename: msg.filename, presumido: true });
     } catch (e) {
@@ -1730,11 +1829,16 @@ function paginasExtras(msg) {
    páginas do grafo, e o rodapé "página k de N" em todas. Qualquer falha → null, e o
    relatório sai no texto corrido de sempre (as `linhas` vêm junto na mensagem). */
 function pdfDesenhado(msg) {
-  if (!msg || !Array.isArray(msg.relatorioSniper) || typeof CratosGrafoSniper === "undefined") return null;
+  /* 1.9.4: `desenho: { blocos, meta }` é a forma genérica (certidão do SAB); a do
+     SNIPER segue em relatorioSniper/relatorioSniperMeta. */
+  const desenho = msg && msg.desenho && typeof msg.desenho === "object" ? msg.desenho : null;
+  const blocos = desenho ? desenho.blocos : msg && msg.relatorioSniper;
+  if (!Array.isArray(blocos) || typeof CratosGrafoSniper === "undefined") return null;
   try {
     const ctx = { W: _W_HELV, WB: _W_HELV_BOLD };
-    const meta = (msg.relatorioSniperMeta && typeof msg.relatorioSniperMeta === "object") ? msg.relatorioSniperMeta : {};
-    const texto = CratosGrafoSniper.relatorio(msg.relatorioSniper, meta, ctx);
+    const metaBruta = desenho ? desenho.meta : msg.relatorioSniperMeta;
+    const meta = (metaBruta && typeof metaBruta === "object") ? metaBruta : {};
+    const texto = CratosGrafoSniper.relatorio(blocos, meta, ctx);
     if (!texto.length) return null;
     const todas = CratosGrafoSniper.rodape(texto.concat(paginasExtras(msg)), meta, ctx);
     return montarPDF(todas);
@@ -1792,10 +1896,23 @@ const _W_HELV_BOLD = ("278,333,474,556,556,889,722,238,333,333,389,584,278,333,2
 
 /* Largura do texto em pontos. Mede o texto CRU, não o escapado por sanitizePDF:
    a barra invertida de "\(" é sintaxe do arquivo, não desenha glifo nenhum. */
+/* TIPOGRAFIA → WinAnsi (1.9.4). O PDF é Latin-1 byte a byte, e o sanitizePDF
+   descartava tudo acima de 0xFF — o travessão "—" sumia de TODAS as certidões
+   ("CERTIDÃO  DOSSIÊ…", com dois espaços). Travessão, meia-risca, aspas curvas,
+   marcador e reticências têm código próprio no WinAnsiEncoding (0x80–0x9F); a seta
+   vira "->". Achado no exemplo da certidão do SAB, 13/11. */
+const _WINANSI = {
+  "\u2014": "\x97", "\u2013": "\x96", "\u201C": "\x93", "\u201D": "\x94", "\u2018": "\x91",
+  "\u2019": "\x92", "\u2022": "\x95", "\u2026": "\x85", "\u20AC": "\x80", "\u2192": "->",
+};
+function paraWinAnsi(texto) {
+  return String(texto == null ? "" : texto).replace(/[\u2014\u2013\u201C\u201D\u2018\u2019\u2022\u2026\u20AC\u2192]/g, (c) => _WINANSI[c]);
+}
+
 function larguraPDF(texto, tamanho, negrito) {
   const tab = negrito ? _W_HELV_BOLD : _W_HELV;
   let soma = 0;
-  const s = String(texto == null ? "" : texto);
+  const s = paraWinAnsi(texto);
   for (let i = 0; i < s.length; i++) {
     const c = s.charCodeAt(i);
     soma += (c >= 32 && c <= 255) ? tab[c - 32] : 0;
@@ -1864,7 +1981,7 @@ function gerarPDFTexto(linhas, titulo, extras) {
   const Y_TITULO = 780, Y_CORPO = 750, Y_MIN = 50;
   const porPagina = Math.floor((Y_CORPO - Y_MIN) / lineH) + 1;
 
-  const entrada = Array.isArray(linhas) ? linhas : [String(linhas == null ? "" : linhas)];
+  const entrada = (Array.isArray(linhas) ? linhas : [String(linhas == null ? "" : linhas)]).map(paraWinAnsi);
 
   // Reflui TUDO na largura útil antes de paginar (uma linha lógica pode virar várias).
   const todas = [];
@@ -1874,7 +1991,7 @@ function gerarPDFTexto(linhas, titulo, extras) {
   /* Título: em vez de quebrar em duas (o que empurraria o corpo e bagunçaria a
      paginação), diminuímos o corpo até caber. Título de certidão é curto; isso
      só age no caso extremo, e nunca deixa passar da margem. */
-  const tituloBase = String(titulo == null ? "" : titulo);
+  const tituloBase = paraWinAnsi(titulo);
   let tituloPt = TITULO_PT;
   const maiorTitulo = tituloBase + (todas.length > porPagina ? " (cont.)" : "");
   while (tituloPt > TITULO_PT_MIN && larguraPDF(maiorTitulo, tituloPt, true) > LARGURA_UTIL) tituloPt--;
@@ -1960,7 +2077,7 @@ function montarPDF(streams) {
 }
 
 function sanitizePDF(str) {
-  return (str || "")
+  return paraWinAnsi(str || "")
     .replace(/\r?\n/g, " ")               // sem quebras dentro de uma linha
     .replace(/[()\\]/g, "\\$&")           // escapa ( ) \ (sintaxe de string do PDF)
     .split("")

@@ -261,10 +261,11 @@
   })();
 
   async function capturar() {
+    await usoPronto;
     const id = detectarIdProcesso();
     const numero = detectarNumeroProcesso();
     if (!id) {
-      corpo.innerHTML = `<div class="cx-erro">Não encontrei o id do processo nesta tela. Abra um processo em DETALHES.</div>`;
+      renderSemProcesso();      // 1.9.4: aqui mora o lote "Coletar respostas SAB"
       return;
     }
     corpo.innerHTML = `<div class="cx-vazio">Capturando dados do processo…</div>`;
@@ -338,7 +339,19 @@
   // Carrega ordem salva (se houver)
   Store.get(CHAVE_ORDEM).then(o => { if (Array.isArray(o) && o.length) ordemAtual = o; }).catch(() => {});
 
+  /* 1.9.4 — CONVÊNIOS EM USO (comum/convenios-uso.js): desligado nas Preferências (ou o
+     SAB fora dos TRTs em que existe) some da fila, dos botões de coleta, do lote e da
+     disponibilidade. A configuração é relida a cada mudança. */
+  const USO = globalThis.CratosConveniosUso;
+  let cfgUso = {};
+  const usoPronto = Store.get(CHAVES.config).then((c) => { cfgUso = c || {}; }).catch(() => {});
+  try { Store.onChange(CHAVES.config, (c) => { cfgUso = c || {}; }); } catch (e) { /* nada */ }
+  const convLigado = (id) => !USO || USO.ligado(cfgUso, id, location.origin);
+
   function conveniosOrdenados() {
+    return conveniosTodosOrdenados().filter((c) => convLigado(c.id));
+  }
+  function conveniosTodosOrdenados() {
     return ordemAtual
       .map(id => CONVENIOS.find(c => c.id === id))
       .filter(Boolean)
@@ -419,27 +432,34 @@
           ➖ BAIXA
         </button>
       </div>
-      <div style="border-top:1px solid #333;margin-top:12px;padding-top:10px">
+      ${convLigado("INFOJUD") ? html`<div style="border-top:1px solid #333;margin-top:12px;padding-top:10px">
         <button class="cx-acao" id="cx-localizar"
           style="background:#1a1a1a;border:1px solid #e11d1d;color:#e8e8e8;font-size:12px">
           Coletar INFOJUD (resultados na caixa postal)
         </button>
-        <div class="cx-vazio" id="cx-status" style="margin-top:8px"></div>
-      </div>
-      <div style="border-top:1px solid #333;margin-top:10px;padding-top:10px">
+      </div>` : ""}
+      <div class="cx-vazio" id="cx-status" style="margin-top:8px"></div>
+      ${convLigado("CCS") ? html`<div style="border-top:1px solid #333;margin-top:10px;padding-top:10px">
         <button class="cx-acao" id="cx-coletar-ccs"
           style="background:#1a1a1a;border:1px solid #e11d1d;color:#e8e8e8;font-size:12px">
           Coletar CCS (respostas das instituições)
         </button>
         <div class="cx-vazio" id="cx-ccs-status" style="margin-top:8px"></div>
-      </div>
-      <div style="border-top:1px solid #333;margin-top:10px;padding-top:10px">
+      </div>` : ""}
+      ${convLigado("PREVJUD") ? html`<div style="border-top:1px solid #333;margin-top:10px;padding-top:10px">
         <button class="cx-acao" id="cx-coletar-prevjud"
           style="background:#1a1a1a;border:1px solid #e11d1d;color:#e8e8e8;font-size:12px">
           Coletar PREVJUD (dossiês em processamento)
         </button>
         <div class="cx-vazio" id="cx-prevjud-status" style="margin-top:8px"></div>
-      </div>
+      </div>` : ""}
+      ${convLigado("SAB") ? html`<div style="border-top:1px solid #333;margin-top:10px;padding-top:10px">
+        <button class="cx-acao" id="cx-coletar-sab"
+          style="background:#1a1a1a;border:1px solid #e11d1d;color:#e8e8e8;font-size:12px">
+          Coletar SAB (posição das ordens + transferências)
+        </button>
+        <div class="cx-vazio" id="cx-sab-status" style="margin-top:8px"></div>
+      </div>` : ""}
       <div style="border-top:1px solid #333;margin-top:10px;padding-top:10px">
         <button class="cx-acao" id="cx-juntar"
           style="background:#1a1a1a;border:1px solid #e11d1d;color:#e8e8e8;font-size:12px">
@@ -448,16 +468,16 @@
         <div style="font-size:11px;color:#9a9a9a;margin-top:6px" id="cx-aviso-aba">Os arquivos do CRATOS ficam disponíveis para juntada só enquanto esta aba do processo estiver aberta.</div>
         <div class="cx-vazio" id="cx-juntar-status" style="margin-top:8px"></div>
       </div>
-      <div style="border-top:1px solid #333;margin-top:10px;padding-top:10px">
+      ${DISP_IDS.some(convLigado) ? html`<div style="border-top:1px solid #333;margin-top:10px;padding-top:10px">
         <select id="cx-disp-conv" style="width:100%;margin-bottom:6px;background:#111;color:#e8e8e8;border:1px solid #444;padding:4px;font-size:12px">
-          ${DISP_IDS.map((id) => html`<option value="${id}">${(CONVENIOS.find((c) => c.id === id) || { label: id }).label}</option>`)}
+          ${DISP_IDS.filter(convLigado).map((id) => html`<option value="${id}">${(CONVENIOS.find((c) => c.id === id) || { label: id }).label}</option>`)}
         </select>
         <button class="cx-acao" id="cx-disp-verificar"
           style="background:#1a1a1a;border:1px solid #6b7280;color:#e8e8e8;font-size:12px">
           Verificar disponibilidade do convênio
         </button>
         <div class="cx-vazio" id="cx-disp-status" style="margin-top:8px"></div>
-      </div>
+      </div>` : ""}
     `);
 
     const irPara = (modo) => {
@@ -473,11 +493,13 @@
     };
     corpo.querySelector("#cx-modo-inclusao").onclick = () => irPara("inclusao");
     corpo.querySelector("#cx-modo-baixa").onclick    = () => irPara("baixa");
-    corpo.querySelector("#cx-localizar").onclick = localizarResultado;
-    corpo.querySelector("#cx-coletar-ccs").onclick = coletarCcs;
-    corpo.querySelector("#cx-coletar-prevjud").onclick = coletarPrevjud;
+    const ligar = (sel, fn) => { const b = corpo.querySelector(sel); if (b) b.onclick = fn; };
+    ligar("#cx-localizar", localizarResultado);
+    ligar("#cx-coletar-ccs", coletarCcs);
+    ligar("#cx-coletar-prevjud", coletarPrevjud);
+    ligar("#cx-coletar-sab", coletarSab);
     corpo.querySelector("#cx-juntar").onclick = abrirJuntada;
-    corpo.querySelector("#cx-disp-verificar").onclick = verificarDisponibilidade;
+    ligar("#cx-disp-verificar", verificarDisponibilidade);
     mostrarNovidades();
   }
 
@@ -702,6 +724,431 @@
     });
   }
 
+  /* ═══ 1.9.4 — SAB: RESPOSTAS DAS ORDENS DO SISBAJUD (comum/sab-leitura.js) ═══════
+     Tudo pela API de LEITURA do SAB, na mesma origem do PJe, com a sessão do
+     navegador. Nenhuma transição do SAB é chamada; a juntada é a de sempre
+     (`juntarCertidao`): o CRATOS cria a minuta e anexa, e quem assina é a pessoa. */
+  const SAB = globalThis.CratosSabLeitura;
+  const PASTA_SAB = "CRATOS";
+
+  async function cfgSab() {
+    try { return ((await Store.get(CHAVES.config)) || {}).sab || {}; } catch (e) { return {}; }
+  }
+  const ativoToggle = (v) => !!(v && (v.ativo === true || v === true));
+  const ATIVIDADE_REALIZADA_PADRAO = "SISBAJUD - verificar garantia do juízo";
+
+  /* Lê o que já está nos autos. Sem isso não dá para garantir que não vamos juntar
+     duas vezes o mesmo relatório — então a falha PARA a coleta (não "segue às cegas"). */
+  async function indiceDosAutos(cli, idPJe) {
+    return SAB.indiceJuntados(await cli.timeline(idPJe));
+  }
+
+  /* Uma determinação → certidão consolidada (PDF desenhado) + relatórios das ordens
+     com transferência que ainda não estão nos autos. Devolve o resumo para o painel.
+     `grupo` decide a certidão no PJe: por determinação (no processo) ou por lote. */
+  async function coletarDeterminacaoSab(cli, idDet, numero, indice, op) {
+    const [det, sits, ordens] = await Promise.all([
+      cli.determinacao(idDet),
+      cli.situacoes(idDet).catch(() => []),
+      cli.ordens(idDet),
+    ]);
+    const m = SAB.modelo(det, sits, ordens);
+    const anexos = {};
+    const pdfs = [];
+    let n = 0;
+    const filtro = op.soProtocolos ? new Set(op.soProtocolos) : null;
+    for (const l of m.ordens) {
+      if (!l.comTransferencia) continue;
+      const nos = SAB.situacaoNosAutos(indice, l.protocolo, l.dataBruta);
+      if (nos && nos.ja) { anexos[l.protocolo] = nos; continue; }
+      if (filtro && !filtro.has(l.protocolo)) continue;           // lote: só as do dia
+      if (!l.juntavel) continue;            // 1.9.4: respondida, ou transferência enviada (desdobramento)
+      if (nos && nos.possivel) { anexos[l.protocolo] = nos; continue; }
+      try {
+        const base64 = await cli.pdfOrdem(l.id);
+        anexos[l.protocolo] = { n: ++n };
+        pdfs.push({ protocolo: l.protocolo, base64 });
+      } catch (e) {
+        anexos[l.protocolo] = { falhou: true, motivo: String(e.message || e) };
+      }
+    }
+    const resumo = {
+      id: m.id, realizada: m.realizada, remanescente: m.remanescente,
+      anexados: pdfs.map((p) => p.protocolo),
+      ja: Object.keys(anexos).filter((p) => anexos[p].ja),
+      conferir: Object.keys(anexos).filter((p) => anexos[p].possivel),
+      falharam: Object.keys(anexos).filter((p) => anexos[p].falhou),
+      arquivos: 0,
+    };
+    const rot = { grupo: op.grupo, rotuloGrupo: op.rotuloGrupo };
+    if (op.comCertidao) {
+      const des = SAB.certidaoBlocos(m, { numProcesso: numero, anexos, agora: new Date() });
+      const r = await browser.runtime.sendMessage(Object.assign({
+        tipo: "fabricar_pdf", titulo: des.meta.titulo, linhas: des.linhas,
+        desenho: { blocos: des.blocos, meta: des.meta },
+        filename: SAB.nomeCertidao(numero, m.id, PASTA_SAB), numProcesso: numero,
+        convenio: "SAB", operacao: op.operacao, detalhe: "certidao",
+      }, rot));
+      if (!r || !r.ok) throw new Error(`não gerei a certidão da determinação nº ${m.id} (${(r && r.erro) || "erro"})`);
+      resumo.arquivos++;
+    }
+    for (const p of pdfs) {
+      const r = await browser.runtime.sendMessage(Object.assign({
+        tipo: "sab_registrar_pdf", base64: p.base64, filename: SAB.nomeDetalhamento(numero, p.protocolo, PASTA_SAB),
+        numProcesso: numero, operacao: op.operacao, detalhe: "detalhamento",
+      }, rot));
+      if (r && r.ok) resumo.arquivos++;
+      else { resumo.anexados.splice(resumo.anexados.indexOf(p.protocolo), 1); resumo.falharam.push(p.protocolo); }
+    }
+    return resumo;
+  }
+
+  /* O diário grava em fila no fundo: espera a certidão do grupo aparecer com todos os
+     arquivos registrados (no máximo ~6 s) antes de juntar. */
+  async function certidaoDoGrupo(numero, familia, grupo, arquivosEsperados) {
+    for (let i = 0; i < 20; i++) {
+      let r = null;
+      try { r = await browser.runtime.sendMessage({ tipo: "diario_ler", numProcesso: numero }); } catch (e) {}
+      const c = ((r && r.certidoes) || []).find((x) => x.tipo === familia && String(x.grupo) === String(grupo));
+      if (c && c.arquivos.length >= arquivosEsperados) return c;
+      await new Promise((res) => setTimeout(res, 300));
+    }
+    return null;
+  }
+
+  const listaBrSab = (itens) => itens.map((t, i) => html`${i ? html`<br>` : ""}• ${t}`);
+  function frasesResumoSab(r) {
+    const partes = [];
+    partes.push(`${r.anexados.length} relatório(s) de transferência novo(s)`);
+    if (r.ja.length) partes.push(`${r.ja.length} já nos autos`);
+    if (r.conferir.length) partes.push(`${r.conferir.length} a conferir (possível duplicidade)`);
+    if (r.falharam.length) partes.push(`${r.falharam.length} não obtido(s): colete de novo`);
+    return partes.join("; ");
+  }
+
+  /* ── "Coletar SAB", no processo ─────────────────────────────────────────────── */
+  async function coletarSab() {
+    const st = corpo.querySelector("#cx-sab-status");
+    const numero = processoAtual?.numero || "";
+    const idProcesso = processoAtual?.idProcesso || processoAtual?.id;
+    if (!st) return;
+    if (!numero || !idProcesso) { st.textContent = "Sem processo capturado."; return; }
+    const dizer = (frag) => CratosHTML.definir(st, frag);
+    dizer(html`<span style="color:#9a9a9a">Consultando o SAB…</span>`);
+    const cli = SAB.cliente();
+    let lista, indice;
+    try {
+      const proc = await cli.processoPorNumero(numero);
+      if (!proc) { dizer(html`<span style="color:#facc15">Este processo não está no SAB.</span>`); return; }
+      lista = await cli.determinacoesDoProcesso(proc.id);
+      indice = await indiceDosAutos(cli, idProcesso);
+    } catch (e) {
+      dizer(html`<span class="cx-erro">Não consegui ler o SAB ou os autos (${String(e.message || e)}). Nada foi gerado; tente de novo.</span>`);
+      return;
+    }
+    /* Transferências ainda não juntadas, por determinação — decide o que nasce marcado. */
+    const novas = {};
+    for (const d of lista) {
+      if (String(d.situacao || "").toUpperCase() === "MINUTA") continue;
+      try {
+        const ords = await cli.ordens(d.id, "COM_TRANSFERENCIAS");
+        novas[d.id] = ords.filter((o) => {
+          const nos = SAB.situacaoNosAutos(indice, o.numeroProtocolo, o.dataUltimoProtocolo || o.dataProtocolo);
+          return !nos && SAB.ordemJuntavel(o);
+        }).length;
+      } catch (e) { novas[d.id] = 0; }
+    }
+    const cands = SAB.candidatasColeta(lista, novas);
+    if (!cands.length) { dizer(html`<span style="color:#facc15">Nenhuma determinação deste processo no SAB (minutas não contam).</span>`); return; }
+    if (cands.length === 1) { await executarColetaSab(cli, [cands[0].id], numero, indice); return; }
+
+    dizer(html`<div style="color:#e8e8e8;margin-bottom:6px">Este processo tem ${cands.length} determinações no SAB. Marque as que quer certificar (uma certidão para cada):</div>
+      ${cands.map((c) => html`<label style="display:flex;gap:6px;margin:4px 0;cursor:pointer;color:#e8e8e8">
+        <input type="checkbox" class="cx-sab-det" value="${String(c.id)}"${c.marcada ? " checked" : ""}>
+        <span>Determinação nº ${String(c.id)} — ${c.rotulo}${c.desde ? ` (${c.desde.dmy})` : ""}${c.novas ? html` — <b style="color:#4ade80">${String(c.novas)} transferência(s) nova(s)</b>` : ""}</span></label>`)}
+      <button class="cx-acao" id="cx-sab-ir" style="margin-top:8px">Coletar as marcadas</button>`);
+    st.querySelector("#cx-sab-ir").onclick = () => {
+      const ids = Array.from(st.querySelectorAll(".cx-sab-det:checked")).map((el) => el.value);
+      if (!ids.length) { st.querySelector("#cx-sab-ir").textContent = "Marque ao menos uma"; return; }
+      executarColetaSab(cli, ids, numero, indice);
+    };
+  }
+
+  async function executarColetaSab(cli, ids, numero, indice) {
+    const st = corpo.querySelector("#cx-sab-status");
+    const dizer = (frag) => CratosHTML.definir(st, frag);
+    const linhas = [];
+    let gerou = false;
+    const cfg = await cfgSab();
+    const idProcesso = processoAtual?.idProcesso || processoAtual?.id;
+    for (const id of ids) {
+      dizer(html`${linhas}<div style="color:#9a9a9a">Determinação nº ${String(id)}: lendo as ordens e baixando os relatórios…</div>`);
+      try {
+        const r = await coletarDeterminacaoSab(cli, id, numero, indice, {
+          comCertidao: true, operacao: "respostas_sab", grupo: String(id), rotuloGrupo: `determinação nº ${id}`,
+        });
+        gerou = true;
+        linhas.push(html`<div style="color:#4ade80;margin-top:3px">Determinação nº ${String(id)}: certidão consolidada + ${frasesResumoSab(r)}.</div>`);
+        if (r.realizada) {
+          linhas.push(html`<div style="color:#facc15;margin-top:3px">⚠ Determinação nº ${String(id)}: ${SAB.ALERTA_REALIZADA}</div>`);
+          if (ativoToggle(cfg.gigsObrigacaoRealizada) && idProcesso) {
+            const nome = String(cfg.gigsObrigacaoRealizadaAtividade || ATIVIDADE_REALIZADA_PADRAO);
+            try { await criarAtividadeGigs(Number(idProcesso), nome); linhas.push(html`<div style="color:#4ade80">✓ Atividade "${nome}" lançada no GIGS.</div>`); }
+            catch (e) { linhas.push(html`<div style="color:#facc15">Não lancei a atividade no GIGS (${String(e.message || e)}).</div>`); }
+          }
+        }
+      } catch (e) {
+        linhas.push(html`<div class="cx-erro" style="margin-top:3px">Determinação nº ${String(id)}: ${String(e.message || e)} — nada gerado para ela.</div>`);
+      }
+    }
+    dizer(html`${linhas}${gerou ? html`<div style="color:#9a9a9a;margin-top:6px">Uma certidão por determinação. O PJe segura um rascunho por vez: assine (ou descarte) uma antes de criar a próxima.</div>
+      <button class="cx-acao" id="cx-sab-juntar" style="margin-top:8px">Juntar agora</button>` : ""}`);
+    const b = st.querySelector("#cx-sab-juntar");
+    if (b) b.onclick = abrirJuntada;
+  }
+
+  /* ── BAIXA: com duas ou mais determinações ativas, a pessoa escolhe UMA ─────────── */
+  async function escolherDeterminacaoBaixa() {
+    const prog = corpo.querySelector("#cx-progresso");
+    let ativas = [];
+    try {
+      const cli = SAB.cliente();
+      const proc = await cli.processoPorNumero(processoAtual?.numero || "");
+      if (proc) ativas = (await cli.determinacoesDoProcesso(proc.id)).filter((d) => SAB.ehAtiva(d.situacao));
+    } catch (e) { return { seguir: true }; }        // o módulo confere de novo e avisa
+    if (ativas.length < 2) return { seguir: true }; // nenhuma → o módulo diz "não há"; uma → ela
+    return new Promise((resolve) => {
+      CratosHTML.definir(prog, html`<div style="color:#facc15;margin-bottom:6px">Há ${String(ativas.length)} determinações ATIVAS no SAB para este processo. Escolha qual interromper:</div>
+        ${ativas.map((d) => html`<label style="display:flex;gap:6px;margin:4px 0;cursor:pointer;color:#e8e8e8">
+          <input type="radio" name="cx-sab-baixa" value="${String(d.id)}">
+          <span>Determinação nº ${String(d.id)} — ${SAB.rotuloSit(d.situacao).texto}${(() => { const x = SAB.dataLocal(d.ultimaSituacao && d.ultimaSituacao.ocorridoEm); return x ? ` desde ${x.dmy}` : ""; })()}</span></label>`)}
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <button class="cx-acao" id="cx-sab-baixa-ok" disabled>Interromper a escolhida</button>
+          <button class="cx-acao" id="cx-sab-baixa-pular" style="background:#1a1a1a;border:1px solid #6b7280;color:#e8e8e8">Não interromper (pular o SAB)</button>
+        </div>`);
+      const ok = prog.querySelector("#cx-sab-baixa-ok");
+      prog.querySelectorAll('input[name="cx-sab-baixa"]').forEach((r) => { r.onchange = () => { ok.disabled = false; }; });
+      ok.onclick = () => {
+        const sel = prog.querySelector('input[name="cx-sab-baixa"]:checked');
+        if (sel) resolve({ id: sel.value });
+      };
+      prog.querySelector("#cx-sab-baixa-pular").onclick = () => resolve({ pular: true });
+    });
+  }
+
+  /* ── LOTE: "Coletar respostas SAB" (telas sem processo, como o Meu painel) ─────── */
+  function renderSemProcesso() {
+    CratosHTML.definir(corpo, html`
+      <div class="cx-vazio">Nenhum processo aberto nesta tela. Para os convênios, abra um processo em DETALHES.</div>
+      ${convLigado("SAB") ? html`<div style="border-top:1px solid #333;margin-top:10px;padding-top:10px">
+        <button class="cx-acao" id="cx-lote-sab"
+          style="background:#1a1a1a;border:1px solid #e11d1d;color:#e8e8e8;font-size:12px">
+          Coletar respostas SAB (transferências do dia)
+        </button>
+        <div id="cx-lote-sab-area" style="margin-top:8px;font-size:12px"></div>
+      </div>` : ""}`);
+    const bl = corpo.querySelector("#cx-lote-sab");
+    if (bl) bl.onclick = abrirLoteSab;
+  }
+
+  async function abrirLoteSab() {
+    const area = corpo.querySelector("#cx-lote-sab-area");
+    const cfg = await cfgSab();
+    const modal = cfg.loteModalidade === "certidao" ? "certidao" : "resposta";
+    const dia = SAB.diaUtilAnterior(new Date());
+    CratosHTML.definir(area, html`<div style="border:1px solid #444;border-radius:6px;padding:8px;color:#e8e8e8">
+      <label style="display:block;margin-bottom:6px">Dia das transferências:
+        <input type="date" id="cx-lote-dia" value="${dia}" style="background:#111;color:#e8e8e8;border:1px solid #444;padding:2px 4px"></label>
+      <div style="margin:6px 0 2px">Juntar nos processos:</div>
+      <label style="display:block;cursor:pointer"><input type="radio" name="cx-lote-modo" value="resposta"${modal === "resposta" ? " checked" : ""}>
+        só a resposta (documento "Sisbajud (transferência)" com os relatórios)</label>
+      <label style="display:block;cursor:pointer"><input type="radio" name="cx-lote-modo" value="certidao"${modal === "certidao" ? " checked" : ""}>
+        certidão consolidada + respostas</label>
+      <label style="display:block;margin-top:6px;cursor:pointer"><input type="checkbox" id="cx-lote-gigs"${ativoToggle(cfg.gigsObrigacaoRealizada) ? " checked" : ""}>
+        lançar atividade no GIGS quando a obrigação estiver realizada</label>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button class="cx-acao" id="cx-lote-ir">Buscar e juntar</button>
+        <button class="cx-acao" id="cx-lote-cancelar" style="background:#1a1a1a;border:1px solid #6b7280;color:#e8e8e8">Cancelar</button>
+      </div>
+      <div style="color:#9a9a9a;margin-top:6px">Os documentos ficam como minuta em cada processo; quem assina é você (há uma assinatura assistida no fim).</div>
+    </div>`);
+    area.querySelector("#cx-lote-cancelar").onclick = () => { area.textContent = ""; };
+    area.querySelector("#cx-lote-ir").onclick = () => {
+      const ymd = area.querySelector("#cx-lote-dia").value;
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return;
+      const modo = (area.querySelector('input[name="cx-lote-modo"]:checked') || {}).value === "certidao" ? "certidao" : "resposta";
+      executarLoteSab(ymd, modo, area.querySelector("#cx-lote-gigs").checked, cfg);
+    };
+  }
+
+  async function emParalelo(itens, n, fn) {
+    let i = 0;
+    const trab = Array.from({ length: Math.min(n, itens.length) }, async () => {
+      while (i < itens.length) { const k = i++; await fn(itens[k], k); }
+    });
+    await Promise.all(trab);
+  }
+
+  async function executarLoteSab(ymd, modo, comGigs, cfg) {
+    const area = corpo.querySelector("#cx-lote-sab-area");
+    const dizer = (frag) => CratosHTML.definir(area, frag);
+    const diaBr = ymd.split("-").reverse().join("/");
+    const cli = SAB.cliente();
+    /* 1) As determinações do órgão; cada uma, as ordens COM transferência do dia. */
+    dizer(html`<div style="color:#9a9a9a">Lendo as determinações no SAB…</div>`);
+    let dets;
+    try { dets = await cli.todasDeterminacoes(); }
+    catch (e) { dizer(html`<span class="cx-erro">Não consegui ler o SAB (${String(e.message || e)}). Nada foi feito.</span>`); return; }
+    const encerrada = /FINALIZ|INTERROMP|CANCEL/;
+    const alvo = dets.filter((d) => {
+      const s = String(d.situacao || "").toUpperCase();
+      if (s === "MINUTA") return false;
+      /* Encerrada ANTES do dia não tem ordem protocolada no dia. */
+      const fim = SAB.dataLocal(d.ultimaSituacao && d.ultimaSituacao.ocorridoEm);
+      return !(encerrada.test(s) && fim && fim.ymd < ymd);
+    });
+    const achadas = [];
+    const falhasLeitura = [];
+    let lidas = 0;
+    await emParalelo(alvo, 4, async (d) => {
+      try {
+        const ords = await cli.ordens(d.id, "COM_TRANSFERENCIAS");
+        for (const o of SAB.ordensDoDia(ords, ymd)) achadas.push({ det: d, ordem: o });
+      } catch (e) { falhasLeitura.push(d.id); }
+      lidas++;
+      if (lidas % 20 === 0) dizer(html`<div style="color:#9a9a9a">Lendo as ordens… ${String(lidas)} de ${String(alvo.length)} determinações</div>`);
+    });
+    const grupos = SAB.agruparPorProcesso(achadas);
+    const rel = [];
+    const assinar = [];
+    const familia = modo === "certidao" ? "sab_respostas" : "sab_transferencia";
+    const operacao = modo === "certidao" ? "respostas_sab" : "transferencia_sab";
+    const grupo = `lote-${ymd}`;
+    const cfgGigs = String(cfg.gigsObrigacaoRealizadaAtividade || ATIVIDADE_REALIZADA_PADRAO);
+
+    /* 2) Processo a processo, em sequência (o PJe segura um rascunho por processo). */
+    for (let gi = 0; gi < grupos.length; gi++) {
+      const g = grupos[gi];
+      const linha = { numero: g.numero, idPJe: g.idPJe, juntados: [], obtidos: [], aguardando: [], ja: [], conferir: [], falhas: [], alertas: [], gigs: null };
+      rel.push(linha);
+      dizer(html`<div style="color:#9a9a9a">Processo ${String(gi + 1)} de ${String(grupos.length)}: ${SAB.numeroCnj(g.numero)}…</div>`);
+      try {
+        if (!g.idPJe) throw new Error("o SAB não informou o id do processo no PJe");
+        /* Os arquivos do lote ficam presos a ESTA aba: fechou, a limpeza (1.9.0) apaga. */
+        try { await browser.runtime.sendMessage({ tipo: "processo_aba", numProcesso: g.numero }); } catch (e) { /* nada */ }
+        /* 1.9.4 (Rodrigo, 13/11): a transferência ENVIADA também se junta — é nela que a
+           vara intima a parte. Fica de fora só o que ainda não saiu (NAO_ENVIADA) e o
+           bloqueio sem resposta. */
+        const resp = g.itens.filter((it) => SAB.ordemJuntavel(it.ordem));
+        linha.aguardando = g.itens.filter((it) => !SAB.ordemJuntavel(it.ordem)).map((it) => String(it.ordem.numeroProtocolo));
+        if (!resp.length) continue;
+        const r0 = await fetch(`${location.origin}${API}/processos/id/${g.idPJe}/documentos/minuta/A/metadados`, { headers: { Accept: "application/json" } });
+        if (r0.status !== 204) throw new Error("há documento em rascunho no processo: pulado (conclua ou descarte o rascunho e rode de novo)");
+        const indice = await indiceDosAutos(cli, g.idPJe);
+        const porDet = new Map();
+        for (const it of resp) {
+          const k = String(it.det.id);
+          if (!porDet.has(k)) porDet.set(k, []);
+          porDet.get(k).push(String(it.ordem.numeroProtocolo));
+        }
+        let arquivos = 0;
+        for (const [idDet, protocolos] of porDet) {
+          const r = await coletarDeterminacaoSab(cli, idDet, g.numero, indice, {
+            comCertidao: modo === "certidao", operacao, grupo, soProtocolos: protocolos,
+          });
+          arquivos += r.arquivos;
+          linha.obtidos.push(...r.anexados);     // 1.9.6: "juntado" só depois que a minuta existir
+          linha.ja.push(...r.ja.filter((p) => protocolos.includes(p)));
+          linha.conferir.push(...r.conferir);
+          linha.falhas.push(...r.falharam.map((p) => `relatório da ordem ${p} não obtido`));
+          if (r.realizada) linha.alertas.push(`determinação nº ${idDet}: obrigação realizada (remanescente R$ 0,00) — verificar garantia do juízo`);
+        }
+        /* Só a certidão, sem relatório novo, não vale uma minuta no lote. */
+        if (!linha.obtidos.length) {
+          if (arquivos) { try { await browser.runtime.sendMessage({ tipo: "diario_marcar_juntado", numProcesso: g.numero, familia, grupo }); } catch (e) {} }
+          continue;
+        }
+        const cert = await certidaoDoGrupo(g.numero, familia, grupo, arquivos);
+        if (!cert) throw new Error("os arquivos não chegaram ao diário a tempo; rode de novo");
+        const jr = await juntarCertidao(Number(g.idPJe), cert, g.numero);
+        await browser.runtime.sendMessage({ tipo: "diario_marcar_juntado", numProcesso: g.numero, familia, grupo });
+        const an = (jr && jr.anexos) || { anexados: [], falharam: [] };
+        try { await browser.runtime.sendMessage({ tipo: "cofre_remover", numProcesso: g.numero, nomes: an.anexados }); } catch (e) {}
+        for (const f of an.falharam || []) linha.falhas.push(`não anexei ${f.nome} (${f.motivo})`);
+        linha.minuta = jr.idMinuta;
+        linha.juntados = linha.obtidos.slice();
+        assinar.push({ numero: g.numero, idPJe: Number(g.idPJe), idMinuta: jr.idMinuta });
+        if (comGigs && linha.alertas.length) {
+          try { await criarAtividadeGigs(Number(g.idPJe), cfgGigs); linha.gigs = "lançada"; }
+          catch (e) { linha.gigs = `não lançada (${String(e.message || e)})`; }
+        }
+      } catch (e) {
+        linha.falhas.push(String(e.message || e));
+      }
+    }
+    try { await Store.set("sab_lote_ultimo", { dia: ymd, modo, em: Date.now(), assinar }); } catch (e) {}
+    renderRelatorioLoteSab(diaBr, rel, assinar, falhasLeitura, grupos.length);
+  }
+
+  function renderRelatorioLoteSab(diaBr, rel, assinar, falhasLeitura, total) {
+    const area = corpo.querySelector("#cx-lote-sab-area");
+    const juntou = rel.filter((l) => l.minuta);
+    const cartao = (l) => html`<div style="border:1px solid #333;border-radius:6px;padding:6px;margin:4px 0">
+      <div style="color:#e8e8e8;font-weight:600">${SAB.numeroCnj(l.numero)}</div>
+      ${l.juntados.length ? html`<div style="color:#4ade80">✓ juntado (minuta): ${l.juntados.join(", ")}</div>` : ""}
+      ${!l.minuta && l.obtidos.length ? html`<div style="color:#facc15">NÃO juntado (veja o motivo abaixo; rode de novo depois de resolver): ${l.obtidos.join(", ")}</div>` : ""}
+      ${l.ja.length ? html`<div style="color:#9a9a9a">já nos autos: ${l.ja.join(", ")}</div>` : ""}
+      ${l.aguardando.length ? html`<div style="color:#9a9a9a">ainda não enviada ao banco ou sem resposta (não juntado): ${l.aguardando.join(", ")}</div>` : ""}
+      ${l.conferir.length ? html`<div style="color:#facc15">possível duplicidade, conferir (não juntado): ${l.conferir.join(", ")}</div>` : ""}
+      ${l.alertas.map((a) => html`<div style="color:#facc15">⚠ ${a}</div>`)}
+      ${l.gigs ? html`<div style="color:${l.gigs === "lançada" ? "#4ade80" : "#facc15"}">GIGS: atividade ${l.gigs}</div>` : ""}
+      ${l.falhas.length ? html`<div class="cx-erro">${listaBrSab(l.falhas)}</div>` : ""}
+    </div>`;
+    CratosHTML.definir(area, html`
+      <div style="color:#e8e8e8;font-weight:600">Respostas SAB de ${diaBr}: ${String(total)} processo(s) com transferência; ${String(juntou.length)} com juntada.</div>
+      ${falhasLeitura.length ? html`<div class="cx-erro">Não consegui ler as ordens de ${String(falhasLeitura.length)} determinação(ões) (nº ${falhasLeitura.join(", ")}). Elas NÃO foram verificadas: rode de novo.</div>` : ""}
+      ${!total ? html`<div style="color:#9a9a9a">Nenhuma ordem com transferência nesse dia.</div>` : ""}
+      ${rel.map(cartao)}
+      ${assinar.length ? html`<button class="cx-acao" id="cx-lote-assinar" style="margin-top:8px">Assinar em sequência (${String(assinar.length)})</button>
+        <div style="color:#9a9a9a;margin-top:4px">Abre cada minuta numa janela do CRATOS; quando você assinar, segue para a próxima. O CRATOS não assina.</div>` : ""}
+      <div id="cx-lote-assinatura" style="margin-top:8px"></div>`);
+    const b = area.querySelector("#cx-lote-assinar");
+    if (b) b.onclick = () => assinaturaAssistida(assinar);
+  }
+
+  /* ASSINATURA ASSISTIDA: abre a minuta de cada processo numa janela nomeada e espera
+     a assinatura aparecer na timeline (o documento com `idSignatario`). Quem assina é
+     a pessoa, na tela do PJe; aqui só se navega. "Pular" e "Parar" a qualquer tempo. */
+  async function assinaturaAssistida(fila) {
+    const caixa = corpo.querySelector("#cx-lote-assinatura");
+    const cli = SAB.cliente();
+    let parar = false, pular = false;
+    const feitos = [];
+    for (let i = 0; i < fila.length && !parar; i++) {
+      const f = fila[i];
+      pular = false;
+      window.open(`${location.origin}/pjekz/processo/${f.idPJe}/documento/anexar`, "cratos-assinatura");
+      CratosHTML.definir(caixa, html`<div style="color:#e8e8e8">Assinatura ${String(i + 1)} de ${String(fila.length)}: ${SAB.numeroCnj(f.numero)} — confira e assine na janela aberta.</div>
+        <div style="display:flex;gap:8px;margin-top:6px">
+          <button class="cx-acao" id="cx-ass-pular" style="background:#1a1a1a;border:1px solid #6b7280;color:#e8e8e8">Pular</button>
+          <button class="cx-acao" id="cx-ass-parar" style="background:#1a1a1a;border:1px solid #e11d1d;color:#e8e8e8">Parar</button>
+        </div>`);
+      caixa.querySelector("#cx-ass-pular").onclick = () => { pular = true; };
+      caixa.querySelector("#cx-ass-parar").onclick = () => { parar = true; };
+      let assinado = false;
+      while (!assinado && !pular && !parar) {
+        await new Promise((r) => setTimeout(r, 4000));
+        try {
+          const t = await cli.timeline(f.idPJe);
+          const docs = Array.isArray(t) ? t : (t && t.resultado) || [];
+          assinado = docs.some((d) => d && Number(d.id) === Number(f.idMinuta) && d.idSignatario);
+        } catch (e) { /* tenta de novo no próximo ciclo */ }
+      }
+      feitos.push(`${SAB.numeroCnj(f.numero)}: ${assinado ? "assinado" : pular ? "pulado" : "parado"}`);
+    }
+    CratosHTML.definir(caixa, html`<div style="color:#e8e8e8">Assinatura assistida encerrada.</div><div style="color:#9a9a9a">${listaBrSab(feitos)}</div>`);
+  }
+
   function lerPartesMarcadas() {
     return Array.from(corpo.querySelectorAll(".cx-sel-parte:checked"))
       .map((el) => partesAtuais[parseInt(el.dataset.idx)])
@@ -750,7 +1197,7 @@
         <b>${partesSelecionadas.length} parte(s):</b>
         ${partesSelecionadas.map((p) => p.nome).join(" · ")}
       </div>
-      ${itens}
+      ${itens.length ? itens : html`<div class="cx-vazio">Nenhum convênio ${modoAtual === "inclusao" ? "" : "com baixa "}ligado. Ligue os que você usa em Preferências → "Convênios em uso".</div>`}
       <button class="cx-acao" id="cx-executar-selecionados" style="margin-top:12px">
         Executar selecionados
       </button>
@@ -763,30 +1210,26 @@
     avisarConfigPendente();      // 1.9.2: INFOJUD sem vara → link para os Primeiros passos
 
     // Botões de reordenação
+    /* Troca com o VIZINHO VISÍVEL (no modo baixa, ou com convênio desligado, o vizinho na
+       ordem global pode estar escondido — a troca não aparecia). */
+    const trocarOrdem = (a, b) => {
+      ordemAtual = conveniosTodosOrdenados().map((c) => c.id);
+      const i = ordemAtual.indexOf(a), k = ordemAtual.indexOf(b);
+      if (i < 0 || k < 0) return;
+      [ordemAtual[i], ordemAtual[k]] = [ordemAtual[k], ordemAtual[i]];
+      Store.set(CHAVE_ORDEM, ordemAtual).catch(() => {});
+      renderListaConvenios();
+    };
     corpo.querySelectorAll(".cx-ord-up").forEach(btn => {
       btn.onclick = () => {
         const idx = parseInt(btn.dataset.idx);
-        const id = lista[idx].id;
-        const posGlobal = ordemAtual.indexOf(id);
-        if (posGlobal > 0) {
-          [ordemAtual[posGlobal - 1], ordemAtual[posGlobal]] =
-            [ordemAtual[posGlobal], ordemAtual[posGlobal - 1]];
-          Store.set(CHAVE_ORDEM, ordemAtual).catch(() => {});
-          renderListaConvenios();
-        }
+        if (idx > 0) trocarOrdem(lista[idx].id, lista[idx - 1].id);
       };
     });
     corpo.querySelectorAll(".cx-ord-down").forEach(btn => {
       btn.onclick = () => {
         const idx = parseInt(btn.dataset.idx);
-        const id = lista[idx].id;
-        const posGlobal = ordemAtual.indexOf(id);
-        if (posGlobal < ordemAtual.length - 1) {
-          [ordemAtual[posGlobal], ordemAtual[posGlobal + 1]] =
-            [ordemAtual[posGlobal + 1], ordemAtual[posGlobal]];
-          Store.set(CHAVE_ORDEM, ordemAtual).catch(() => {});
-          renderListaConvenios();
-        }
+        if (idx < lista.length - 1) trocarOrdem(lista[idx].id, lista[idx + 1].id);
       };
     });
   }
@@ -827,6 +1270,18 @@
         .find(c => c.toLowerCase().startsWith("xsrf-token="))
         ?.split("=").slice(1).join("=") || "",
     };
+
+    /* 1.9.4 — BAIXA do SAB com duas ou mais determinações ativas: a pessoa escolhe
+       UMA antes de a fila andar (nada pré-marcado). "Pular" tira o SAB da fila. */
+    if (modoAtual === "baixa" && fila.some((c) => c.id === "SAB")) {
+      const esc = await escolherDeterminacaoBaixa();
+      if (esc.pular) fila.splice(fila.findIndex((c) => c.id === "SAB"), 1);
+      else if (esc.id) ctx.sabIdDeterminacao = esc.id;
+      if (!fila.length) {
+        corpo.querySelector("#cx-progresso").innerHTML = `<span class="cx-erro">Nada a executar.</span>`;
+        return;
+      }
+    }
 
     orquestraFila = fila;
     orquestraIniciadaEm = Date.now();   // 1.9.0: só vale registro do INFOJUD desta execução
@@ -1671,10 +2126,31 @@
     }
 
     /* 2) Tipo "Certidão" pelo NOME, nunca pelo id: 57/7323 é do TRT18 hoje. */
-    const tipos = await getPje(`${API}/dominio/tiposdocumentoprocesso/processo/${idProcesso}`);
-    const tipoCert = (tipos || []).find(
-      (t) => norm(t.nomeTipoProcessoDocumento) === "certidao");
-    if (!tipoCert) throw new Error('não achei o tipo de documento "Certidão" neste processo');
+    /* 1.9.6 — ATENÇÃO: `/tiposdocumentoprocesso/processo/{id}` devolve os tipos dos
+       documentos que JÁ EXISTEM no processo (é o filtro da timeline), não os que podem ser
+       juntados. Processo sem nenhum "Sisbajud (transferência)" não trazia o tipo (bug de
+       campo, 13/11: 21 tipos num processo, 31 noutro). Primeiro essa lista; o que faltar,
+       no catálogo inteiro (`/dominio/tiposdocumentoprocesso`, só os ativos) — o mesmo que
+       a tela de anexar oferece. Sempre pelo NOME. */
+    let tipos = (await getPje(`${API}/dominio/tiposdocumentoprocesso/processo/${idProcesso}`)) || [];
+    let catalogoTipos = null;
+    const acharTipo = async (nome) => {
+      let t = tipos.find((x) => norm(x.nomeTipoProcessoDocumento) === norm(nome));
+      if (t) return t;
+      if (!catalogoTipos) {
+        try { catalogoTipos = (await getPje(`${API}/dominio/tiposdocumentoprocesso`)) || []; } catch (e) { catalogoTipos = []; }
+      }
+      t = catalogoTipos.find((x) => x && x.ativo !== false && norm(x.nomeTipoProcessoDocumento) === norm(nome));
+      if (t) tipos = tipos.concat([t]);
+      return t || null;
+    };
+    /* 1.9.4: a família pode pedir outro tipo de documento principal (lote do SAB, "só a
+       resposta" → "Sisbajud (transferência)"). */
+    const nomeTipo = certidao.tipoDocumento || "Certidão";
+    const tipoCert = await acharTipo(nomeTipo);
+    if (!tipoCert) throw new Error(`não achei o tipo de documento "${nomeTipo}" no PJe`);
+    if (certidao.tipoAnexo) await acharTipo(certidao.tipoAnexo);   // anexarPdfs procura em `tipos`
+    else await acharTipo("Documento Diverso");
 
     /* 3) O esqueleto vem do servidor — inclusive os ids dos tópicos. Nada de
           cravar 140/141: noutro tribunal a estrutura é outra. */
@@ -1825,7 +2301,9 @@
     /* Tipo do anexo pelo NOME, como o da certidão. 115/"80" é o que o TRT18
        devolve hoje; cravar seria abrir de novo o débito de nacionalização que
        estamos pagando. Se o catálogo não trouxer, cai no observado e AVISA. */
-    const tipoAnexo = (tipos || []).find((t) => norm(t.nomeTipoProcessoDocumento) === "documento diverso");
+    const nomeTipoAnexo = certidao.tipoAnexo || "Documento Diverso";
+    const tipoAnexo = (tipos || []).find((t) => norm(t.nomeTipoProcessoDocumento) === norm(nomeTipoAnexo)) ||
+      (tipos || []).find((t) => norm(t.nomeTipoProcessoDocumento) === "documento diverso");
     if (!tipoAnexo) {
       console.warn('CRATOS/juntada: não achei o tipo "Documento Diverso" no catálogo ' +
         "deste processo — usando os valores observados no TRT18 (115/80).");
@@ -1852,7 +2330,7 @@
           idDocumentoPrincipal: meta.id,
           idProcesso: Number(idProcesso),
           numeroOrdem: ordem,
-          tipo: "Documento Diverso",
+          tipo: (tipoAnexo && tipoAnexo.nomeTipoProcessoDocumento) || "Documento Diverso",
           sigiloso: true,
           idTipo: idTipoAnexo,
           codigoTipoDocumento: String(codTipoAnexo),
@@ -1887,7 +2365,7 @@
          e a chave repetida silenciosamente sobrescrevia a primeira — a mensagem
          virava {tipo:"realizados"} e nunca chegava ao diário. Pego pelo teste. */
       await browser.runtime.sendMessage({
-        tipo: "diario_marcar_juntado", numProcesso, familia: certidao.tipo,
+        tipo: "diario_marcar_juntado", numProcesso, familia: certidao.tipo, grupo: certidao.grupo,
       });
       const an = (r && r.anexos) || { anexados: [], falharam: [], semBytes: [] };
       /* Só sobra trabalho manual para o que NÃO foi anexado. A lista precisa
@@ -1899,7 +2377,10 @@
         });
       } else {
         await Store.set("juntada_pendente", null);
-        try { await browser.runtime.sendMessage({ tipo: "cofre_limpar", numProcesso }); } catch (e) {}
+        /* 1.9.4: só os arquivos DESTA certidão saem do cofre — a outra certidão do
+           mesmo processo (outra determinação do SAB, a baixa depois da inclusão)
+           ainda precisa dos seus. Antes era `cofre_limpar` do processo inteiro. */
+        try { await browser.runtime.sendMessage({ tipo: "cofre_remover", numProcesso, nomes: an.anexados }); } catch (e) {}
       }
 
       /* 1.5.5: lista de fragmentos html`` em vez de string concatenada. */
@@ -2121,6 +2602,11 @@
     setPartes(p) { partesAtuais = p; },
     get pendenteJuntada() { return pendenteJuntada; },
     tempos,
+    // 1.9.4 — SAB
+    coletarSab, executarColetaSab, escolherDeterminacaoBaixa, renderSemProcesso, abrirLoteSab,
+    executarLoteSab, assinaturaAssistida, executarSelecionados,
+    setPartesSelecionadas(p) { partesSelecionadas = p; },
+    convLigado, usoPronto, get ordem() { return ordemAtual.slice(); },
   };
 
 })();

@@ -40,9 +40,14 @@ Pôr `updates.json` na raiz do `main` do repositório. Pode ir vazio (`"updates"
 | 1.9.1 | 26/10/2026 | `1e08a9d171c4d1f54283dfdd79552106f1752ae019b791617f2f2c3c9a06f2a1` | #3 (junto com src/testes/manual da 1.9.1) | `v1.9.1` — a criar pelo Rodrigo, antes do merge |
 | 1.9.2 | 05/11/2026 | `322156532640c154682f6542c6b7e9e0a5305ea941fce2e1953bca4bba09f465` | #4 (junto com src/testes/manual da 1.9.2) | `v1.9.2` — a criar pelo Rodrigo, antes do merge |
 | 1.9.3 | 11/11/2026 | `3093f079068ae11e8773f9fe2f3a808c049769464058138d94a1bab5aa041181` | #5 (junto com src/testes/manual da 1.9.3) | `v1.9.3` — a criar pelo Rodrigo, antes do merge |
+| 1.9.6 | 16/11/2026 | `f0e5131a93b767fde2c86be7336d7e02969e31d532fec5df18725bc89105d398` | este PR (junto com src/testes/manual da 1.9.6) | `v1.9.6` — antes do merge |
 
 A 1.9.1 é a primeira versão entregue pela atualização automática. Ela foi publicada para testar o mecanismo, com só o Rodrigo na 1.9.0. Daqui em diante vale o portão: versão homologada.
 
 A 1.9.2 foi publicada completa por decisão do Rodrigo (05/11), antes da homologação pela STI, para acompanhar o curso de operação; eventuais correções seguem em versões seguintes.
 
 A 1.9.3 também foi publicada completa por decisão do Rodrigo (11/11), antes da homologação pela STI e sem o teste ao vivo de todos os itens (o "Refazer" depende de casos raros); o teste fica com os colegas das varas, no uso, com retorno ao Rodrigo.
+
+A 1.9.4 e a 1.9.5 foram assinadas e **não publicadas** (números queimados): a 1.9.4 não juntava a transferência já enviada ao banco, e a 1.9.5 não tinha as correções do primeiro lote real.
+
+A 1.9.6 também foi publicada por decisão do Rodrigo (13/11, confirmada em 16/11), antes da homologação pela STI, depois do teste ao vivo do lote "Coletar respostas SAB" de 12/11 (três processos juntados, sem falhas). É a versão que substitui a extensão SABRe nas varas.
