@@ -5,7 +5,7 @@ Extensão Firefox (Manifest V2) que captura os dados do processo no PJe e
 **prepara** a execução de convênios (consultas e registro) para o processo em
 tela, no âmbito do TRT da 18ª Região.
 
-> Versão: **1.9.3** · Compatibilidade: Firefox 140+ (ESR 140 ou superior) · Este repositório é
+> Versão: **1.9.6** · Compatibilidade: Firefox 140+ (ESR 140 ou superior) · Este repositório é
 > disponibilizado para fins de **homologação** pelo Tribunal.
 > Última versão **homologada** pela STI: **1.6.5** (release `v1.6.5`). As versões 1.7 a 1.9 estão
 > descritas abaixo e no cartão "Novidades" da própria extensão.
@@ -32,7 +32,8 @@ não envia. O ato definitivo é sempre uma ação humana consciente.
 - **INFOJUD** (eCAC / Receita Federal) — registro de solicitações e coleta das
   respostas na caixa postal; e, desde a 1.9.0, o "Recuperar NI – CNPJ": as empresas
   em que o executado pessoa física é o responsável, com certidão consolidada.
-- **SAB / SISBAJUD** — inclusão (ordem de bloqueio) e baixa (interrupção).
+- **SAB / SISBAJUD** — inclusão (ordem de bloqueio) e baixa (interrupção); desde a 1.9.6,
+  coleta e juntada das respostas com transferência, no processo e em lote.
 - **RENAJUD** — inclusão e baixa de restrições de veículos.
 - **CNIB** (indisponibilidade.onr.org.br) — inclusão e cancelamento total.
 - **CENSEC / CEP** — consulta de escrituras e procurações.
@@ -104,6 +105,22 @@ o CRATOS gera certidão desse fato em vez de terminar calado.
 - **"Refazer" da fila (desde a 1.9.3).** Cada convênio registra o ponto a partir do qual
   a ordem pode ter chegado ao sistema; daí em diante, nos atos de constrição, o painel
   **não** permite refazer — não há ordem em dobro.
+- **SAB — respostas com transferência (desde a 1.9.6).** No processo, "Coletar SAB"
+  monta uma certidão consolidada por determinação, com os relatórios de detalhamento
+  das ordens com transferência anexos; o protocolo vai no título do anexo, e o que já
+  está nos autos não é juntado de novo. Nas telas sem processo (Meu painel), o lote
+  "Coletar respostas SAB" lê no SAB as ordens com transferência do dia útil anterior,
+  junta processo a processo em minuta, mostra o relatório final e abre a assinatura
+  assistida — o CRATOS nunca assina. Entra a ordem com transferência respondida ou com
+  o desdobramento já enviado ao banco; bloqueio sem resposta fica de fora. Com
+  remanescente R$ 0,00, o alerta diz "verificar garantia do juízo" (nunca "juízo
+  garantido"), com atividade no GIGS opcional.
+- **Baixa do SAB pela lista do processo (desde a 1.9.6).** Com duas ou mais
+  determinações ativas, o usuário escolhe qual interromper antes da fila (nada vem
+  marcado; dá para pular o SAB); sem nenhuma ativa, o painel avisa e segue.
+- **Convênios em uso (desde a 1.9.6).** Primeiro bloco das Preferências: convênio
+  desligado some da fila, dos botões de coleta, do lote, da disponibilidade e dos
+  Primeiros passos. O SAB só aparece nos TRTs que o usam (3, 10 e 18).
 - A extensão **não manuseia senhas, tokens ou certificados**: o login (inclusive
   certificado digital e token por e-mail) é sempre feito pelo usuário.
 - Todo HTML montado com dado externo passa por `CratosHTML` (escape
@@ -155,7 +172,7 @@ cd testes
 node teste-<nome>.js # roda uma suíte
 ```
 
-Há **48 suítes / 1347 asserções**. A `teste-cnib.js` é lenta (~5 min, usa relógio
+Há **50 suítes / 1469 asserções**. A `teste-cnib.js` é lenta (~5 min, usa relógio
 real); as demais são rápidas. Cada suíte imprime o próprio placar. O padrão do
 projeto é que **teste novo reprove a versão anterior** — várias aceitam
 `CRATOS_SRC=<pasta do .xpi descompactado>` para serem apontadas a uma versão

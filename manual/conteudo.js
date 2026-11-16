@@ -97,6 +97,7 @@ module.exports = { CONTATO, blocos: [
   { p: "No painel, cada parte do processo aparece com uma caixinha de seleção. As partes do polo passivo (os executados) já vêm marcadas — são o alvo natural das pesquisas. O polo ativo vem desmarcado, para você não pesquisar o credor por engano. Marque ou desmarque como precisar." },
   { h2: "5.2. Inclusão ou Baixa", id: "inclusao-baixa" },
   { p: "Escolha o que vai fazer: **INCLUSÃO** (incluir restrições/ordens e fazer consultas) ou **BAIXA** (retirar restrições). O CRATOS mostra os convênios adequados a cada caso. As consultas — INFOJUD, CENSEC, CCS, SNIPER e PREVJUD — aparecem na INCLUSÃO; SAB, RENAJUD, CNIB e SerasaJUD aparecem nas duas." },
+  { p: "**Baixa do SAB com mais de uma determinação ativa.** Se o processo tem duas ou mais determinações em processamento, o CRATOS pergunta qual interromper antes de a fila começar — nada vem marcado, e dá para pular o SAB. Se não houver nenhuma ativa, a fila mostra \"não há determinação ativa para interromper\".", desde: "1.9.4" },
   { h2: "5.3. Escolher os convênios e a ordem", id: "convenios-ordem" },
   { p: "Marque os convênios que quer executar. Você pode ajustar a ordem com as setinhas (▲▼). Depois, clique em **Executar selecionados**." },
   { captura: { arquivo: "04-convenios.png", desc: "painel na tela de seleção de convênios, com os botões Inclusão / Baixa" } },
@@ -119,12 +120,22 @@ module.exports = { CONTATO, blocos: [
   { p: "O INFOJUD não responde na hora: o pedido é registrado e a resposta chega na caixa postal do e-CAC minutos ou horas depois. Ao final da fila, o CRATOS já verifica e baixa as respostas disponíveis. Se ainda não chegaram, é normal — use o botão \"Coletar INFOJUD (resultados na caixa postal)\" mais tarde para buscar." },
   { p: "Junto com o INFOJUD, se a opção estiver ligada (veja 6.1), o CRATOS pesquisa antes das solicitações as empresas em que cada executado pessoa física é o responsável (\"Recuperar NI – CNPJ\") e gera uma certidão consolidada, com o endereço de cada empresa. A pesquisa é feita por trás, com a sua sessão do e-CAC: a tela fica coberta por um aviso enquanto ela roda, e no fim a faixa mostra um resumo (por exemplo, \"F.S.: 3 empresas; B.P.: nenhuma\")." },
   { p: "Se só o Recuperar NI estiver marcado (nenhum tipo de declaração ligado), o CRATOS faz apenas essa pesquisa: não abre a tela de solicitação nem consulta a caixa postal, porque a resposta é imediata." },
-  { h2: "5.7. Coletas posteriores: CCS e PREVJUD", id: "coletas" },
+  { h2: "5.7. Coletas posteriores: CCS, PREVJUD e SAB", id: "coletas" },
   { p: "Dois convênios também respondem depois, e cada um tem o seu botão na tela inicial do painel:" },
   { bullets: [
     "**Coletar CCS (respostas das instituições):** no dia seguinte à requisição, junta o PDF de detalhamentos do próprio CCS e uma certidão com quem já respondeu e quem ainda falta responder.",
     "**Coletar PREVJUD (dossiês em processamento):** busca os dossiês prontos do processo (pedidos dos últimos 7 dias) e junta os PDFs do INSS, mesmo que já tenham sido juntados antes.",
   ] },
+  { p: "**Coletar SAB (posição das ordens + transferências).** No processo, o CRATOS lê no SAB as determinações de bloqueio e gera, para cada uma, uma certidão consolidada no padrão visual do relatório do SNIPER: exequente, juiz, valor, repetição, histórico, os executados com o valor realizado segundo o próprio SAB e a tabela das ordens (protocolo, data, tipo, situação, alvo, bloqueado, transferido). Junto vão os relatórios de detalhamento das ordens com transferência de valores, obtidos pelo SAB — sem entrar no SISBAJUD. Se o processo tem mais de uma determinação, aparece a lista para marcar: já vêm marcadas as em processamento e as que têm transferência nova; minutas não aparecem. Sai uma certidão para cada determinação marcada (assine uma antes de criar a próxima).", desde: "1.9.4" },
+  { p: "Relatório que já está nos autos — o CRATOS reconhece pelo número da ordem no título do anexo — não é juntado de novo: a certidão diz \"já juntado em dd/mm\". Ordem ainda sem resposta aparece como \"aguardando\", que não é resultado. Se um relatório não puder ser obtido, a certidão diz que ele não foi obtido por falha técnica, e você coleta de novo.", desde: "1.9.4" },
+  { p: "**Coletar respostas SAB (transferências do dia).** Nas telas sem processo aberto (o Meu painel, por exemplo), o painel do CRATOS oferece este botão. Ele pergunta o dia (já vem o dia útil anterior; em feriado, ajuste à mão), o que juntar — só a resposta (documento \"Sisbajud (transferência)\" com os relatórios, como a vara já faz) ou a certidão consolidada + respostas — e se lança atividade no GIGS quando a obrigação estiver realizada. Depois percorre o SAB, acha as ordens com transferência daquele dia e, processo a processo, cria a minuta com os relatórios anexos.", desde: "1.9.4" },
+  { caixa: { tipo: "aviso", titulo: "No fim do lote", desde: "1.9.4", linhas: [
+    "Um relatório lista, por processo, o que foi juntado, o que já estava nos autos, o que está aguardando resposta (não juntado), as possíveis duplicidades a conferir (documento \"Sisbajud (transferência)\" sem número de ordem, juntado depois da ordem) e as falhas.",
+    "Processo com documento em rascunho é pulado, com o motivo: conclua ou descarte o rascunho e rode de novo.",
+    "\"Assinar em sequência\" abre cada minuta numa janela do CRATOS; quando você assina, ele passa para a próxima (com os botões Pular e Parar). O CRATOS não assina.",
+    "Obrigação realizada (remanescente R$ 0,00 no SAB): o CRATOS alerta \"verificar garantia do juízo\". Ele não afirma que o juízo está garantido — essa conferência é sua.",
+  ] } },
+  { p: "**Transferência enviada também é juntada.** Na coleta do processo e no lote, a ordem de transferência já enviada ao banco é anexada mesmo antes da confirmação da instituição: é nela que a vara intima a parte. Na certidão consolidada ela aparece como \"transf. enviada\", com o valor. Ficam de fora só o bloqueio ainda sem resposta (\"aguardando\", que não é resultado) e a ordem que ainda não foi enviada.", desde: "1.9.5" },
   { h2: "5.8. Sistema fora do ar: certidão de indisponibilidade", id: "indisponibilidade" },
   { p: "Na tela inicial do painel, escolha um convênio e clique em \"Verificar disponibilidade do convênio\". O CRATOS faz até 3 tentativas, testa o próprio PJe como controle e mostra o resultado. Se o sistema estiver mesmo fora do ar, aparece o botão para gerar a certidão de indisponibilidade — só com a sua confirmação." },
   { p: "Durante a fila, se um convênio falha ou fica sem resposta, o CRATOS faz essa verificação sozinho e, se for o caso, oferece a certidão." },
@@ -158,6 +169,11 @@ module.exports = { CONTATO, blocos: [
     "Arquivo grande demais, que não seja do CRATOS ou que tenha sido mexido fora dele é recusado inteiro — e nada muda.",
   ] } },
 
+  { h2: "6.0. Convênios em uso", id: "cfg-convenios", desde: "1.9.4" },
+  { p: "O primeiro bloco das Preferências tem uma chave para cada convênio. Desligue os que você não usa: eles saem da lista da fila (inclusão e baixa), do botão de coleta deles no painel, do \"Verificar disponibilidade\" e dos itens pendentes dos Primeiros passos. A seção do convênio desligado fica acinzentada, mas a configuração dele continua guardada, e o que já foi feito continua indo para a juntada. Para voltar, é só religar e salvar.", desde: "1.9.4" },
+  { caixa: { tipo: "info", titulo: "O SAB depende do tribunal", desde: "1.9.4", linhas: [
+    "O SAB existe hoje nos TRTs da 3ª, 10ª e 18ª Regiões. Nos demais, o CRATOS não mostra o SAB em lugar nenhum — nem a chave. Quando o SAB chegar a outros tribunais, uma versão nova do CRATOS libera o convênio.",
+  ] } },
   { h2: "6.1. INFOJUD (e-CAC / Receita)", id: "cfg-infojud" },
   { p: "Escolha quais documentos consultar — separadamente para pessoas físicas (CPF) e jurídicas (CNPJ). Onde houver \"últimos anos\", você define quantos anos para trás a consulta abrange." },
   { tabela: [
@@ -188,6 +204,11 @@ module.exports = { CONTATO, blocos: [
     ["Chip ao concluir", "Aplica o marcador \"SISBAJUD - aguardar resposta\" ao concluir a inclusão.", "Desligado"],
     ["Atividade no GIGS", "Lança a atividade \"SISBAJUD - SAB em processamento\" no GIGS.", "Desligado"],
   ] },
+  { tabela: [
+    ["Coletar respostas SAB (lote)", "O que juntar no lote do dia: só a resposta, ou certidão consolidada + respostas.", "Só a resposta"],
+    ["GIGS: obrigação realizada", "Lança uma atividade no GIGS quando a obrigação estiver realizada (verificar garantia do juízo).", "Desligado"],
+    ["Nome da atividade", "O nome exato da atividade cadastrada no GIGS da vara, para a opção acima.", "SISBAJUD - verificar garantia do juízo"],
+  ], desde: "1.9.4" },
   { caixa: { tipo: "aviso", titulo: "Observação do SAB", linhas: [
     "Quando você escolhe atualizar o valor para hoje, o CRATOS usa o mesmo fator do PJe-Calc e mostra um aviso de que o valor foi atualizado. Confira sempre o valor antes de confirmar.",
   ] } },

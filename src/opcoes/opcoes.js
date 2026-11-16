@@ -205,6 +205,45 @@
     }
     alvo.appendChild(div);
   }
+  aplicarConveniosEmUso();
+
+  /* 1.9.4 — CONVÊNIOS EM USO (comum/convenios-uso.js). Desligado: a seção do convênio
+     fica acinzentada, mas editável (a configuração continua guardada). SAB fora dos
+     tribunais em que existe: nem a seção nem a chave aparecem (regra dura, 13/11). */
+  function aplicarConveniosEmUso() {
+    const U = globalThis.CratosConveniosUso;
+    if (!U) return;
+    const bloco = alvo.querySelector('.modulo[data-modulo="convenios"]');
+    if (U.sabExiste(listas.trt) === false) {
+      const sec = alvo.querySelector('.modulo[data-modulo="sab"]');
+      if (sec) sec.style.display = "none";
+      const ch = bloco && bloco.querySelector('[data-tipo="toggle"][data-chave="sab"]');
+      const campo = ch && ch.closest(".campo");
+      if (campo) campo.style.display = "none";
+    }
+    if (!bloco) return;
+    const pintar = () => {
+      for (const c of U.CONVENIOS) {
+        const el = bloco.querySelector(`[data-tipo="toggle"][data-chave="${c.nome}"]`);
+        const sec = alvo.querySelector(`.modulo[data-modulo="${c.nome}"]`);
+        if (!el || !sec) continue;
+        const desl = !el.checked;
+        sec.classList.toggle("cx-desligado", desl);
+        sec.style.opacity = desl ? "0.5" : "";
+        let tag = sec.querySelector(".cx-tag-desligado");
+        if (desl && !tag) {
+          tag = document.createElement("span");
+          tag.className = "cx-tag-desligado";
+          tag.style.cssText = "margin-left:10px;font-size:12px;font-weight:400;color:#facc15";
+          tag.textContent = "desligado em \"Convênios em uso\"";
+          const h2 = sec.querySelector("h2");
+          if (h2) h2.appendChild(tag);
+        } else if (!desl && tag) tag.remove();
+      }
+    };
+    bloco.querySelectorAll('[data-tipo="toggle"]').forEach((el) => el.addEventListener("change", pintar));
+    pintar();
+  }
 
   const barra = document.createElement("div");
   barra.style.cssText = "margin-top:20px;display:flex;gap:12px;align-items:center";

@@ -337,7 +337,9 @@
     return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()} às ${p(d.getHours())}:${p(d.getMinutes())}`;
   };
   function cabecalho(ctx, titulo, meta) {
-    const dir = [meta.processo ? `Processo ${meta.processo}` : "", meta.investigacao ? `SNIPER nº ${meta.investigacao}` : ""].filter(Boolean).join(" · ");
+    /* 1.9.4: o motor também desenha a certidão do SAB — `rotuloId` troca o "SNIPER nº". */
+    const ident = meta.rotuloId ? String(meta.rotuloId) : meta.investigacao ? `SNIPER nº ${meta.investigacao}` : "";
+    const dir = [meta.processo ? `Processo ${meta.processo}` : "", ident].filter(Boolean).join(" · ");
     /* título e procedência na mesma linha: o título encolhe até caber (nunca se sobrepõem) */
     const livre = UTIL - (dir ? medir(ctx, dir, 8, false) + 14 : 0);
     let pt = 14;
@@ -561,11 +563,12 @@
     const precisa = (h) => { if (y - h < 62) nova(); };
     nova();
     let primeiraSecao = true;
+    let jaHouveTexto = false;
     for (const b of blocos.slice(0, 4000)) {
       if (!b || typeof b !== "object") continue;
       if (b.t === "espaco") { y -= 8; continue; }
       if (b.t === "secao") {
-        if (!primeiraSecao) y -= 10;
+        if (!primeiraSecao || jaHouveTexto) y -= 10;      // 1.9.4: a certidão do SAB abre com parágrafo
         primeiraSecao = false;
         precisa(48);
         s += `${rg(AZUL)}${PAG.MX} ${f2(y - 6)} ${UTIL} 20 re\nf\n` + txt(PAG.MX + 8, y, 10.5, true, CAP(b.texto, 90), [1, 1, 1]);
@@ -587,6 +590,7 @@
         continue;
       }
       if (b.t === "par") {
+        jaHouveTexto = true;
         const cor = b.tom === "alerta" ? TOM.erro.tinta : b.tom === "nota" ? CINZA : TINTA;
         const pt = b.tom === "nota" ? 8.3 : 9.3;
         for (const l of quebrar(ctx, CAP(b.texto, 4000), UTIL, pt, false)) { precisa(pt * 1.4); s += txt(PAG.MX, y, pt, false, l, cor); y -= pt * 1.38; }
@@ -656,7 +660,8 @@
   function rodape(streams, meta, ctx) {
     const m = meta || {};
     const n = streams.length;
-    const esq = `Gerado pelo CRATOS a partir dos dados exibidos pelo SNIPER` + (m.investigacao ? ` · investigação nº ${CAP(m.investigacao, 20)}` : "") +
+    const esq = `Gerado pelo CRATOS a partir dos dados exibidos pelo ${CAP(m.origem || "SNIPER", 20)}` +
+      (m.rotuloId ? ` · ${CAP(m.rotuloId, 40)}` : m.investigacao ? ` · investigação nº ${CAP(m.investigacao, 20)}` : "") +
       (m.consultaEm ? ` · consulta em ${dataHora(m.consultaEm)}` : "");
     return streams.map((st, i) => st +
       `${RG([0.80, 0.85, 0.91])}0.6 w\n${PAG.MX} 44 m\n${PAG.L - PAG.MX} 44 l\nS\n` +

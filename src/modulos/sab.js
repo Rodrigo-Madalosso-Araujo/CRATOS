@@ -12,7 +12,8 @@
  *      do valor e do preenchimento do campo "Valor da obrigação".
  *   4. Após "Concluí" do usuário: gera certidão PDF e sinaliza orquestrador.
  *
- * BAIXA: gancho reservado — fluxo a definir.
+ * BAIXA: interrompe a determinação ATIVA do processo; com duas ou mais, só a que a
+ *   pessoa escolheu no painel (1.9.4). O CRATOS nunca clica em constrição sozinho.
  */
 
 const ModuloSAB = (() => {
@@ -64,43 +65,39 @@ const ModuloSAB = (() => {
     throw ultimoErro;
   }
 
-  /* Busca a determinação ATIVA do processo (para a baixa). Retorna o id usado na
-     rota /sab/determinacoes/{id}. O filtro numeroProcesso segue o padrão do
-     endpoint /processos; loga o 1º item para confirmar o nome do campo id no teste
-     real. Filtra client-side por número de processo caso a API ignore o filtro. */
-  async function _buscarDeterminacaoAtiva(base, numeroProcesso, tentativas = 3, intervaloMs = 3000) {
-    const url = `${base}/sab-api/api/determinacoes` +
-      `?pagina=1&tamanhoPagina=10&situacao=M,E,S,A,P,I` +
-      `&numeroProcesso=${encodeURIComponent(numeroProcesso)}`;
-    const norm = (s) => String(s || "").replace(/\D/g, "");
-    const alvo = norm(numeroProcesso);
-    let ultimoErro;
-    for (let i = 1; i <= tentativas; i++) {
+  /* Determinação a INTERROMPER na baixa (1.9.4). Antes: a 1ª "não interrompida" de uma
+     busca cujo filtro por processo podia vir vazio — e aí caía na lista do ÓRGÃO
+     inteiro (`pool = lista`), ou escolhia uma entre DUAS ativas do mesmo processo
+     (há processos assim). Agora: as determinações do PRÓPRIO processo (pelo idSab),
+     e a regra de `CratosSabLeitura.escolherDeterminacaoBaixa`:
+       · nenhuma ativa → erro "não há determinação ativa para interromper";
+       · uma → ela;
+       · duas ou mais → só com a escolha feita no painel (`idEscolhido`). */
+  async function _buscarDeterminacaoAtiva(base, numeroProcesso, idEscolhido) {
+    const L = globalThis.CratosSabLeitura;
+    const cli = L.cliente({ base });
+    let lista = null, ultimoErro = null;
+    for (let i = 1; i <= 2 && !lista; i++) {
       try {
-        const resp = await fetch(url, { headers: { Accept: "application/json" } });
-        if (!resp.ok) throw new Error(`SAB determinacoes ${resp.status}`);
-        const dados = await resp.json();
-        const lista = dados.resultado || dados.content || dados || [];
-        if (lista[0]) console.log("CRATOS/SAB: 1ª determinação (conferir campo 'id'):", lista[0]);
-        // Se a API não filtrou, restringe pelo número do processo (best-effort).
-        const doProcesso = lista.filter((d) => {
-          const cand = norm(d.numeroProcesso || (d.processo && d.processo.numero) || d.numero || "");
-          return cand && cand === alvo;
-        });
-        const pool = doProcesso.length ? doProcesso : lista;
-        // Ativa = a que NÃO está interrompida/cancelada.
-        const ativa = pool.find((d) => {
-          const s = String(d.situacao || "").toUpperCase();
-          return !s.includes("INTERROMP") && !s.includes("CANCEL");
-        }) || pool[0];
-        if (!ativa || ativa.id == null) throw new Error("Determinação do processo não encontrada no SAB.");
-        return { idDeterminacao: ativa.id, situacao: ativa.situacao };
+        const proc = await cli.processoPorNumero(numeroProcesso);
+        if (!proc) throw new Error("processo não encontrado no SAB");
+        lista = await cli.determinacoesDoProcesso(proc.id);
       } catch (e) {
         ultimoErro = e;
-        if (i < tentativas) await new Promise((r) => setTimeout(r, intervaloMs));
+        if (i < 2) await new Promise((r) => setTimeout(r, 2000));
       }
     }
-    throw ultimoErro;
+    if (!lista) throw ultimoErro || new Error("não consegui ler as determinações no SAB");
+    const r = L.escolherDeterminacaoBaixa(lista, idEscolhido);
+    if (r.erro === "nenhuma") throw new Error("não há determinação ativa para interromper no SAB");
+    if (r.erro === "varias") {
+      throw new Error(`há ${r.ativas.length} determinações ativas neste processo ` +
+        `(nº ${r.ativas.map((d) => d.id).join(", ")}) — escolha no painel qual interromper`);
+    }
+    if (r.erro === "escolhida_inativa") {
+      throw new Error(`a determinação nº ${idEscolhido} escolhida não está mais ativa no SAB`);
+    }
+    return { idDeterminacao: r.id, situacao: r.situacao };
   }
 
   return {
@@ -121,7 +118,7 @@ const ModuloSAB = (() => {
         // preenche a justificativa fixa e confirma, depois gera a certidão.
         try {
           console.log("CRATOS/SAB: baixa — buscando determinação ativa de", ctx.numeroProcesso);
-          const { idDeterminacao } = await _buscarDeterminacaoAtiva(ctx.base, ctx.numeroProcesso);
+          const { idDeterminacao } = await _buscarDeterminacaoAtiva(ctx.base, ctx.numeroProcesso, ctx.sabIdDeterminacao);
           console.log("CRATOS/SAB: idDeterminacao =", idDeterminacao);
           const cfgTudo = (await Store.get(CHAVES.config)) || {};
           const justificativa =
@@ -294,6 +291,32 @@ if (typeof Registro !== "undefined") {
         tipo: "toggle",
         padrao: { ativo: false },
         rotulo: 'Lançar no GIGS a atividade "SISBAJUD - SAB em processamento: A partir de *"',
+      },
+
+      /* ═══ 1.9.4 — RESPOSTAS DO SAB ═══
+       * "Coletar respostas SAB" (lote do dia, nas telas sem processo): o que juntar.
+       * "Só a resposta" é o que a vara já faz hoje (documento "Sisbajud
+       * (transferência)" com os relatórios); a outra põe a certidão consolidada antes. */
+      loteModalidade: {
+        tipo: "escolha",
+        opcoes: [
+          { valor: "resposta", rotulo: 'Só a resposta (documento "Sisbajud (transferência)" com os relatórios)' },
+          { valor: "certidao", rotulo: "Certidão consolidada + respostas" },
+        ],
+        padrao: "resposta",
+        rotulo: "Coletar respostas SAB (lote): o que juntar",
+      },
+      /* Obrigação realizada (remanescente R$ 0,00): o alerta sai SEMPRE no painel e na
+         certidão. A atividade no GIGS é opcional e nasce desligada. Casada por NOME. */
+      gigsObrigacaoRealizada: {
+        tipo: "toggle",
+        padrao: { ativo: false },
+        rotulo: "Lançar atividade no GIGS quando a obrigação estiver realizada (verificar garantia do juízo)",
+      },
+      gigsObrigacaoRealizadaAtividade: {
+        tipo: "texto",
+        padrao: "SISBAJUD - verificar garantia do juízo",
+        rotulo: "Nome da atividade do GIGS (igual ao cadastrado na vara)",
       },
     },
   });

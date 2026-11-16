@@ -11,7 +11,7 @@ const { JSDOM } = require("jsdom");
 function montarPainel(SRC, opcoes) {
   const op = opcoes || {};
   const dom = new JSDOM("<!doctype html><html><body></body></html>", {
-    url: "https://pje.trt18.jus.br/pjekz/processo/1", runScripts: "outside-only", pretendToBeVisual: true,
+    url: op.url || "https://pje.trt18.jus.br/pjekz/processo/1", runScripts: "outside-only", pretendToBeVisual: true,
   });
   const w = dom.window;
   const mem = Object.assign({}, op.mem || {});
@@ -65,6 +65,11 @@ function montarPainel(SRC, opcoes) {
   w.eval(fs.readFileSync(path.join(SRC, "comum", "faixa.js"), "utf8"));
   const nov = path.join(SRC, "comum", "novidades.js");
   if (fs.existsSync(nov)) w.eval(fs.readFileSync(nov, "utf8"));
+  const sabL = path.join(SRC, "comum", "sab-leitura.js");      // 1.9.4
+  if (fs.existsSync(sabL)) w.eval(fs.readFileSync(sabL, "utf8"));
+  const usoL = path.join(SRC, "comum", "convenios-uso.js");    // 1.9.4
+  if (fs.existsSync(usoL)) w.eval(fs.readFileSync(usoL, "utf8"));
+  if (op.fetch) w.fetch = op.fetch;
   w.eval(fs.readFileSync(path.join(SRC, "conteudo", "painel.js"), "utf8"));
   return { w, d: w.document, mem, msgs, respostas, P: w.__cratosPainel };
 }
