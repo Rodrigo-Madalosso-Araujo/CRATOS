@@ -18,6 +18,7 @@ function montarPainel(SRC, opcoes) {
   const listeners = [];
   const dispara = (changes) => { listeners.slice().forEach((l) => { try { l(changes, "local"); } catch (e) { /* nada */ } }); };
   const msgs = [];
+  const ouvintesAba = [];   // 2.0: mensagens do fundo para a aba (ex.: o atalho)
   const respostas = {};
   w.browser = {
     storage: {
@@ -47,7 +48,7 @@ function montarPainel(SRC, opcoes) {
     runtime: {
       getURL: (p) => p,
       getManifest: () => ({ version: op.versao || "1.9.0" }),
-      onMessage: { addListener: () => {}, removeListener: () => {} },
+      onMessage: { addListener: (fn) => ouvintesAba.push(fn), removeListener: () => {} },
       sendMessage: async (msg) => {
         if (!msg) return { ok: true };
         msgs.push(JSON.parse(JSON.stringify(msg)));
@@ -79,7 +80,12 @@ function montarPainel(SRC, opcoes) {
      elementos do PAINEL; `d` continua sendo a página (PJe). */
   const P = w.__cratosPainel;
   const r = (P && P.raiz) || w.document;
-  return { w, d: w.document, r, mem, msgs, respostas, P };
+  /* entrega uma mensagem "do fundo" aos ouvintes da aba; devolve a 1ª resposta */
+  const enviarAba = async (msg) => {
+    for (const fn of ouvintesAba) { const x = fn(msg, {}); if (x !== undefined) return x; }
+    return undefined;
+  };
+  return { w, d: w.document, r, mem, msgs, respostas, P, enviarAba };
 }
 
 module.exports = { montarPainel };

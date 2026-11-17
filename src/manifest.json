@@ -218,6 +218,14 @@
     ],
     "default_title": "CRATOS"
   },
+  "commands": {
+    "abrir-cratos": {
+      "suggested_key": {
+        "default": "Alt+Shift+C"
+      },
+      "description": "Abrir o CRATOS e pôr o foco nele"
+    }
+  },
   "options_ui": {
     "page": "opcoes/opcoes.html",
     "open_in_tab": true

@@ -70,6 +70,7 @@
       <button type="button" class="cx-icone cx-fechar" aria-label="Fechar o painel do CRATOS">${SVG_FECHAR}</button>
     </div>
     <div class="cx-menu" id="cx-menu" role="group" aria-label="Mais opções" hidden></div>
+    <div class="cx-sr" id="cx-anuncio" role="status" aria-live="polite" aria-atomic="true"></div>
     <div class="cx-corpo"><div class="cx-vazio">Clique no ícone para capturar o processo.</div></div>
   `);
 
@@ -125,6 +126,7 @@
       <button type="button" class="cx-acao" id="cx-religar">Ligar o CRATOS</button></div>`);
     const b = corpo.querySelector("#cx-religar");
     if (b) b.onclick = () => alternarLigado();
+    cumprirFocoAoAbrir();
   }
   function aplicarEstadoLigado() {
     if (ligado) botao.removeAttribute("desligado");
@@ -258,8 +260,9 @@
       <button type="button" class="cx-menu-item" id="cx-menu-contraste" aria-pressed="false">Alto contraste</button>
       <button type="button" class="cx-menu-item" id="cx-menu-atalhos" aria-expanded="false" aria-controls="cx-menu-atalhos-area">Atalhos de teclado</button>
       <ul class="cx-menu-area cx-atalhos" id="cx-menu-atalhos-area" hidden>
+        <li><kbd>Alt+Shift+C</kbd> abre o CRATOS e põe o foco nele (troque em "Gerenciar atalhos de extensões" do Firefox)</li>
         <li><kbd>←</kbd> <kbd>→</kbd> trocam de aba (com o foco nas abas)</li>
-        <li><kbd>Esc</kbd> fecha este menu</li>
+        <li><kbd>Esc</kbd> fecha este menu; de novo, fecha o painel</li>
       </ul>
       <button type="button" class="cx-menu-item" id="cx-menu-pref">Preferências</button>`);
     alternarArea("cx-menu-disp", "cx-menu-disp-area");
@@ -330,7 +333,7 @@
      as coletas e a aba escolhida continuam onde estavam. */
   function mostrarConteudo() {
     const id = detectarIdProcesso();
-    if (id && processoAtual && painelDaAba("situacao") && String(processoAtual.id) === String(id)) return;
+    if (id && processoAtual && painelDaAba("situacao") && String(processoAtual.id) === String(id)) { cumprirFocoAoAbrir(); return; }
     capturar();
   }
 
@@ -412,7 +415,11 @@
   });
 
   botao.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); alternarPainel(); }
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      if (!painel.hasAttribute("aberto")) focarAoAbrir = true;
+      alternarPainel();
+    }
   });
   botao.addEventListener("pointerdown", (e) => {
     const r = botao.getBoundingClientRect();
@@ -444,7 +451,14 @@
     try { const p = await Store.get(POS_KEY); if (p) aplicarPosicaoBotao(p.left, p.top); } catch (_) {}
   })();
 
-  async function capturar() {
+  /* 2.0: uma captura por vez — abrir o painel na carga da página e o liga/desliga lido
+     do storage chegavam juntos e capturavam duas vezes. */
+  let capturaEmCurso = null;
+  function capturar() {
+    if (!capturaEmCurso) capturaEmCurso = capturarAgora().finally(() => { capturaEmCurso = null; });
+    return capturaEmCurso;
+  }
+  async function capturarAgora() {
     await usoPronto;
     const id = detectarIdProcesso();
     const numero = detectarNumeroProcesso();
@@ -592,6 +606,64 @@
     return ev.returnValue;
   });
 
+  /* ═══ 2.0 — LEITOR DE TELA ═══════════════════════════════════════════════════
+     Um só anunciador (role=status, polite) fala o que muda sem o foco ir até lá: o
+     passo da fila, o fim dela, a Situação lida. O que ele fala é só convênio,
+     situação e passo. NUNCA CPF, CNPJ ou valores: quem está em volta ouve. O filtro
+     abaixo é a segunda trava (a primeira é não montar a frase com esses dados). */
+  function limparFala(t) {
+    return String(t || "")
+      .replace(/R\$\s*[\d.,]+/g, "")
+      .replace(/\d{3}\.\d{3}\.\d{3}-\d{2}|\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}|\d{11,}/g, "")
+      .replace(/[\u2190-\u2BFF\uFE0F]|\uD83C[\uDF00-\uDFFF]|\uD83D[\uDC00-\uDEFF]|\uD83E[\uDD00-\uDEFF]/g, "")
+      .replace(/\s+/g, " ").replace(/\s+([.,:;])/g, "$1").trim();
+  }
+  let timerAnuncio = null;
+  let falaPendente = "";
+  function anunciar(texto) {
+    const el = painel.querySelector("#cx-anuncio");
+    const t = limparFala(texto);
+    if (!el || !t) return;
+    /* Esvazia e escreve depois: a mesma frase duas vezes seguidas também é falada.
+       Frases que chegam juntas (início da fila + primeiro passo) vão juntas. */
+    falaPendente = falaPendente ? falaPendente + " " + t : t;
+    el.textContent = "";
+    clearTimeout(timerAnuncio);
+    timerAnuncio = setTimeout(() => { el.textContent = falaPendente; falaPendente = ""; }, 60);
+  }
+  /* O foco só é puxado quando já está no painel (ou quando a pessoa abriu pelo
+     teclado): nunca tirar a pessoa do meio do PJe. */
+  const focoNoPainel = () => !!raiz.activeElement;
+  let focarAoAbrir = false;
+  function focarPrimeiro() {
+    const alvo = corpo.querySelector('[role="tab"][aria-selected="true"]') ||
+      corpo.querySelector("button:not([disabled]), input, select") || painel.querySelector(".cx-power");
+    if (alvo) alvo.focus();
+  }
+  function cumprirFocoAoAbrir() {
+    if (!focarAoAbrir) return;
+    focarAoAbrir = false;
+    focarPrimeiro();
+  }
+  /* Esc dentro do painel (fora do menu e do diálogo, que tratam o seu) fecha o painel
+     e devolve o foco ao botão flutuante. */
+  painel.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape" || e.defaultPrevented) return;
+    e.preventDefault();
+    fecharPainel();
+    botao.focus();
+  });
+  /* Atalho Alt+Shift+C (commands do manifesto → fundo → esta aba). */
+  function abrirPorAtalho() {
+    if (painel.hasAttribute("aberto")) { focarPrimeiro(); return; }
+    focarAoAbrir = true;
+    alternarPainel();
+  }
+  browser.runtime.onMessage.addListener((msg) => {
+    if (msg && msg.tipo === "cratos_atalho") { abrirPorAtalho(); return Promise.resolve({ ok: true }); }
+    return undefined;
+  });
+
   /* ═══ 2.0 — AS QUATRO ABAS ═══════════════════════════════════════════════════
      Situação / Incluir / Baixar / Coletar, no padrão de abas do WAI-ARIA: só a aba
      selecionada entra no Tab; ← → Home End trocam de aba.
@@ -682,6 +754,7 @@
     renderColetar();
     irAba(abaAtual);
     mostrarNovidades();
+    cumprirFocoAoAbrir();
   }
 
   /* ── Situação: uma linha por convênio em uso (comum/situacao.js monta a linha) ──
@@ -819,6 +892,13 @@
       const a = acao(linhas[Number(b.dataset.i)]);
       b.onclick = () => a && a.fn();
     });
+    /* leitor de tela: só o que pede você (nome, situação, detalhe — falaDe nunca leva CPF,
+       CNPJ ou valores). */
+    if (painel.hasAttribute("aberto") && abaAtual === "situacao") {
+      const pedem = linhas.filter((l) => ["pronto", "pendente", "naoobtido"].includes(l.estado));
+      anunciar(pedem.length ? "Situação lida. " + pedem.map((l) => CratosSituacao.falaDe(l)).join(" ")
+        : "Situação lida. Nada pede você agora.");
+    }
     /* ponto na aba Situação: há algo pedindo você (pronto ou configuração pendente) */
     const abaSit = corpo.querySelector("#cx-aba-situacao");
     if (abaSit) {
@@ -1334,6 +1414,7 @@
       </div>` : ""}`);
     const bl = corpo.querySelector("#cx-lote-sab");
     if (bl) bl.onclick = abrirLoteSab;
+    cumprirFocoAoAbrir();
   }
 
   async function abrirLoteSab() {
@@ -1764,6 +1845,7 @@
     orquestraLedger = [];
     orquestraRefeitos = new Set();
     renderProgresso();
+    anunciar(`Fila de ${NOME_MODO[modoAtual === "baixa" ? "baixa" : "inclusao"]} iniciada, ${fila.length} ${fila.length === 1 ? "convênio" : "convênios"}.`);
     await rodarProximoConvenio(ctx);
   }
 
@@ -2111,6 +2193,10 @@
     CratosHTML.definir(div, html`<div style="font-weight:700;color:${corTopo}">${total} convênio(s): ${okN} concluído(s)${quemPrecisa}</div>${itensPrecisa}${itensRefeitos}`);
     prog.appendChild(div);
     filaTerminou();
+    anunciar(`Fila concluída: ${okN} de ${total} ${total === 1 ? "convênio concluído" : "convênios concluídos"}` +
+      (precisa.length ? `, ${precisa.length} ${precisa.length === 1 ? "precisa" : "precisam"} de você.` : "."));
+    div.tabIndex = -1;
+    if (focoNoPainel()) div.focus();
     precisa.forEach((e, i) => {
       const alvo = div.querySelector(`[data-disp="${i}"]`);
       if (alvo) renderMedicao(alvo, e.medicao, CONVENIOS.find((c) => c.id === e.id) || { id: e.id, label: e.label }, "fila", null);
@@ -2300,9 +2386,9 @@
     caixa.id = "cx-juntada-auto";
     caixa.style.cssText = "font-size:12px;margin-top:8px;padding-top:8px;border-top:1px solid var(--ln)";
     prog.appendChild(caixa);
-    /* O status da juntada é escrito por `acaoJuntar`, que procura
-       `#cx-juntar-status` — então o bloco cria esse id aqui também, em vez de
-       duplicar a lógica de mensagem. */
+    /* O status da juntada é escrito por `acaoJuntar`. 2.0: a aba Coletar também tem um
+       #cx-juntar-status (fica na tela o tempo todo), então este bloco usa um id próprio
+       e passa o elemento para `acaoJuntar`. */
     const render = (cabecalho) => {
       const cartoes = certidoes.map((c, i) =>
           html`<div style="border:1px solid var(--ln);border-radius:6px;padding:8px;margin:6px 0">
@@ -2311,20 +2397,25 @@
                — ${c.arquivos.length} arquivo(s)</div>
              <button class="cx-acao" data-cert-auto="${i}">Criar no processo</button>
            </div>`);
-      CratosHTML.definir(caixa, html`${cabecalho}${cartoes}<div class="cx-vazio" id="cx-juntar-status" style="margin-top:6px"></div>`);
+      CratosHTML.definir(caixa, html`${cabecalho}${cartoes}<div class="cx-vazio" id="cx-juntar-status-fila" style="margin-top:6px"></div>`);
       caixa.querySelectorAll("[data-cert-auto]").forEach((b) => {
         b.onclick = () => acaoJuntar(certidoes[Number(b.dataset.certAuto)],
-          Number(idProcesso), numero);
+          Number(idProcesso), numero, caixa.querySelector("#cx-juntar-status-fila"));
       });
     };
 
     if (modo !== "sim") {
       render(html`<div style="color:var(--pdtx)">Pronto para certificar nos autos (${certidoes.length}):</div>`);
+      /* 2.0: fim da fila → o foco vai para o primeiro "Criar no processo" (se a pessoa
+         está no painel) e o leitor de tela diz o que há para juntar. */
+      anunciar(`Pronto para certificar nos autos: ${certidoes.length} ${certidoes.length === 1 ? "certidão" : "certidões"}. Botão Criar no processo.`);
+      const b0 = caixa.querySelector("[data-cert-auto]");
+      if (b0 && focoNoPainel()) b0.focus();
       return;
     }
 
     render(html`<div style="color:var(--fg2)">Criando a certidão no processo…</div>`);
-    await acaoJuntar(certidoes[0], Number(idProcesso), numero);
+    await acaoJuntar(certidoes[0], Number(idProcesso), numero, caixa.querySelector("#cx-juntar-status-fila"));
     if (certidoes.length > 1) {
       const extra = document.createElement("div");
       extra.style.cssText = "color:var(--pdtx);margin-top:8px";
@@ -2354,10 +2445,12 @@
       div.style.cssText = "font-size:12px;padding:4px 0;color:var(--oktx);font-weight:700";
       div.textContent = texto;
       prog.appendChild(div);
+      anunciar(texto);
       return;
     }
     const el = prog.querySelector(`#cx-prog-${id}`);
     if (!el) return;
+    { const c = CONVENIOS.find((x) => x.id === id); anunciar(`${c ? c.label.replace(/\s*\(.*$/, "") : id}: ${texto}`); }
     const cores = { verde: "var(--oktx)", amarelo: "var(--pdtx)", erro: "var(--ertx)", cinza: "var(--fg2)" };
     el.style.color = cores[cor] || "var(--fg2)";
     // reescreve com o nome do convênio (textContent: não precisa de escape)
@@ -2830,8 +2923,8 @@
 
   /* Chamada pelo botão do painel. Uma família por vez: o PJe segura um rascunho
      de cada vez, e cada certidão é um ato. */
-  async function acaoJuntar(certidao, idProcesso, numProcesso) {
-    const st = corpo.querySelector("#cx-juntar-status");
+  async function acaoJuntar(certidao, idProcesso, numProcesso, alvo) {
+    const st = alvo || corpo.querySelector("#cx-juntar-status");
     const dizer = (frag) => CratosHTML.definir(st, frag);
     dizer(html`<span style="color:var(--fg2)">Criando a certidão no processo…</span>`);
     try {
@@ -3046,7 +3139,7 @@
   /* Gancho do ENCADEAMENTO: o harness monta uma fila, roda, e dispara os pulsos
      de conclusão via Store.set — exercitando o orquestrador REAL, não uma cópia. */
   window.__cratosPainel = {
-    host, raiz,
+    host, raiz, anunciar, abrirPorAtalho,
     // 2.0 — abas e menu
     irAba, get abaAtual() { return abaAtual; }, get filaNaAba() { return filaNaAba; },
     get filaRodando() { return filaRodando; }, renderSituacao, renderColetar, renderMenu,

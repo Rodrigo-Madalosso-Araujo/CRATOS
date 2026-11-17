@@ -17,6 +17,19 @@ browser.browserAction.onClicked.addListener(() => {
   browser.runtime.openOptionsPage();
 });
 
+/* 2.0 — atalho Alt+Shift+C (manifesto, "commands"): avisa a aba ativa, e o painel
+   dela abre e põe o foco nele. Fora do PJe não há painel para ouvir: nada acontece.
+   `commands` não pede permissão nenhuma. */
+if (browser.commands && browser.commands.onCommand) {
+  browser.commands.onCommand.addListener(async (comando) => {
+    if (comando !== "abrir-cratos") return;
+    try {
+      const [aba] = await browser.tabs.query({ active: true, currentWindow: true });
+      if (aba) await browser.tabs.sendMessage(aba.id, { tipo: "cratos_atalho" });
+    } catch (e) { /* aba sem o CRATOS: nada a fazer */ }
+  });
+}
+
 browser.runtime.onMessage.addListener((msg, sender) => {
   // Só trata as mensagens deste grupo; retorna Promise apenas para elas.
   // Para as demais, retorna undefined SÍNCRONO, deixando outros listeners responderem
