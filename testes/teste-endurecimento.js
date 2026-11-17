@@ -118,7 +118,7 @@ if (!fs.existsSync(path.join(SRC, "modulos", "limpeza.js"))) {
   {
     const a = await abrir({ numProcesso: DIG, itens: [{ arquivo: "a.pdf", convenio: "RENAJUD" }] });
     checar(a.msgs.some((m) => m.tipo === "processo_aba" && m.numProcesso === NUM), "painel avisa ao fundo em que aba está o processo");
-    checar(/só enquanto esta aba do processo estiver aberta/.test((a.d.getElementById("cx-aviso-aba") || {}).textContent || ""), "painel: linha fixa avisando que os arquivos se perdem ao fechar a aba");
+    checar(/só enquanto esta aba do processo estiver aberta/.test((a.r.getElementById("cx-aviso-aba") || {}).textContent || ""), "painel: linha fixa avisando que os arquivos se perdem ao fechar a aba");
     checar(fechar(a) === true, "⛔ arquivo do CRATOS ainda NÃO juntado: fechar a aba pede confirmação");
     await a.w.Store.set("diario:" + DIG, { numProcesso: DIG, itens: [{ arquivo: "a.pdf", juntadoEm: "2026-10-22T15:00:00Z" }] });
     await tick(20);

@@ -173,12 +173,12 @@ const abortado = () => { const e = new Error("aborted"); e.name = "AbortError"; 
   };
   {
     const a = await abrir(MED_INDISP);
-    const sel = a.d.getElementById("cx-disp-conv");
-    checar(sel && sel.options.length === 8 && a.d.getElementById("cx-disp-verificar"), "painel: \"Verificar disponibilidade do convênio\" com os 8 convênios");
+    const sel = a.r.getElementById("cx-disp-conv");
+    checar(sel && sel.options.length === 8 && a.r.getElementById("cx-disp-verificar"), "painel: \"Verificar disponibilidade do convênio\" com os 8 convênios");
     sel.value = "RENAJUD";
-    a.d.getElementById("cx-disp-verificar").click();
-    await ate(() => a.d.querySelector("#cx-disp-status .cx-disp-gerar"));
-    const st = a.d.getElementById("cx-disp-status");
+    a.r.getElementById("cx-disp-verificar").click();
+    await ate(() => a.r.querySelector("#cx-disp-status .cx-disp-gerar"));
+    const st = a.r.getElementById("cx-disp-status");
     checar(/não respondeu em 3 tentativa/.test(st.textContent) && /HTTP 503/.test(st.textContent) && !a.msgs.some((m) => m.tipo === "certidao_indisponibilidade"),
       "botão: mostra a medição e OFERECE a certidão — nada é gerado sem confirmação");
     st.querySelector(".cx-disp-gerar").click();
@@ -188,9 +188,9 @@ const abortado = () => { const e = new Error("aborted"); e.name = "AbortError"; 
   }
   {
     const a = await abrir(MED_OK);
-    a.d.getElementById("cx-disp-verificar").click();
-    await ate(() => /Nada a certificar/.test(a.d.getElementById("cx-disp-status").textContent));
-    checar(!a.d.querySelector(".cx-disp-gerar"), "convênio respondeu: \"respondeu às HH:MM… Nada a certificar\", sem botão de certidão");
+    a.r.getElementById("cx-disp-verificar").click();
+    await ate(() => /Nada a certificar/.test(a.r.getElementById("cx-disp-status").textContent));
+    checar(!a.r.querySelector(".cx-disp-gerar"), "convênio respondeu: \"respondeu às HH:MM… Nada a certificar\", sem botão de certidão");
   }
 
   /* ── 4. fila ───────────────────────────────────────────────────────────── */
@@ -205,7 +205,7 @@ const abortado = () => { const e = new Error("aborted"); e.name = "AbortError"; 
     a.P.tempos.vigiaMs = 40;
     a.P.setProcesso({ numero: NUM, id: 1 });
     a.P.setModo("inclusao");
-    a.d.querySelector(".cx-corpo").innerHTML = '<div id="cx-progresso"></div>';
+    a.r.querySelector(".cx-corpo").innerHTML = '<div id="cx-progresso"></div>';
     a.P.fila = convs; a.P.idx = 0; a.P.ledger = [];
     a.P.renderProgresso();
     await a.P.rodarProximoConvenio({ idProcesso: 1, numeroProcesso: NUM, base: "https://pje.trt18.jus.br", partes: [{ nome: "FULANO" }], xsrfToken: "" });
@@ -213,9 +213,9 @@ const abortado = () => { const e = new Error("aborted"); e.name = "AbortError"; 
   };
   {
     const a = await fila([RENAJUD, CCS], MED_INDISP);
-    await ate(() => a.d.querySelector(".cx-disp-fila .cx-disp-gerar"), 3000);
-    const caixa = a.d.querySelector(".cx-disp-fila");
-    checar(caixa && a.P.idx === 0 && /Indisponível/.test(a.d.getElementById("cx-prog-RENAJUD").textContent),
+    await ate(() => a.r.querySelector(".cx-disp-fila .cx-disp-gerar"), 3000);
+    const caixa = a.r.querySelector(".cx-disp-fila");
+    checar(caixa && a.P.idx === 0 && /Indisponível/.test(a.r.getElementById("cx-prog-RENAJUD").textContent),
       "fila: convênio sem resposta → o CRATOS mede sozinho e marca \"indisponível\", oferecendo a certidão (a fila espera)");
     caixa.querySelector(".cx-disp-gerar").click();
     await ate(() => a.msgs.some((m) => m.tipo === "certidao_indisponibilidade") && a.P.idx >= 1);
@@ -230,15 +230,15 @@ const abortado = () => { const e = new Error("aborted"); e.name = "AbortError"; 
   {
     const a = await fila([RENAJUD], MED_OK);
     await tick(250);
-    checar(!a.d.querySelector(".cx-disp-gerar") && /Aguardando conclusão/.test(a.d.getElementById("cx-prog-RENAJUD").textContent) &&
+    checar(!a.r.querySelector(".cx-disp-gerar") && /Aguardando conclusão/.test(a.r.getElementById("cx-prog-RENAJUD").textContent) &&
       a.msgs.some((m) => m.tipo === "medir_disponibilidade"), "fila: mediu e o sistema respondeu → volta a aguardar, sem certidão");
   }
   {
     const a = await fila([CCS], MED_INDISP);
     a.P.tempos.vigiaMs = 100000;
     await a.w.Store.set("orq_conv_feito", { convenio: "CCS", numProcesso: NUM, ok: false, feitos: 0, motivo: "erro", em: Date.now() + 1000 });
-    await ate(() => a.d.querySelector("#cx-relatorio .cx-disp-gerar"), 3000);
-    const rel = a.d.getElementById("cx-relatorio");
+    await ate(() => a.r.querySelector("#cx-relatorio .cx-disp-gerar"), 3000);
+    const rel = a.r.getElementById("cx-relatorio");
     checar(rel && /o sistema estava indisponível/.test(rel.textContent) && rel.querySelector(".cx-disp-gerar"),
       "fila: convênio que FALHOU → mede no fundo; indisponível → o relatório final oferece a certidão");
   }

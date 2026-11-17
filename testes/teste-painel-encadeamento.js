@@ -129,7 +129,7 @@ async function iniciar(fila, modo, esperados) {
   });
   P.setProcesso({ numero: NUM, id: 123 });
   P.setModo(modo || "inclusao");
-  amb.w.document.querySelector(".cx-corpo").innerHTML = '<div id="cx-progresso"></div>';
+  (amb.w.__cratosPainel.raiz || amb.w.document).querySelector(".cx-corpo").innerHTML = '<div id="cx-progresso"></div>';
   P.fila = fila;
   P.idx = 0;
   P.ledger = [];
@@ -145,15 +145,15 @@ const arrival = (w, convenio, arquivo) =>
 // TERMINAL do convênio (INFOJUD/CNIB): sem `arquivo`.
 const terminal = (w, o) => w.Store.set("orq_conv_feito", Object.assign({ numProcesso: NUM, em: Date.now() }, o));
 const relatorioTxt = (w) => {
-  const el = w.document.getElementById("cx-relatorio");
+  const el = (w.__cratosPainel.raiz || w.document).getElementById("cx-relatorio");
   return el ? el.textContent : "";
 };
 const botao = (w) => {
-  const a = w.document.getElementById("cx-concluir-area");
+  const a = (w.__cratosPainel.raiz || w.document).getElementById("cx-concluir-area");
   return a ? a.querySelector("button") : null;
 };
 const botaoPular = (w) => {
-  const a = w.document.getElementById("cx-concluir-area");
+  const a = (w.__cratosPainel.raiz || w.document).getElementById("cx-concluir-area");
   if (!a) return null;
   return Array.from(a.querySelectorAll("button")).find((b) => /Pular/.test(b.textContent)) || null;
 };
@@ -232,7 +232,7 @@ const botaoPular = (w) => {
   amb.respostas.SERASAJUD = { ok: true, aguardando: true, esperados: 1 };
   P.setProcesso({ numero: NUM, id: 123 });
   P.setModo("inclusao");
-  amb.w.document.querySelector(".cx-corpo").innerHTML = '<div id="cx-progresso"></div>';
+  (amb.w.__cratosPainel.raiz || amb.w.document).querySelector(".cx-corpo").innerHTML = '<div id="cx-progresso"></div>';
   P.fila = [CONV.INFOJUD, CONV.SERASAJUD];
   P.idx = 0; P.ledger = [];
   P.renderProgresso();
@@ -263,7 +263,7 @@ const botaoPular = (w) => {
   amb.respostas.CENSEC = { ok: true, aguardando: true, esperados: 1 };
   P.setProcesso({ numero: NUM, id: 123 });
   P.setModo("inclusao");              // CNIB roda como ATO (inclusao)
-  amb.w.document.querySelector(".cx-corpo").innerHTML = '<div id="cx-progresso"></div>';
+  (amb.w.__cratosPainel.raiz || amb.w.document).querySelector(".cx-corpo").innerHTML = '<div id="cx-progresso"></div>';
   P.fila = [CONV.CNIB, CONV.CENSEC];
   P.idx = 0; P.ledger = [];
   P.renderProgresso();
@@ -302,7 +302,7 @@ const botaoPular = (w) => {
   amb.respostas.CENSEC = { ok: true, aguardando: true, esperados: 1 };
   P.setProcesso({ numero: NUM, id: 123 });
   P.setModo("inclusao");
-  amb.w.document.querySelector(".cx-corpo").innerHTML = '<div id="cx-progresso"></div>';
+  (amb.w.__cratosPainel.raiz || amb.w.document).querySelector(".cx-corpo").innerHTML = '<div id="cx-progresso"></div>';
   P.fila = [CONV.RENAJUD, CONV.CENSEC];
   P.idx = 0; P.ledger = [];
   P.renderProgresso();
@@ -337,7 +337,7 @@ const botaoPular = (w) => {
   amb.respostas.CNIB = { ok: true, aguardando: true };   // sem esperados (baixa)
   P.setProcesso({ numero: NUM, id: 123 });
   P.setModo("baixa");
-  amb.w.document.querySelector(".cx-corpo").innerHTML = '<div id="cx-progresso"></div>';
+  (amb.w.__cratosPainel.raiz || amb.w.document).querySelector(".cx-corpo").innerHTML = '<div id="cx-progresso"></div>';
   P.fila = [CONV.CNIB]; P.idx = 0; P.ledger = [];
   P.renderProgresso();
   await P.rodarProximoConvenio(ctxPadrao());
@@ -366,7 +366,7 @@ const botaoPular = (w) => {
   amb.respostas.RENAJUD = { ok: false, motivo: "nenhum executado no processo" };
   P.setProcesso({ numero: NUM, id: 123 });
   P.setModo("inclusao");
-  amb.w.document.querySelector(".cx-corpo").innerHTML = '<div id="cx-progresso"></div>';
+  (amb.w.__cratosPainel.raiz || amb.w.document).querySelector(".cx-corpo").innerHTML = '<div id="cx-progresso"></div>';
   P.fila = [CONV.RENAJUD];
   P.idx = 0; P.ledger = [];
   P.renderProgresso();
@@ -424,7 +424,7 @@ const botaoPular = (w) => {
   amb.respostas.CNIB = { ok: true, aguardando: true, esperados: 1 };
   P.setProcesso({ numero: NUM, id: 123 });
   P.setModo("inclusao");
-  amb.w.document.querySelector(".cx-corpo").innerHTML = '<div id="cx-progresso"></div>';
+  (amb.w.__cratosPainel.raiz || amb.w.document).querySelector(".cx-corpo").innerHTML = '<div id="cx-progresso"></div>';
   P.fila = [CONV.CNIB]; P.idx = 0; P.ledger = [];
   P.renderProgresso();
   await P.rodarProximoConvenio(ctxPadrao());
@@ -447,7 +447,7 @@ const botaoPular = (w) => {
       { nome: "ANTONIO EXEMPLO", cpfcnpj: "45645645609", polo: "passivo" },
     ],
   });
-  const cbs = Array.from(w.document.querySelectorAll(".cx-sel-parte"));
+  const cbs = Array.from((w.__cratosPainel.raiz || w.document).querySelectorAll(".cx-sel-parte"));
   checar(cbs.length === 3, "renderiza um checkbox por parte");
   checar(cbs[0] && cbs[0].checked === false, "⛔ o polo ATIVO nasce DESMARCADO");
   checar(cbs[1] && cbs[1].checked === true && cbs[2] && cbs[2].checked === true,

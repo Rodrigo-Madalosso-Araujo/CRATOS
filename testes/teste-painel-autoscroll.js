@@ -8,7 +8,7 @@
  * inteligente"), não "sempre rolar".
  *
  * O que se trava aqui (o elemento que ROLA é o próprio <cratos-painel>, não o
- * .cx-corpo — ver painel.css: cratos-painel { max-height; overflow-y:auto }):
+ * .cx-corpo — ver painel-estilo.js: cratos-painel { max-height; overflow-y:auto }):
  *  1. No fim + conteúdo novo → rola pro fim (scrollTop = scrollHeight).
  *  2. Rolou pra cima → conteúdo novo NÃO te puxa pro fim (respeita a leitura).
  *  3. Voltou pro pé → volta a grudar (conteúdo novo rola de novo).
@@ -61,7 +61,7 @@ function montar() {
   w.eval(fs.readFileSync(path.join(SRC, "comum", "faixa.js"), "utf8"));
   w.eval(fs.readFileSync(path.join(SRC, "conteudo", "painel.js"), "utf8"));
 
-  const painel = w.document.querySelector("cratos-painel");
+  const painel = (w.__cratosPainel.raiz || w.document).querySelector("cratos-painel");
   /* jsdom não faz layout: scrollHeight/clientHeight são 0. Simulamos um painel
      com conteúdo maior que a janela visível (o cenário em que rolar importa). */
   Object.defineProperty(painel, "scrollHeight", { get: () => ALTURA, configurable: true });

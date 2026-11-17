@@ -1,10 +1,18 @@
 /*
- * painel.css — estilo do painel sobreposto.
- * Usamos a tag inventada <cratos-painel> como raiz: nenhuma regra do PJe casa
- * com um elemento que não existe no HTML dele, então o estilo não vaza nos dois sentidos.
- * Tema escuro; vermelho (#e11d1d, do ícone) reservado só para ação/perigo.
+ * conteudo/painel-estilo.js — o CSS do painel, como TEXTO (2.0).
+ *
+ * Antes era o painel.css, injetado pelo content_scripts na página do PJe. Na 2.0 o
+ * painel vive num shadow DOM aberto: o CSS do PJe não entra e o nosso não sai. O
+ * texto vai num <style> dentro do shadowRoot, junto com o de comum/tema.js.
+ *
+ * `:host { all: initial }` corta a herança (fonte, cor, altura de linha, alinhamento)
+ * que ainda atravessaria a fronteira vinda do <body> do PJe.
  */
-
+(function () {
+  "use strict";
+  if (globalThis.CratosPainelEstilo) return;
+  globalThis.CratosPainelEstilo = String.raw`
+:host { all: initial; }
 /* Quadrado de cantos arredondados, no formato do ChatJT, e SEM a moldura
    vermelha (Rodrigo, 19/08). O vermelho fica reservado para ação e perigo
    dentro do painel — num botão que fica sobre o PJe o dia inteiro, ele gritava.
@@ -132,3 +140,5 @@ cratos-painel .cx-power {
 cratos-painel .cx-power-ico { width: 15px; height: 15px; display: block; }
 cratos-painel .cx-power-txt { font-size: 11px; font-weight: 600; }
 cratos-painel .cx-power-grande .cx-power-ico { width: 28px; height: 28px; margin: 0 auto; }
+`;
+})();

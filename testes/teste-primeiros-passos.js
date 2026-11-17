@@ -393,12 +393,12 @@ function paginaExtensao(corpoHtml, mem, catalogo) {
       return a;
     };
     const sem = await abrir({ infojud: {} });
-    const av = sem.d.querySelector('.cx-parte[data-conv-id="INFOJUD"] .cx-aviso-config');
+    const av = sem.r.querySelector('.cx-parte[data-conv-id="INFOJUD"] .cx-aviso-config');
     checar(av && /Vara do e-CAC não configurada/.test(av.textContent), "painel: INFOJUD sem vara mostra o aviso");
     if (av) { av.querySelector(".cx-abrir-primeiros").click(); await tick(20); }
     checar(sem.msgs.some((m) => m && m.tipo === "abrir_primeiros"), "o link do aviso abre os Primeiros passos");
     const com = await abrir({ infojud: { vara: "001" } });
-    checar(!com.d.querySelector(".cx-aviso-config"), "com a vara configurada, nada de aviso");
+    checar(!com.r.querySelector(".cx-aviso-config"), "com a vara configurada, nada de aviso");
   }
 
   /* ── 6b. INFOJUD: padrão pós-instalação (Rodrigo, 26/10) e config efetiva ─ */

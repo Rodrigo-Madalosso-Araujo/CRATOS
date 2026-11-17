@@ -401,12 +401,12 @@ function fetchFalso(opc) {
     P.setProcesso({ id: 555, numero: P1.numero });
     P.setPartes([{ nome: "EMPRESA FICTICIA LTDA", cpfcnpj: "00000000000191", polo: "PASSIVO" }]);
     P.renderModoSelecao();
-    checar(!!e.d.querySelector("#cx-coletar-sab"), "painel: botão 'Coletar SAB' na tela do processo");
+    checar(!!e.r.querySelector("#cx-coletar-sab"), "painel: botão 'Coletar SAB' na tela do processo");
     await P.coletarSab();
-    const caixas = Array.from(e.d.querySelectorAll(".cx-sab-det"));
+    const caixas = Array.from(e.r.querySelectorAll(".cx-sab-det"));
     checar(caixas.length === 2 && caixas.every((c) => c.checked), "painel: seletor com as 2 determinações do processo (minuta e outro processo fora), as duas marcadas");
-    e.d.querySelector("#cx-sab-ir").click();
-    await espera(() => e.d.querySelector("#cx-sab-juntar"));
+    e.r.querySelector("#cx-sab-ir").click();
+    await espera(() => e.r.querySelector("#cx-sab-juntar"));
     const fab = e.msgs.filter((m) => m.tipo === "fabricar_pdf");
     const reg = e.msgs.filter((m) => m.tipo === "sab_registrar_pdf");
     checar(fab.length === 2 && fab.every((m) => m.desenho && Array.isArray(m.desenho.blocos) && m.convenio === "SAB" && m.operacao === "respostas_sab"),
@@ -416,7 +416,7 @@ function fetchFalso(opc) {
     checar(regProt === "20260087000001,20260087519703,20260088072394", "⛔ painel: anexa os relatórios novos, inclusive a transferência enviada (o já juntado, o que falhou e o não enviado ficam fora)");
     const cert43999 = JSON.stringify(fab.find((m) => m.grupo === "43999").desenho.blocos);
     checar(/já juntado em 29\/10/.test(cert43999) && /20260086999999 não pôde ser obtido/.test(cert43999), "painel: certidão diz o já juntado e o não obtido");
-    const txt = e.d.querySelector("#cx-sab-status").textContent;
+    const txt = e.r.querySelector("#cx-sab-status").textContent;
     checar(/verificar a garantia do juízo/.test(txt), "painel: alerta de obrigação realizada no resultado");
     checar(!f.chamadas.some((c) => /atividade$/.test(c.caminho)), "painel: GIGS desligado por padrão → nenhuma atividade lançada");
     checar(!f.chamadas.some((c) => /assinar|assinatura|transicoes/i.test(c.caminho)), "⛔ painel (coleta): nada de assinar nem de transição do SAB");
@@ -432,15 +432,15 @@ function fetchFalso(opc) {
     P.setPartesSelecionadas([{ nome: "EMPRESA FICTICIA LTDA", cpfcnpj: "00000000000191" }]);
     P.setModo("baixa");
     P.renderListaConvenios();
-    e.d.querySelectorAll(".cx-sel-conv").forEach((c) => { c.checked = c.dataset.id === "SAB"; });
+    e.r.querySelectorAll(".cx-sel-conv").forEach((c) => { c.checked = c.dataset.id === "SAB"; });
     const pr = P.executarSelecionados();
-    await espera(() => e.d.querySelector('input[name="cx-sab-baixa"]'));
-    const radios = Array.from(e.d.querySelectorAll('input[name="cx-sab-baixa"]'));
-    checar(radios.length === 2 && radios.every((r) => !r.checked) && e.d.querySelector("#cx-sab-baixa-ok").disabled,
+    await espera(() => e.r.querySelector('input[name="cx-sab-baixa"]'));
+    const radios = Array.from(e.r.querySelectorAll('input[name="cx-sab-baixa"]'));
+    checar(radios.length === 2 && radios.every((r) => !r.checked) && e.r.querySelector("#cx-sab-baixa-ok").disabled,
       "⛔ baixa: duas ativas → escolha única, nada pré-marcado, botão travado até escolher");
     checar(!e.msgs.some((m) => m.tipo === "orquestra_executar"), "baixa: a fila não anda antes da escolha");
     radios[1].checked = true; radios[1].dispatchEvent(new e.w.Event("change"));
-    e.d.querySelector("#cx-sab-baixa-ok").click();
+    e.r.querySelector("#cx-sab-baixa-ok").click();
     await espera(() => e.msgs.some((m) => m.tipo === "orquestra_executar"));
     const ex = e.msgs.find((m) => m.tipo === "orquestra_executar");
     checar(ex && ex.ctx && String(ex.ctx.sabIdDeterminacao) === radios[1].value, "baixa: a escolha vai no ctx para o módulo");
@@ -454,17 +454,17 @@ function fetchFalso(opc) {
     const e = montarPainel(SRC, { responder: fundoSimulado(), fetch: f, mem: { "cratos:config": { sab: { gigsObrigacaoRealizada: { ativo: true } } } } });
     const P = e.P;
     P.renderSemProcesso();
-    checar(!!e.d.querySelector("#cx-lote-sab"), "lote: botão 'Coletar respostas SAB' na tela sem processo");
+    checar(!!e.r.querySelector("#cx-lote-sab"), "lote: botão 'Coletar respostas SAB' na tela sem processo");
     await P.abrirLoteSab();
-    const inp = e.d.querySelector("#cx-lote-dia");
+    const inp = e.r.querySelector("#cx-lote-dia");
     const hoje = new Date();
     checar(inp && inp.value === L.diaUtilAnterior(hoje), "lote: data já vem no dia útil anterior");
-    checar(e.d.querySelector('input[name="cx-lote-modo"][value="resposta"]').checked, "lote: modalidade padrão 'só a resposta'");
-    checar(e.d.querySelector("#cx-lote-gigs").checked, "lote: GIGS segue a Preferência (ligada neste cenário)");
+    checar(e.r.querySelector('input[name="cx-lote-modo"][value="resposta"]').checked, "lote: modalidade padrão 'só a resposta'");
+    checar(e.r.querySelector("#cx-lote-gigs").checked, "lote: GIGS segue a Preferência (ligada neste cenário)");
     inp.value = "2026-11-12";
-    e.d.querySelector("#cx-lote-ir").click();
-    await espera(() => /Respostas SAB de 12\/11\/2026/.test(e.d.querySelector("#cx-lote-sab-area").textContent), 8000);
-    const txt = e.d.querySelector("#cx-lote-sab-area").textContent;
+    e.r.querySelector("#cx-lote-ir").click();
+    await espera(() => /Respostas SAB de 12\/11\/2026/.test(e.r.querySelector("#cx-lote-sab-area").textContent), 8000);
+    const txt = e.r.querySelector("#cx-lote-sab-area").textContent;
     checar(/3 processo\(s\) com transferência; 1 com juntada/.test(txt) || /2 processo\(s\) com transferência; 1 com juntada/.test(txt),
       "lote: relatório final com os processos e as juntadas");
     checar(!f.chamadas.some((c) => /determinacoes\/46000\/ordens/.test(c.caminho)), "lote: determinação encerrada antes do dia nem é lida");
@@ -480,7 +480,7 @@ function fetchFalso(opc) {
     const gigs = f.chamadas.filter((c) => /pje-gigs-api\/api\/atividade$/.test(c.caminho));
     checar(gigs.length === 1 && /"idProcesso":"555"/.test(gigs[0].corpo), "lote: GIGS (opção ligada) só no processo com obrigação realizada");
     checar(!f.chamadas.some((c) => /assinar|assinatura|transicoes/i.test(c.caminho)), "⛔ lote: o CRATOS nunca assina nem chama transição do SAB");
-    checar(!!e.d.querySelector("#cx-lote-assinar"), "lote: oferece a assinatura assistida");
+    checar(!!e.r.querySelector("#cx-lote-assinar"), "lote: oferece a assinatura assistida");
   }
 
   /* 5d. Juntada que falha: o relatório NÃO diz "juntado" */
@@ -489,11 +489,11 @@ function fetchFalso(opc) {
     const e = montarPainel(SRC, { responder: fundoSimulado(), fetch: f });
     e.P.renderSemProcesso();
     await e.P.abrirLoteSab();
-    e.d.querySelector("#cx-lote-dia").value = "2026-11-12";
-    e.d.querySelector("#cx-lote-ir").click();
-    await espera(() => /Respostas SAB de 12\/11\/2026/.test(e.d.querySelector("#cx-lote-sab-area").textContent), 8000);
-    const txt = e.d.querySelector("#cx-lote-sab-area").textContent;
-    checar(!/✓ juntado/.test(txt) && /NÃO juntado/.test(txt) && /não achei o tipo de documento "Sisbajud \(transferência\)"/.test(txt) && !e.d.querySelector("#cx-lote-assinar"),
+    e.r.querySelector("#cx-lote-dia").value = "2026-11-12";
+    e.r.querySelector("#cx-lote-ir").click();
+    await espera(() => /Respostas SAB de 12\/11\/2026/.test(e.r.querySelector("#cx-lote-sab-area").textContent), 8000);
+    const txt = e.r.querySelector("#cx-lote-sab-area").textContent;
+    checar(!/✓ juntado/.test(txt) && /NÃO juntado/.test(txt) && /não achei o tipo de documento "Sisbajud \(transferência\)"/.test(txt) && !e.r.querySelector("#cx-lote-assinar"),
       "⛔ lote: juntada que falha não aparece como 'juntado' (mostra 'NÃO juntado' e o motivo; nada para assinar)");
   }
   fim();

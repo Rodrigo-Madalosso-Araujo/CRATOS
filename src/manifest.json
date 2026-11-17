@@ -79,10 +79,9 @@
         "comum/novidades.js",
         "comum/sab-leitura.js",
         "comum/convenios-uso.js",
+        "comum/tema.js",
+        "conteudo/painel-estilo.js",
         "conteudo/painel.js"
-      ],
-      "css": [
-        "conteudo/painel.css"
       ],
       "run_at": "document_idle"
     },

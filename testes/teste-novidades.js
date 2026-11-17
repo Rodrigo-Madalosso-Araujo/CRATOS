@@ -74,7 +74,7 @@ if (!fs.existsSync(path.join(SRC, "comum", "novidades.js"))) {
   };
   {
     const a = await abrir({});
-    checar(!a.d.getElementById("cx-novidades"), "sem atualização marcada: nada de cartão");
+    checar(!a.r.getElementById("cx-novidades"), "sem atualização marcada: nada de cartão");
   }
   {
     /* 1.9.2 (ao vivo, 26/10): a tela inicial desenhada duas vezes seguidas mostrava o cartão DOBRADO */
@@ -85,11 +85,11 @@ if (!fs.existsSync(path.join(SRC, "comum", "novidades.js"))) {
     a.P.mostrarNovidades();
     a.P.mostrarNovidades();
     await tick(80);
-    checar(a.d.querySelectorAll("#cx-novidades").length === 1, "⛔ AO VIVO 26/10: chamadas seguidas mostram UM cartão de novidades, não dois");
+    checar(a.r.querySelectorAll("#cx-novidades").length === 1, "⛔ AO VIVO 26/10: chamadas seguidas mostram UM cartão de novidades, não dois");
   }
   {
     const a = await abrir({ "cratos:novidades_pendente": { de: "1.8.7", para: "1.9.0" } });
-    const card = a.d.getElementById("cx-novidades");
+    const card = a.r.getElementById("cx-novidades");
     checar(card && /Novidades da 1\.9\.0/.test(card.textContent) && /Verificar disponibilidade/.test(card.textContent) &&
       card.parentNode.firstChild === card, "depois de atualizar: cartão \"Novidades da 1.9.0\" no topo do painel");
     const hist = card.querySelector("#cx-novidades-hist");
@@ -97,21 +97,21 @@ if (!fs.existsSync(path.join(SRC, "comum", "novidades.js"))) {
     checar(hist.style.display === "block" && /SNIPER/.test(hist.textContent), "\"ver versões anteriores\" abre o histórico");
     card.querySelector("#cx-novidades-ok").click();
     await tick(30);
-    checar(!a.d.getElementById("cx-novidades") && a.mem["cratos:novidades_pendente"] === null, "\"Entendi\" apaga o cartão e a marca");
+    checar(!a.r.getElementById("cx-novidades") && a.mem["cratos:novidades_pendente"] === null, "\"Entendi\" apaga o cartão e a marca");
     a.P.renderModoSelecao();
     await tick(60);
-    checar(!a.d.getElementById("cx-novidades"), "…e ele NÃO volta na próxima abertura");
+    checar(!a.r.getElementById("cx-novidades"), "…e ele NÃO volta na próxima abertura");
   }
   {
     const a = await abrir({ "cratos:novidades_pendente": { de: "1.6.5", para: "1.9.0" } });
-    const card = a.d.getElementById("cx-novidades");
+    const card = a.r.getElementById("cx-novidades");
     checar(card && /Novidades desde a 1\.6\.5/.test(card.textContent) && /PREVJUD/.test(card.textContent) && /SNIPER/.test(card.textContent),
       "quem pulou versões: \"Novidades desde a 1.6.5\", com 1.7, 1.8 e 1.9.0");
   }
   {
     const a = await abrir({ "cratos:novidades_pendente": { de: "1.8.7", para: "1.9.0" },
       "cratos:config": { infojud: { colheitaAutomatica: "nao" }, novidades: { mostrar: { ativo: false } } } });
-    checar(!a.d.getElementById("cx-novidades"), "Preferência desligada: não mostra");
+    checar(!a.r.getElementById("cx-novidades"), "Preferência desligada: não mostra");
   }
 
   {
@@ -121,7 +121,7 @@ if (!fs.existsSync(path.join(SRC, "comum", "novidades.js"))) {
     a.P.setPartes([{ nome: "FULANO DE TAL", cpfcnpj: "123.456.789-09", polo: "PASSIVO" }]);
     a.P.renderModoSelecao();
     await tick(60);
-    const card = a.d.getElementById("cx-novidades");
+    const card = a.r.getElementById("cx-novidades");
     checar(card && !card.querySelector("img") && /<img src=x/.test(card.textContent), "⛔ texto das novidades é escapado (CratosHTML)");
   }
 

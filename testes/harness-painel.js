@@ -10,7 +10,7 @@ const { JSDOM } = require("jsdom");
 
 function montarPainel(SRC, opcoes) {
   const op = opcoes || {};
-  const dom = new JSDOM("<!doctype html><html><body></body></html>", {
+  const dom = new JSDOM(op.html || "<!doctype html><html><body></body></html>", {
     url: op.url || "https://pje.trt18.jus.br/pjekz/processo/1", runScripts: "outside-only", pretendToBeVisual: true,
   });
   const w = dom.window;
@@ -69,9 +69,17 @@ function montarPainel(SRC, opcoes) {
   if (fs.existsSync(sabL)) w.eval(fs.readFileSync(sabL, "utf8"));
   const usoL = path.join(SRC, "comum", "convenios-uso.js");    // 1.9.4
   if (fs.existsSync(usoL)) w.eval(fs.readFileSync(usoL, "utf8"));
+  for (const extra of [["comum", "tema.js"], ["conteudo", "painel-estilo.js"]]) {   // 2.0
+    const f = path.join(SRC, ...extra);
+    if (fs.existsSync(f)) w.eval(fs.readFileSync(f, "utf8"));
+  }
   if (op.fetch) w.fetch = op.fetch;
   w.eval(fs.readFileSync(path.join(SRC, "conteudo", "painel.js"), "utf8"));
-  return { w, d: w.document, mem, msgs, respostas, P: w.__cratosPainel };
+  /* 2.0: o painel mora num shadow DOM aberto. `r` é a raiz onde procurar os
+     elementos do PAINEL; `d` continua sendo a página (PJe). */
+  const P = w.__cratosPainel;
+  const r = (P && P.raiz) || w.document;
+  return { w, d: w.document, r, mem, msgs, respostas, P };
 }
 
 module.exports = { montarPainel };

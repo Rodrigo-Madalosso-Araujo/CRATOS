@@ -82,44 +82,44 @@ const T18 = "https://pje.trt18.jus.br", T5 = "https://pje.trt5.jus.br";
     e.P.setPartesSelecionadas(partes);
     return e;
   };
-  const linhas = (e) => Array.from(e.d.querySelectorAll(".cx-sel-conv")).map((x) => x.dataset.id);
+  const linhas = (e) => Array.from(e.r.querySelectorAll(".cx-sel-conv")).map((x) => x.dataset.id);
   {
     const e = await abrir({ convenios: { ccs: { ativo: false }, prevjud: { ativo: false } } });
     e.P.renderModoSelecao();
-    checar(!e.d.querySelector("#cx-coletar-ccs") && !e.d.querySelector("#cx-coletar-prevjud"), "painel: CCS e PREVJUD desligados → sem os botões de coleta deles");
-    checar(e.d.querySelector("#cx-coletar-sab") && e.d.querySelector("#cx-localizar") && e.d.querySelector("#cx-juntar"), "painel: os demais botões e a juntada continuam");
-    const opts = Array.from(e.d.querySelectorAll("#cx-disp-conv option")).map((o) => o.value);
+    checar(!e.r.querySelector("#cx-coletar-ccs") && !e.r.querySelector("#cx-coletar-prevjud"), "painel: CCS e PREVJUD desligados → sem os botões de coleta deles");
+    checar(e.r.querySelector("#cx-coletar-sab") && e.r.querySelector("#cx-localizar") && e.r.querySelector("#cx-juntar"), "painel: os demais botões e a juntada continuam");
+    const opts = Array.from(e.r.querySelectorAll("#cx-disp-conv option")).map((o) => o.value);
     checar(opts.length && !opts.includes("CCS") && !opts.includes("PREVJUD") && opts.includes("RENAJUD"), "painel: \"Verificar disponibilidade\" sem os desligados");
     e.P.setModo("inclusao"); e.P.renderListaConvenios();
     const l = linhas(e);
     checar(l.length === 7 && !l.includes("CCS") && !l.includes("PREVJUD") && l.includes("SAB"), "⛔ fila (inclusão): desligado não aparece");
-    e.d.querySelector("#cx-modo-inclusao");
+    e.r.querySelector("#cx-modo-inclusao");
   }
   {
     const e = await abrir({}, "https://pje.trt5.jus.br/pjekz/processo/1");
     e.P.renderModoSelecao();
-    checar(!e.d.querySelector("#cx-coletar-sab"), "⛔ TRT5: sem \"Coletar SAB\"");
+    checar(!e.r.querySelector("#cx-coletar-sab"), "⛔ TRT5: sem \"Coletar SAB\"");
     e.P.setModo("baixa"); e.P.renderListaConvenios();
     checar(!linhas(e).includes("SAB") && linhas(e).includes("RENAJUD"), "⛔ TRT5: SAB fora da fila de baixa");
     e.P.setModo("inclusao"); e.P.renderListaConvenios();
     checar(!linhas(e).includes("SAB") && linhas(e).length === 8, "⛔ TRT5: SAB fora da fila de inclusão");
     e.P.renderSemProcesso();
-    checar(!e.d.querySelector("#cx-lote-sab"), "⛔ TRT5: sem o lote \"Coletar respostas SAB\" no Meu painel");
+    checar(!e.r.querySelector("#cx-lote-sab"), "⛔ TRT5: sem o lote \"Coletar respostas SAB\" no Meu painel");
   }
   {
     const e = await abrir({ convenios: { sab: { ativo: false } } });
     e.P.renderSemProcesso();
-    checar(!e.d.querySelector("#cx-lote-sab") && /Nenhum processo aberto/.test(e.d.body.textContent), "SAB desligado no TRT18: sem o lote, só o aviso de sempre");
+    checar(!e.r.querySelector("#cx-lote-sab") && /Nenhum processo aberto/.test(e.r.textContent), "SAB desligado no TRT18: sem o lote, só o aviso de sempre");
     const e2 = await abrir({});
     e2.P.renderSemProcesso();
-    checar(!!e2.d.querySelector("#cx-lote-sab"), "SAB ligado no TRT18: o lote aparece");
+    checar(!!e2.r.querySelector("#cx-lote-sab"), "SAB ligado no TRT18: o lote aparece");
   }
   {
     const e = await abrir({ convenios: { cnib: { ativo: false } } });
     e.P.setModo("baixa"); e.P.renderListaConvenios();
     const antes = linhas(e);
     checar(antes.join() === "SAB,RENAJUD,SERASAJUD", "baixa com CNIB desligado: SAB, RENAJUD, SerasaJUD");
-    e.d.querySelectorAll(".cx-ord-down")[1].click();
+    e.r.querySelectorAll(".cx-ord-down")[1].click();
     checar(linhas(e).join() === "SAB,SERASAJUD,RENAJUD", "▼ troca com o vizinho VISÍVEL (antes trocava com um escondido e nada mudava)");
     checar(e.P.ordem.indexOf("CNIB") >= 0 && e.P.ordem.length === 9, "a ordem salva continua com todos, inclusive o desligado");
   }
@@ -127,7 +127,7 @@ const T18 = "https://pje.trt18.jus.br", T5 = "https://pje.trt5.jus.br";
     const tudoOff = {}; U.CONVENIOS.forEach((c) => { tudoOff[c.nome] = { ativo: false }; });
     const e = await abrir({ convenios: tudoOff });
     e.P.setModo("inclusao"); e.P.renderListaConvenios();
-    checar(linhas(e).length === 0 && /Convênios em uso/.test(e.d.body.textContent), "tudo desligado: o painel aponta para as Preferências");
+    checar(linhas(e).length === 0 && /Convênios em uso/.test(e.r.textContent), "tudo desligado: o painel aponta para as Preferências");
   }
 
   /* ═══ 4. PREFERÊNCIAS (tela) ═══ */

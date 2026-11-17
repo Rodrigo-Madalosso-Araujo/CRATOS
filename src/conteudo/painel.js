@@ -15,7 +15,7 @@
   if (window.__cratosInjetado) return;
   window.__cratosInjetado = true;
 
-  /* O de 128: o CSS reduz para 42px (ver a nota em painel.css).
+  /* O de 128: o CSS reduz para 42px (ver a nota em painel-estilo.js).
      ATENÇÃO: todo ícone usado AQUI precisa estar em web_accessible_resources do
      manifest. Content script não carrega arquivo da extensão como <img src> sem
      essa declaração — e a falha é silenciosa: o Firefox só não desenha, sobra o
@@ -48,8 +48,21 @@
     <div class="cx-corpo"><div class="cx-vazio">Clique no ícone para capturar o processo.</div></div>
   `);
 
-  document.body.appendChild(botao);
-  document.body.appendChild(painel);
+  /* 2.0: botão e painel moram num shadow DOM ABERTO, pendurado num host próprio.
+     O CSS do PJe não alcança nada aqui dentro e o nosso não vaza para a página.
+     "Aberto" porque o leitor de tela e os testes precisam enxergar a árvore; o
+     isolamento que interessa é o de estilo, não o de acesso.
+     O CSS entra como texto (comum/tema.js + conteudo/painel-estilo.js): nenhum
+     arquivo da extensão fica exposto à página. */
+  const host = document.createElement("cratos-raiz");
+  const raiz = host.attachShadow({ mode: "open" });
+  const estilo = document.createElement("style");
+  estilo.textContent = (globalThis.CratosTema ? CratosTema.css() + "\n" : "") +
+    (globalThis.CratosPainelEstilo || "");
+  raiz.appendChild(estilo);
+  raiz.appendChild(botao);
+  raiz.appendChild(painel);
+  document.body.appendChild(host);
 
   const corpo = painel.querySelector(".cx-corpo");
   let partesAtuais = [];
@@ -2571,6 +2584,7 @@
   /* Gancho do ENCADEAMENTO: o harness monta uma fila, roda, e dispara os pulsos
      de conclusão via Store.set — exercitando o orquestrador REAL, não uma cópia. */
   window.__cratosPainel = {
+    host, raiz,
     rodarProximoConvenio,
     renderBotaoConcluiu,
     renderRelatorioFinal,

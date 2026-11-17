@@ -78,7 +78,7 @@ async function iniciar(fila, modo, antes) {
   if (antes) await antes(amb);
   P.setProcesso({ numero: NUM, id: 123 });
   P.setModo(modo || "inclusao");
-  amb.w.document.querySelector(".cx-corpo").innerHTML = '<div id="cx-progresso"></div>';
+  (amb.w.__cratosPainel.raiz || amb.w.document).querySelector(".cx-corpo").innerHTML = '<div id="cx-progresso"></div>';
   P.fila = fila.slice(); P.idx = 0; P.ledger = [];
   if ("refeitos" in P) P.refeitos = new amb.w.Set();
   P.renderProgresso();
@@ -86,12 +86,12 @@ async function iniciar(fila, modo, antes) {
   await tick();
   return Object.assign(amb, { P });
 }
-const area = (w) => w.document.getElementById("cx-concluir-area");
+const area = (w) => (w.__cratosPainel.raiz || w.document).getElementById("cx-concluir-area");
 const btnRefazer = (w) => { const a = area(w); return a ? Array.from(a.querySelectorAll("button")).find((b) => /Refazer/.test(b.textContent)) || null : null; };
 const nota = (w) => { const a = area(w); const n = a && a.querySelector(".cx-refazer-nota"); return n ? n.textContent : ""; };
 const chegou = (w, convenio, arquivo) => w.Store.set("orq_conv_feito", { convenio, numProcesso: NUM, ok: true, arquivo, em: Date.now() });
 const marco = (w, convenio, oque, em) => w.Store.set("orq_marco", { convenio, numProcesso: NUM, oque, em: em || Date.now() });
-const progresso = (w, id) => { const el = w.document.getElementById("cx-prog-" + id); return el ? el.textContent : ""; };
+const progresso = (w, id) => { const el = (w.__cratosPainel.raiz || w.document).getElementById("cx-prog-" + id); return el ? el.textContent : ""; };
 
 (async () => {
   {
@@ -123,7 +123,7 @@ const progresso = (w, id) => { const el = w.document.getElementById("cx-prog-" +
     checar(!btnRefazer(w), "⛔ na 2ª tentativa não há outro Refazer (um por convênio: sem laço)");
     await chegou(w, "CENSEC", "CENSEC.pdf");
     await tick(80);
-    const rel = (w.document.getElementById("cx-relatorio") || {}).textContent || "";
+    const rel = ((w.__cratosPainel.raiz || w.document).getElementById("cx-relatorio") || {}).textContent || "";
     checar(/2 convênio\(s\): 2 concluído\(s\)/.test(rel) && /↻ CENSEC — 1ª tentativa não concluída — refeita no fim da fila/.test(rel),
       "relatório: conta a 2ª tentativa e guarda o rastro da 1ª (sem contar em dobro)");
   }

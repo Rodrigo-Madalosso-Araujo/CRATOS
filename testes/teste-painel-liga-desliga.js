@@ -144,7 +144,7 @@ function montar(ligadaInicial) {
 {
   const { w } = montar();          // ligado
   await tick();
-  const power = w.document.querySelector("cratos-painel .cx-power");
+  const power = (w.__cratosPainel.raiz || w.document).querySelector("cratos-painel .cx-power");
   checar(!!power, "o interruptor de energia existe no cabeçalho");
   checar(!!(power && power.querySelector("svg")),
     "⛔ o ícone é um SVG inline (não depende de fonte — não vira 'tofu')");
@@ -157,7 +157,7 @@ function montar(ligadaInicial) {
 {
   const { w } = montar(false);     // desligado
   await tick();
-  const txt = w.document.querySelector("cratos-painel .cx-power .cx-power-txt");
+  const txt = (w.__cratosPainel.raiz || w.document).querySelector("cratos-painel .cx-power .cx-power-txt");
   checar(!!(txt && /Desligado/.test(txt.textContent || "")),
     "desligado: o rótulo diz 'Desligado'");
   const P = w.__cratosPainel;
@@ -171,9 +171,9 @@ function montar(ligadaInicial) {
 /* ── 7. Nem o código-fonte nem o CSS trazem o glifo ⏻ (regressão) ──────────── */
 {
   const js = fs.readFileSync(path.join(SRC, "conteudo", "painel.js"), "utf8");
-  const css = fs.readFileSync(path.join(SRC, "conteudo", "painel.css"), "utf8");
+  const css = fs.readFileSync(path.join(SRC, "conteudo", "painel-estilo.js"), "utf8");
   checar(!/⏻/.test(js), "⛔ painel.js não tem mais o caractere ⏻");
-  checar(!/⏻/.test(css), "⛔ painel.css não tem mais o caractere ⏻ (o badge virou SVG)");
+  checar(!/⏻/.test(css), "⛔ o CSS do painel (painel-estilo.js) não tem mais o caractere ⏻ (o badge virou SVG)");
 }
 
 console.log("\n=== teste-painel-liga-desliga.js ===");
