@@ -26,6 +26,14 @@
   let _cratosLigado = true;
   Store.ligada().then((v) => { _cratosLigado = v; }).catch(() => {});
 
+  /* 2.0 — CORTINA (comum/faixa.js): cobre só o que o CRATOS faz sozinho (pesquisar,
+     preencher). Sai sempre no fim da etapa, antes da sua vez: escolher o veículo,
+     conferir e Confirmar, selecionar e Retirar. */
+  async function comCortina(texto, fn) {
+    if (typeof CratosOverlay === "undefined" || !CratosOverlay.durante) return fn();
+    return CratosOverlay.durante(texto, fn);
+  }
+
   /* ═══════════════════════════════════════════════════════════════════════════
    * FOLHA FABRICADA A PARTIR DO JSON — no lugar da impressão nativa
    * ═══════════════════════════════════════════════════════════════════════════
@@ -466,7 +474,10 @@
   }
 
   // ── INCLUSÃO (preparar) ────────────────────────────────────────────────────
-  async function prepararInclusao(est) {
+  function prepararInclusao(est) {
+    return comCortina("preparando a restrição no RENAJUD. A confirmação será sua.", () => _prepararInclusao(est));
+  }
+  async function _prepararInclusao(est) {
     if (maisPjePresente()) {
       /* Não é falha: é convivência. Duas extensões preenchendo o mesmo
          formulário brigam e o resultado é imprevisível — o CRATOS sai. Mas sair
@@ -513,7 +524,10 @@
   }
 
   // ── BAIXA (preparar) ───────────────────────────────────────────────────────
-  async function prepararBaixa(est) {
+  function prepararBaixa(est) {
+    return comCortina("buscando as restrições deste processo no RENAJUD.", () => _prepararBaixa(est));
+  }
+  async function _prepararBaixa(est) {
     if (maisPjePresente()) {
       return CratosFaixa.alertar("renajud",
         "o maisPJe está nesta tela e assumiu o preenchimento — o CRATOS saiu de " +
@@ -917,7 +931,10 @@
   }
 
   // Busca o executado idx; se não tiver veículo, tenta o próximo automaticamente.
-  async function buscarExecutadoComVeiculo(est, idx) {
+  function buscarExecutadoComVeiculo(est, idx) {
+    return comCortina("pesquisando veículos dos executados no RENAJUD.", () => _buscarExecutadoComVeiculo(est, idx));
+  }
+  async function _buscarExecutadoComVeiculo(est, idx) {
     const execs = est.executados || [];
     if (idx >= execs.length) {
       console.log("CRATOS/RENAJUD: todos os " + execs.length +

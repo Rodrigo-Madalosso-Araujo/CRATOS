@@ -208,7 +208,16 @@
   // ══════════════════════════════════════════════════════════════════════════
   // FLUXO DA INCLUSÃO
   // ══════════════════════════════════════════════════════════════════════════
-  async function fluxoInclusao(est) {
+  /* 2.0 — CORTINA (comum/faixa.js): cobre o preenchimento da ordem e a busca da baixa.
+     Sai antes da sua vez (conferir, enviar e assinar; escolher e cancelar a ordem),
+     e o try/finally garante que ela não fica no ar. */
+  const _ov = () => (typeof CratosOverlay !== "undefined" && CratosOverlay.durante ? CratosOverlay : null);
+  const descobrir = () => { try { const o = _ov(); if (o) o.esconder(); } catch (e) { /* nada */ } };
+  function comCortina(texto, fn) { const o = _ov(); return o ? o.durante(texto, fn) : fn(); }
+  function fluxoInclusao(est) {
+    return comCortina("preparando a ordem de indisponibilidade na CNIB. O envio e a assinatura serão seus.", () => _fluxoInclusao(est));
+  }
+  async function _fluxoInclusao(est) {
     const c = est.config || {};
 
     // ── PASSO 1 — Enviar Processo ───────────────────────────────────────────
@@ -297,6 +306,7 @@
     await sleep(300);
 
     await Store.marco("CNIB", est.numProcesso, "a ordem foi preparada na CNIB para o seu envio e assinatura");   // 1.9.3
+    descobrir();                                   // daqui em diante, o passo é seu
     console.log("%cCRATOS/CNIB: ordem PREPARADA. Confira e clique 'Enviar Indisponibilidade' " +
       "e assine. Depois volte ao PJe e clique 'Concluí'.", "color:#4ade80;font-weight:bold");
     avisar("ordem PREPARADA. Confira, clique 'Enviar Indisponibilidade' e assine.\n" +
@@ -512,7 +522,10 @@
   // o ciclo continua igual.
   // ══════════════════════════════════════════════════════════════════════════
 
-  async function etapaPesquisaBaixa(est) {
+  function etapaPesquisaBaixa(est) {
+    return comCortina("buscando as ordens deste processo na CNIB.", () => _etapaPesquisaBaixa(est));
+  }
+  async function _etapaPesquisaBaixa(est) {
     if (!(await esperar(() => document.querySelector(SEL.procBusca) &&
                               document.querySelector(SEL.pesquisar), 40000))) {
       return falhar(new Error("a tela de cancelamento total do CNIB não abriu em 40 segundos. Se a sua "

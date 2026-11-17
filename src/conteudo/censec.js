@@ -230,7 +230,16 @@
   // ══════════════════════════════════════════════════════════════════════════
   // CONSULTA — um executado por vez, um PDF por executado
   // ══════════════════════════════════════════════════════════════════════════
-  async function fluxoConsulta(est) {
+  /* 2.0 — CORTINA (comum/faixa.js): a consulta é toda do CRATOS, então a tela fica
+     coberta do começo ao fim. Se o CENSEC pedir um desafio (captcha), a cortina sai
+     para você resolver e volta depois. */
+  const _ov = () => (typeof CratosOverlay !== "undefined" && CratosOverlay.durante ? CratosOverlay : null);
+  function fluxoConsulta(est) {
+    const ov = _ov();
+    if (!ov) return _fluxoConsulta(est);
+    return ov.durante("consultando a CEP no CENSEC, parte por parte.", () => _fluxoConsulta(est));
+  }
+  async function _fluxoConsulta(est) {
     /* Chegamos aqui porque o vigia VIU o campo. Reconferimos mesmo assim: entre
        a checagem dele e esta linha o Angular pode ter redesenhado o formulário. */
     if (!(await esperar(campoDocumento, 10000))) {
@@ -380,11 +389,15 @@
         if (!avisado) {
           avisado = true;
           console.warn("CRATOS/CENSEC: desafio visível — esperando você resolver.");
+          try { const ov = _ov(); if (ov) ov.esconder(); } catch (e) { /* nada */ }
           avisar("o CENSEC pediu um desafio (captcha). Resolva na tela que eu sigo sozinho.", "#facc15");
         }
       }
     }
-    if (resolvido && avisado) avisar("desafio resolvido — retomando.", "#facc15");
+    if (resolvido && avisado) {
+      avisar("desafio resolvido — retomando.", "#facc15");
+      try { const ov = _ov(); if (ov) ov.mostrar("consultando a CEP no CENSEC, parte por parte."); } catch (e) { /* nada */ }
+    }
     return resolvido ? chegou : null;
   }
 

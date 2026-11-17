@@ -97,6 +97,8 @@ const CratosFaixa = {
      e a pessoa confirma achando que valeu. */
   alertar(modulo, msg) {
     console.warn("CRATOS/" + String(modulo).toUpperCase() + ": " + msg);
+    /* 2.0: ressalva é com a pessoa — ela precisa ver e poder agir: a cortina sai. */
+    try { if (globalThis.CratosOverlay) globalThis.CratosOverlay.esconder(); } catch (e) {}
     this.mostrar(modulo, msg, "#facc15");
   },
 
@@ -108,66 +110,164 @@ globalThis.CratosFaixa = CratosFaixa;
 }
 
 /*
- * CratosOverlay — o "pare tudo, estou trabalhando" no CENTRO da tela.
+ * CratosOverlay — a CORTINA: "pare tudo, estou trabalhando", no centro da tela.
  *
- * Diferente da faixa (que informa no cantinho), o overlay é uma cortina que
- * COBRE a tela e BLOQUEIA cliques enquanto o CRATOS baixa as certidões, para o
- * usuário não mexer na página no meio da coleta. Fica ABAIXO da faixa no
- * empilhamento (z-index menor), então uma faixa de parada aparece por cima e
- * continua clicável — e o parar() ainda esconde o overlay, por garantia.
- * Rede de segurança: some sozinho depois de um tempo, para nunca ficar preso.
+ * Diferente da faixa (que informa no cantinho), a cortina COBRE a tela enquanto o
+ * CRATOS mexe sozinho na página de um convênio, para a pessoa não clicar no meio.
+ * Fica ABAIXO da faixa no empilhamento, e o parar() da faixa tira a cortina.
+ *
+ * 2.0 — INERTE PARA A PESSOA, NÃO PARA O CRATOS. A página por baixo some para o
+ * leitor de tela (aria-hidden), o Tab fica preso no botão da cortina e clique e
+ * teclado de verdade (isTrusted) não chegam à página. NÃO usamos o atributo `inert`:
+ * ele também barra o focus() que o próprio CRATOS usa para preencher campos (o
+ * RENAJUD e o CNIB precisam dele), e a automação quebraria.
+ *
+ * SAÍDA GARANTIDA (a cortina altera página de terceiros):
+ *   - botão "Liberar a página" (e Esc): tira a cortina e ela não volta nesta etapa;
+ *   - some sozinha em 3 min sem renovação;
+ *   - some ao sair da página (pagehide) — nada fica escondido se a página voltar;
+ *   - `durante(texto, fn)` tira a cortina no fim, dê certo ou errado;
+ *   - tudo o que foi escondido é devolvido exatamente como estava.
+ * Ela cobre só o que o CRATOS faz sozinho: na passagem para a pessoa (conferir,
+ * confirmar, aceitar termo) quem chama tira a cortina antes de avisar.
  */
 if (typeof globalThis.CratosOverlay === "undefined") {
 
 const CratosOverlay = {
   _id: "cratos-overlay-aguarde",
   _timer: null,
+  _escondidos: [],
+  _liberado: false,
+  _teclas: null,
+  _saida: null,
+  /* Evento da PESSOA (teclado/mouse de verdade) × evento do próprio CRATOS (sintético).
+     Função à parte para o teste poder simular a pessoa (no jsdom, todo evento é sintético). */
+  _daPessoa(e) { return e.isTrusted !== false; },
+
+  /* Irmãos do <body> que continuam à vista do leitor de tela: a própria cortina, as
+     faixas do CRATOS (paradas precisam ser lidas) e o painel do CRATOS. */
+  _manterVisivel(el) {
+    const id = (el && el.id) || "";
+    return id === this._id || /^cratos-.*-aviso$/.test(id) || (el && el.tagName === "CRATOS-RAIZ");
+  },
 
   mostrar(texto) {
     try {
+      if (this._liberado) return null;     // a pessoa liberou a página nesta etapa
       clearTimeout(this._timer);
       let ov = document.getElementById(this._id);
       if (!ov) {
         if (!document.getElementById("cratos-ov-style")) {
           const st = document.createElement("style");
           st.id = "cratos-ov-style";
-          st.textContent = "@keyframes cratosSpin{to{transform:rotate(360deg)}}";
+          st.textContent = "@keyframes cratosSpin{to{transform:rotate(360deg)}}" +
+            "@media (prefers-reduced-motion: reduce){#cratos-overlay-aguarde .cratos-ov-spin{animation:none!important}}" +
+            "#cratos-ov-liberar:focus-visible{outline:3px solid #D9A441;outline-offset:2px}" +
+            "@media (forced-colors: active){#cratos-overlay-aguarde .cratos-ov-card{border:2px solid CanvasText}}";
           (document.head || document.documentElement).appendChild(st);
         }
         ov = document.createElement("div");
         ov.id = this._id;
         ov.style.cssText = "position:fixed;inset:0;z-index:2147483640;display:flex;" +
           "align-items:center;justify-content:center;background:rgba(0,0,0,.55);cursor:progress";
-        // Engole clique/teclado da página enquanto está no ar.
-        const engole = (e) => { e.stopPropagation(); e.preventDefault(); };
+        const card = document.createElement("div");
+        card.className = "cratos-ov-card";
+        card.setAttribute("role", "alertdialog");
+        card.setAttribute("aria-modal", "true");
+        card.setAttribute("aria-labelledby", "cratos-ov-titulo");
+        card.setAttribute("aria-describedby", "cratos-ov-txt");
+        card.style.cssText = "min-width:260px;max-width:min(440px,86vw);padding:22px 26px;border-radius:12px;cursor:default;" +
+          "background:#121419;color:#ECEAE4;font:15px/1.5 system-ui,sans-serif;text-align:center;" +
+          "box-shadow:0 6px 30px rgba(0,0,0,.6);border-top:4px solid #D9A441";
+        const spin = document.createElement("div");
+        spin.className = "cratos-ov-spin";
+        spin.setAttribute("aria-hidden", "true");
+        spin.style.cssText = "width:34px;height:34px;margin:0 auto 14px;border-radius:50%;" +
+          "border:4px solid #3A404C;border-top-color:#D9A441;animation:cratosSpin .9s linear infinite";
+        const tit = document.createElement("div");
+        tit.id = "cratos-ov-titulo";
+        tit.style.cssText = "font-weight:600;margin-bottom:4px";
+        tit.textContent = "O CRATOS está trabalhando nesta página";
+        const txt = document.createElement("div");
+        txt.id = "cratos-ov-txt";
+        txt.className = "cratos-ov-txt";
+        txt.setAttribute("role", "status");
+        txt.setAttribute("aria-live", "polite");
+        const bt = document.createElement("button");
+        bt.type = "button";
+        bt.id = "cratos-ov-liberar";
+        bt.textContent = "Liberar a página";
+        bt.style.cssText = "margin-top:16px;min-height:40px;padding:8px 16px;border-radius:8px;cursor:pointer;" +
+          "border:1px solid #3A404C;background:#22262F;color:#ECEAE4;font:600 14px system-ui,sans-serif";
+        const nota = document.createElement("div");
+        nota.style.cssText = "margin-top:8px;font-size:12px;color:#A3A7B0";
+        nota.textContent = "Liberar tira esta cortina. Mexer na página agora pode atrapalhar o que o CRATOS está fazendo.";
+        bt.addEventListener("click", (e) => { e.stopPropagation(); this.liberar(); });
+        card.appendChild(spin); card.appendChild(tit); card.appendChild(txt); card.appendChild(bt); card.appendChild(nota);
+        ov.appendChild(card);
+        /* Clique de verdade fora do cartão não chega à página. */
+        const engole = (e) => { if (this._daPessoa(e) && !card.contains(e.target)) { e.stopPropagation(); e.preventDefault(); } };
         ov.addEventListener("click", engole, true);
         ov.addEventListener("mousedown", engole, true);
-        ov.addEventListener("keydown", engole, true);
-        const card = document.createElement("div");
-        card.style.cssText = "min-width:260px;max-width:80vw;padding:22px 26px;border-radius:12px;" +
-          "background:#111;color:#e8e8e8;font:15px/1.5 system-ui,sans-serif;text-align:center;" +
-          "box-shadow:0 6px 30px rgba(0,0,0,.6);border-top:4px solid #4ade80";
-        const spin = document.createElement("div");
-        spin.style.cssText = "width:34px;height:34px;margin:0 auto 14px;border-radius:50%;" +
-          "border:4px solid #333;border-top-color:#4ade80;animation:cratosSpin .9s linear infinite";
-        const txt = document.createElement("div");
-        txt.className = "cratos-ov-txt";
-        card.appendChild(spin); card.appendChild(txt); ov.appendChild(card);
         (document.body || document.documentElement).appendChild(ov);
+
+        /* A página some para o leitor de tela (só o que estava visível; o resto fica). */
+        this._escondidos = [];
+        for (const el of Array.from((document.body || document.documentElement).children)) {
+          if (this._manterVisivel(el) || el.getAttribute("aria-hidden") === "true") continue;
+          el.setAttribute("aria-hidden", "true");
+          this._escondidos.push(el);
+        }
+        /* Teclado de verdade: Tab fica no botão; Esc libera; o resto não chega à página.
+           Eventos sintéticos (isTrusted=false) são do próprio CRATOS: passam. */
+        this._teclas = (e) => {
+          if (!this._daPessoa(e) || !document.getElementById(this._id)) return;
+          if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); this.liberar(); return; }
+          if (e.key === "Tab") { e.preventDefault(); e.stopPropagation(); bt.focus(); return; }
+          if (e.target === bt && (e.key === "Enter" || e.key === " ")) return;
+          e.preventDefault(); e.stopPropagation();
+        };
+        document.addEventListener("keydown", this._teclas, true);
+        this._saida = () => this.esconder();
+        window.addEventListener("pagehide", this._saida);
       }
       ov.querySelector(".cratos-ov-txt").textContent = "CRATOS — " + (texto || "Aguarde…");
-      /* Rede de segurança: se algo travar, o overlay não fica preso para sempre. */
+      /* Rede de segurança: se algo travar, a cortina não fica presa para sempre. */
       this._timer = setTimeout(() => this.esconder(), 180000);
       return ov;
     } catch (e) { return null; }
   },
 
+  /* A pessoa pediu a página de volta: sai e não volta até a etapa terminar. */
+  liberar() {
+    this._liberado = true;
+    this._remover();
+    try { console.warn("CRATOS: cortina liberada pela pessoa; a automação segue, sem cobrir a tela."); } catch (e) {}
+  },
+
+  /* Fim da etapa (ou parada): sai, e a próxima etapa pode cobrir de novo. */
   esconder() {
+    this._liberado = false;
+    this._remover();
+  },
+
+  _remover() {
     try {
       clearTimeout(this._timer);
       const ov = document.getElementById(this._id);
       if (ov) ov.remove();
+      for (const el of this._escondidos) { try { el.removeAttribute("aria-hidden"); } catch (e) {} }
+      this._escondidos = [];
+      if (this._teclas) document.removeEventListener("keydown", this._teclas, true);
+      if (this._saida) window.removeEventListener("pagehide", this._saida);
+      this._teclas = null; this._saida = null;
     } catch (e) {}
+  },
+
+  /* Cobre enquanto `fn` roda e tira no fim — dê certo ou errado. */
+  async durante(texto, fn) {
+    this.mostrar(texto);
+    try { return await fn(); } finally { this.esconder(); }
   },
 };
 

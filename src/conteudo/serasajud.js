@@ -140,7 +140,16 @@
   }
 
   // ══════════════════════════════════════════════════════════════════════════
+  /* 2.0 — CORTINA (comum/faixa.js): cobre o preenchimento. Sai para o popup do valor
+     e da data (quando o processo não tem cálculo) e sai antes do CONFIRMAR, que é seu.
+     O try/finally garante que ela nunca fica no ar depois do fluxo. */
+  const _ov = () => (typeof CratosOverlay !== "undefined" && CratosOverlay.durante ? CratosOverlay : null);
+  const cobrir = (t) => { try { const o = _ov(); if (o) o.mostrar(t); } catch (e) { /* nada */ } };
+  const descobrir = () => { try { const o = _ov(); if (o) o.esconder(); } catch (e) { /* nada */ } };
   async function fluxo(est) {
+    try { return await _fluxo(est); } finally { descobrir(); }
+  }
+  async function _fluxo(est) {
     const ehBaixa = est.operacao === "baixa";
     avisar(`preparando ${ehBaixa ? "a BAIXA" : "a INCLUSÃO"} — ${est.titulares.length} executado(s).`, "#facc15");
 
@@ -162,6 +171,7 @@
       await sleep(3500);
     }
 
+    cobrir(`preenchendo ${ehBaixa ? "a baixa" : "a inclusão"} no SerasaJUD. A confirmação será sua.`);
     if (!(await escolherAba(ehBaixa ? "Baixar Dívida" : "Incluir Dívida"))) {
       return falhar(new Error(`não achei a aba "${ehBaixa ? "Baixar" : "Incluir"} Dívida" na tela do ` +
         `SerasaJUD. Confira o contador de sessão no alto da tela: se expirou, ` +
@@ -172,7 +182,9 @@
 
     /* Sem cálculo nos autos, o valor (e, na baixa, a data da dívida) pode ter vindo
        pendente. Antes de preencher, pede o que falta num popup e espera SEM PRAZO. */
+    descobrir();                                   // o popup do valor/data é com você
     if (!(await garantirDadosManuais(est))) return;
+    cobrir(`preenchendo ${ehBaixa ? "a baixa" : "a inclusão"} no SerasaJUD. A confirmação será sua.`);
 
     if (ehBaixa) { if (!(await fluxoBaixa(est))) return; }
     else { if (!(await fluxoInclusao(est))) return; }
@@ -190,6 +202,7 @@
     }
 
     await Store.set("serasajud_estado", Object.assign({}, est, { ativo: false, fase: "aguardando_confirmacao" }));
+    descobrir();                                   // daqui em diante, o passo é seu
     avisar(`ordem montada. Confira na tela e clique em CONFIRMAR — esse passo é seu.\n\n` +
       `· ${est.titulares.length} executado(s) na tabela\n· valor ${est.valor}` +
       (ehBaixa ? `\n· data da dívida ${est.dataLiquidacao}` : ""), "#4ade80");
