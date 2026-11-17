@@ -174,17 +174,23 @@
   }
 
   let prefTema = "escuro";
-  let temaAnterior = "escuro";
+  /* O seletor de tema do menu "⋯": quatro botões de opção nativos (o NVDA lê "Tema,
+     Claro, botão de opção, 2 de 4"; as setas trocam). Grava na mesma chave que a
+     seção Aparência das Preferências vai usar. */
+  const TEMAS = [
+    { valor: "escuro", rotulo: "Escuro" },
+    { valor: "claro", rotulo: "Claro" },
+    { valor: "alto-contraste", rotulo: "Alto contraste" },
+    { valor: "sistema", rotulo: "Seguir o Firefox" },
+  ];
   function aplicarTema() {
     if (!globalThis.CratosTema) return;
     CratosTema.aplicar(painel, CratosTema.resolver(prefTema));
-    const b = painel.querySelector("#cx-menu-contraste");
-    if (b) b.setAttribute("aria-pressed", String(painel.classList.contains("t-hc")));
+    painel.querySelectorAll('input[name="cx-tema"]').forEach((r) => { r.checked = r.value === prefTema; });
   }
   function lerAparencia(a) {
     const v = a || {};
     prefTema = (globalThis.CratosTema && CratosTema.PREFS.includes(v.tema)) ? v.tema : "escuro";
-    temaAnterior = (globalThis.CratosTema && CratosTema.PREFS.includes(v.temaAnterior)) ? v.temaAnterior : "escuro";
     aplicarTema();
   }
   aplicarTema();
@@ -196,10 +202,11 @@
       if (m && m.addEventListener) m.addEventListener("change", () => { if (prefTema === "sistema") aplicarTema(); });
     }
   } catch (e) { /* nada */ }
-  async function alternarContraste() {
-    const hc = painel.classList.contains("t-hc");
-    const novo = hc ? (temaAnterior === "alto-contraste" ? "escuro" : temaAnterior) : "alto-contraste";
-    const dado = { tema: novo, temaAnterior: hc ? temaAnterior : prefTema };
+  async function escolherTema(tema) {
+    if (!TEMAS.some((t) => t.valor === tema)) return;
+    let atual = {};
+    try { atual = (await Store.get("aparencia")) || {}; } catch (e) { /* nada */ }
+    const dado = Object.assign({}, atual, { tema });
     lerAparencia(dado);
     try { await Store.set("aparencia", dado); } catch (e) { /* nada */ }
   }
@@ -257,7 +264,10 @@
         <button type="button" class="cx-acao cx-sec" id="cx-disp-verificar">Verificar disponibilidade</button>
         <div class="cx-status" id="cx-disp-status"></div>
       </div>` : ""}
-      <button type="button" class="cx-menu-item" id="cx-menu-contraste" aria-pressed="false">Alto contraste</button>
+      <fieldset class="cx-temas" id="cx-menu-tema">
+        <legend class="cx-temas-titulo">Tema</legend>
+        ${TEMAS.map((t) => html`<label class="cx-tema-op"><input type="radio" name="cx-tema" value="${t.valor}"${t.valor === prefTema ? " checked" : ""}><span>${t.rotulo}</span></label>`)}
+      </fieldset>
       <button type="button" class="cx-menu-item" id="cx-menu-atalhos" aria-expanded="false" aria-controls="cx-menu-atalhos-area">Atalhos de teclado</button>
       <ul class="cx-menu-area cx-atalhos" id="cx-menu-atalhos-area" hidden>
         <li><kbd>Alt+Shift+C</kbd> abre o CRATOS e põe o foco nele (troque em "Gerenciar atalhos de extensões" do Firefox)</li>
@@ -270,7 +280,9 @@
     alternarArea("cx-menu-atalhos", "cx-menu-atalhos-area");
     const ligar = (sel, fn) => { const b = menu.querySelector(sel); if (b) b.onclick = fn; };
     ligar("#cx-disp-verificar", verificarDisponibilidade);
-    ligar("#cx-menu-contraste", alternarContraste);
+    menu.querySelectorAll('input[name="cx-tema"]').forEach((r) => {
+      r.onchange = () => { if (r.checked) escolherTema(r.value); };
+    });
     ligar("#cx-menu-demo", () => {
       fecharMenu(false);
       browser.runtime.sendMessage({ tipo: "abrir_demo" }).catch(() => {});
@@ -3148,7 +3160,7 @@
     // 2.0 — abas e menu
     irAba, get abaAtual() { return abaAtual; }, get filaNaAba() { return filaNaAba; },
     get filaRodando() { return filaRodando; }, renderSituacao, renderColetar, renderMenu,
-    abrirMenu, fecharMenu, alternarContraste, pedirConfirmacaoBaixa, alternarPainel, fecharPainel,
+    abrirMenu, fecharMenu, escolherTema, pedirConfirmacaoBaixa, alternarPainel, fecharPainel,
     rodarProximoConvenio,
     renderBotaoConcluiu,
     renderRelatorioFinal,

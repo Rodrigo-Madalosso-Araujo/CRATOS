@@ -8,7 +8,7 @@
  * tempo e a outra avisa que há fila em andamento; ▲▼ mantêm o foco no convênio que
  * andou; Coletar guarda o que as coletas escreveram; o menu "⋯" abre e fecha com
  * aria-expanded, Esc devolve o foco, traz a disponibilidade, as novidades (com o
- * ponto de aviso), o alto contraste e as Preferências; o tema vem da chave
+ * ponto de aviso), o seletor de tema e as Preferências; o tema vem da chave
  * `aparencia`; o botão flutuante e o liga/desliga são botões de verdade; reabrir no
  * mesmo processo não recaptura; nenhuma cor fixa no painel.js. Reprova o ae1886c
  * (passo 1) e a 1.9.6.
@@ -212,15 +212,22 @@ function abrir(op) {
     await a.w.Store.set("aparencia", { tema: "claro" });
     await tick();
     checar(painel.classList.contains("t-claro") && !painel.classList.contains("t-escuro"), "⛔ a chave `aparencia` troca o tema ao vivo");
-    const b = a.r.getElementById("cx-menu-contraste");
-    checar(b && b.getAttribute("aria-pressed") === "false", "Alto contraste é um botão de alternância (aria-pressed)");
-    b.click();
+    const grupo = a.r.getElementById("cx-menu-tema");
+    const radios = Array.from(a.r.querySelectorAll('#cx-menu-tema input[name="cx-tema"]'));
+    checar(grupo && grupo.tagName === "FIELDSET" && /Tema/.test(grupo.querySelector("legend").textContent),
+      "⛔ o menu tem um grupo \"Tema\" (fieldset com legenda)");
+    checar(radios.map((r) => r.value).join() === "escuro,claro,alto-contraste,sistema" && radios.every((r) => r.type === "radio" && r.closest("label")),
+      "⛔ quatro botões de opção rotulados: Escuro, Claro, Alto contraste, Seguir o Firefox");
+    checar(radios[1].checked && radios.filter((r) => r.checked).length === 1, "a opção marcada acompanha o tema gravado (claro)");
+    radios[2].checked = true; radios[2].dispatchEvent(new a.w.Event("change", { bubbles: true }));
     await tick();
-    checar(painel.classList.contains("t-hc") && b.getAttribute("aria-pressed") === "true" && (a.mem["cratos:aparencia"] || {}).tema === "alto-contraste",
-      "⛔ Alto contraste liga, grava e pressiona");
-    a.r.getElementById("cx-menu-contraste").click();
+    checar(painel.classList.contains("t-hc") && (a.mem["cratos:aparencia"] || {}).tema === "alto-contraste", "⛔ escolher Alto contraste aplica na hora e grava");
+    radios[0].checked = true; radios[0].dispatchEvent(new a.w.Event("change", { bubbles: true }));
     await tick();
-    checar(painel.classList.contains("t-claro") && (a.mem["cratos:aparencia"] || {}).tema === "claro", "desligar volta ao tema de antes (claro)");
+    checar(painel.classList.contains("t-escuro") && (a.mem["cratos:aparencia"] || {}).tema === "escuro", "escolher Escuro volta ao padrão");
+    radios[3].checked = true; radios[3].dispatchEvent(new a.w.Event("change", { bubbles: true }));
+    await tick();
+    checar((a.mem["cratos:aparencia"] || {}).tema === "sistema" && !!painel.className.match(/t-(escuro|claro|hc)/), "Seguir o Firefox grava \"sistema\" e resolve para um tema");
     const js = fs.readFileSync(path.join(SRC, "conteudo", "painel.js"), "utf8");
     const fixas = js.match(/#[0-9a-fA-F]{3}(?:[0-9a-fA-F]{3})?\b(?![-\w])/g) || [];
     checar(fixas.length === 0, "⛔ nenhuma cor fixa no painel.js (tudo pelas variáveis do tema): " + fixas.slice(0, 4).join(" "));

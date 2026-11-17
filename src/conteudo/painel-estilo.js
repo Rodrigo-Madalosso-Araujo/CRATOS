@@ -92,6 +92,11 @@ kbd { font: 600 12px/1 system-ui, sans-serif; border: var(--bw) solid var(--bd2)
   background: var(--bd2) radial-gradient(circle at 9px 50%, var(--fg2) 5px, transparent 6px);
 }
 .cx-menu-item[aria-pressed="true"]::after { background: var(--ac) radial-gradient(circle at 21px 50%, var(--onac) 5px, transparent 6px); }
+.cx-temas { margin: 2px 4px 4px; padding: 6px 6px 8px; border: var(--bw) solid var(--bd); border-radius: 8px; }
+.cx-temas-titulo { padding: 0 4px; font-size: 12px; color: var(--fg2); }
+.cx-tema-op { display: flex; align-items: center; gap: 10px; min-height: 36px; padding: 0 6px; border-radius: 6px; cursor: pointer; }
+.cx-tema-op:hover { background: var(--sf); }
+.cx-tema-op input { width: 18px; height: 18px; margin: 0; accent-color: var(--ac); }
 .cx-menu-area { display: flex; flex-direction: column; gap: 6px; margin: 0 4px 6px; padding: 8px 10px; border-radius: 8px; background: var(--bg); border: var(--bw) solid var(--bd); }
 .cx-atalhos { list-style: none; font-size: 13px; }
 .cx-atalhos li { padding: 2px 0; }
