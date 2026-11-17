@@ -28,7 +28,12 @@
 
   const botao = document.createElement("cratos-botao");
   botao.title = "CRATOS";
-  CratosHTML.definir(botao, html`<img src="${iconeUrl}" alt="CRATOS">`);
+  /* 2.0: o botão flutuante é um botão de verdade para o teclado e o leitor de tela. */
+  botao.setAttribute("role", "button");
+  botao.setAttribute("tabindex", "0");
+  botao.setAttribute("aria-label", "CRATOS: abrir o painel");
+  botao.setAttribute("aria-expanded", "false");
+  CratosHTML.definir(botao, html`<img src="${iconeUrl}" alt="">`);
 
   /* Ícone de energia em SVG (inline). Antes era o caractere de energia U+23FB, que
      a fonte do sistema pode não ter — aí o Firefox desenhava o "tofu" (quadradinho
@@ -42,9 +47,29 @@
     '<line x1="12" y1="3.5" x2="12" y2="12"/>' +
     '<path d="M7 6.6a7 7 0 1 0 10 0"/></svg>');
 
+  /* 2.0: o raio da marca (o mesmo do ícone de 16/32 px) e os três pontos do menu. */
+  const SVG_RAIO = CratosHTML.confiavel(
+    '<svg class="cx-raio" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
+    'stroke-linejoin="round" aria-hidden="true"><path d="M13 3L4 14h7l-1 7 9-11h-7l1-7z"/></svg>');
+  const SVG_MAIS = CratosHTML.confiavel(
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" ' +
+    'aria-hidden="true"><path d="M5 12h.01M12 12h.01M19 12h.01"/></svg>');
+  const SVG_FECHAR = CratosHTML.confiavel(
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" ' +
+    'aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>');
+
   const painel = document.createElement("cratos-painel");
+  painel.setAttribute("role", "region");
+  painel.setAttribute("aria-label", "CRATOS");
   CratosHTML.definir(painel, html`
-    <div class="cx-cabecalho"><span>CRATOS</span><span class="cx-power" role="button" tabindex="0" title="Ligar/desligar o CRATOS">${SVG_POWER}<span class="cx-power-txt">Ligado</span></span><span class="cx-fechar" style="cursor:pointer">✕</span></div>
+    <div class="cx-cabecalho">
+      ${SVG_RAIO}
+      <div class="cx-titulo"><h1 class="cx-h1">CRATOS</h1><div class="cx-proc" id="cx-proc-num"></div></div>
+      <button type="button" class="cx-power" aria-pressed="true" title="Ligar/desligar o CRATOS">${SVG_POWER}<span class="cx-power-txt">Ligado</span></button>
+      <button type="button" class="cx-icone cx-mais" id="cx-mais" aria-label="Mais opções" aria-expanded="false" aria-controls="cx-menu">${SVG_MAIS}<span class="cx-ponto" id="cx-mais-ponto" hidden></span><span class="cx-sr" id="cx-mais-sr"></span></button>
+      <button type="button" class="cx-icone cx-fechar" aria-label="Fechar o painel do CRATOS">${SVG_FECHAR}</button>
+    </div>
+    <div class="cx-menu" id="cx-menu" role="group" aria-label="Mais opções" hidden></div>
     <div class="cx-corpo"><div class="cx-vazio">Clique no ícone para capturar o processo.</div></div>
   `);
 
@@ -68,7 +93,7 @@
   let partesAtuais = [];
   let processoAtual = null;
   let ligado = true;   // chave liga/desliga da extensão (padrão ligado)
-  painel.querySelector(".cx-fechar").onclick = () => painel.removeAttribute("aberto");
+  painel.querySelector(".cx-fechar").onclick = () => fecharPainel();
 
   /* ── Auto-scroll "grudar no fim inteligente" ──────────────────────────────
      O elemento que ROLA é o próprio <cratos-painel> (overflow-y:auto + max-height),
@@ -91,25 +116,32 @@
      energia) e é a porta de volta pra religar. Persiste em `extensao_ligada`
      (só `false` desliga). */
   function renderDesligado() {
-    CratosHTML.definir(corpo, html`<div class="cx-vazio" style="text-align:center;padding:8px 4px">
-      <div class="cx-power-grande" style="margin-bottom:6px;color:#e11d1d">${SVG_POWER}</div>
-      <b>CRATOS desligado</b><br>
-      <span style="color:#9a9a9a;font-size:12px">A extensão não vai agir nesta nem nas próximas
-      telas. Clique no botão de energia no topo do painel para ligar.</span></div>`);
+    definirProcessoNoCabecalho(null);
+    renderMenu();
+    CratosHTML.definir(corpo, html`<div class="cx-desligado">
+      <div class="cx-power-grande">${SVG_POWER}</div>
+      <h2 class="cx-h2">O CRATOS está desligado</h2>
+      <p class="cx-det">A extensão não vai agir nesta nem nas próximas telas. Suas Preferências continuam guardadas.</p>
+      <button type="button" class="cx-acao" id="cx-religar">Ligar o CRATOS</button></div>`);
+    const b = corpo.querySelector("#cx-religar");
+    if (b) b.onclick = () => alternarLigado();
   }
   function aplicarEstadoLigado() {
     if (ligado) botao.removeAttribute("desligado");
     else botao.setAttribute("desligado", "");
     const p = painel.querySelector(".cx-power");
     if (p) {
-      p.style.color = ligado ? "#4ade80" : "#e11d1d";
+      /* 2.0: botão de alternância de verdade (aria-pressed); a cor vem do tema. */
+      p.classList.toggle("cx-off", !ligado);
+      p.setAttribute("aria-pressed", String(ligado));
+      p.setAttribute("aria-label", "CRATOS ligado");
       p.title = ligado ? "CRATOS ligado — clique para desligar"
                        : "CRATOS desligado — clique para ligar";
       const t = p.querySelector(".cx-power-txt");
       if (t) t.textContent = ligado ? "Ligado" : "Desligado";
     }
     if (painel.hasAttribute("aberto")) {
-      if (ligado) capturar(); else renderDesligado();
+      if (ligado) mostrarConteudo(); else renderDesligado();
     }
   }
   async function alternarLigado() {
@@ -120,6 +152,133 @@
   painel.querySelector(".cx-power").onclick = (e) => { e.stopPropagation(); alternarLigado(); };
   Store.get("extensao_ligada").then((v) => { ligado = v !== false; aplicarEstadoLigado(); }).catch(() => {});
   Store.onChange("extensao_ligada", (v) => { ligado = v !== false; aplicarEstadoLigado(); });
+
+  /* ═══ 2.0 — CABEÇALHO, TEMA E MENU "⋯" ═══════════════════════════════════════
+     O número do processo fica no cabeçalho (some quando não há processo). O tema vem
+     da chave `aparencia` ({ tema: "escuro" | "claro" | "alto-contraste" | "sistema" });
+     as Preferências (1.99.2) gravam a mesma chave. O menu "⋯" junta o que não é do
+     dia a dia: disponibilidade, novidades, alto contraste, atalhos e Preferências. */
+  function cnjFmt(n) {
+    const d = String(n || "").replace(/\D/g, "");
+    if (d.length !== 20) return String(n || "");
+    return `${d.slice(0, 7)}-${d.slice(7, 9)}.${d.slice(9, 13)}.${d.slice(13, 14)}.${d.slice(14, 16)}.${d.slice(16)}`;
+  }
+  function definirProcessoNoCabecalho(proc) {
+    const el = painel.querySelector("#cx-proc-num");
+    if (!el) return;
+    const num = proc && (proc.numero || proc.id);
+    if (!num) { el.textContent = ""; return; }
+    CratosHTML.definir(el, html`<span class="cx-sr">Processo </span>${cnjFmt(num)}`);
+  }
+
+  let prefTema = "escuro";
+  let temaAnterior = "escuro";
+  function aplicarTema() {
+    if (!globalThis.CratosTema) return;
+    CratosTema.aplicar(painel, CratosTema.resolver(prefTema));
+    const b = painel.querySelector("#cx-menu-contraste");
+    if (b) b.setAttribute("aria-pressed", String(painel.classList.contains("t-hc")));
+  }
+  function lerAparencia(a) {
+    const v = a || {};
+    prefTema = (globalThis.CratosTema && CratosTema.PREFS.includes(v.tema)) ? v.tema : "escuro";
+    temaAnterior = (globalThis.CratosTema && CratosTema.PREFS.includes(v.temaAnterior)) ? v.temaAnterior : "escuro";
+    aplicarTema();
+  }
+  aplicarTema();
+  Store.get("aparencia").then(lerAparencia).catch(() => {});
+  try { Store.onChange("aparencia", lerAparencia); } catch (e) { /* nada */ }
+  try {
+    for (const q of ["(prefers-color-scheme: light)", "(prefers-contrast: more)"]) {
+      const m = window.matchMedia && window.matchMedia(q);
+      if (m && m.addEventListener) m.addEventListener("change", () => { if (prefTema === "sistema") aplicarTema(); });
+    }
+  } catch (e) { /* nada */ }
+  async function alternarContraste() {
+    const hc = painel.classList.contains("t-hc");
+    const novo = hc ? (temaAnterior === "alto-contraste" ? "escuro" : temaAnterior) : "alto-contraste";
+    const dado = { tema: novo, temaAnterior: hc ? temaAnterior : prefTema };
+    lerAparencia(dado);
+    try { await Store.set("aparencia", dado); } catch (e) { /* nada */ }
+  }
+
+  const menu = painel.querySelector("#cx-menu");
+  const botaoMais = painel.querySelector("#cx-mais");
+  function abrirMenu() {
+    menu.hidden = false;
+    botaoMais.setAttribute("aria-expanded", "true");
+    const primeiro = menu.querySelector("button, select, a[href]");
+    if (primeiro) primeiro.focus();
+  }
+  function fecharMenu(devolverFoco) {
+    if (menu.hidden) return;
+    menu.hidden = true;
+    botaoMais.setAttribute("aria-expanded", "false");
+    if (devolverFoco) botaoMais.focus();
+  }
+  botaoMais.onclick = (e) => { e.stopPropagation(); if (menu.hidden) abrirMenu(); else fecharMenu(false); };
+  menu.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); fecharMenu(true); }
+  });
+  painel.addEventListener("click", (e) => {
+    if (menu.hidden) return;
+    const caminho = e.composedPath ? e.composedPath() : [];
+    if (caminho.includes(menu) || caminho.includes(botaoMais)) return;
+    fecharMenu(false);
+  });
+  /* O ponto no "⋯" avisa que há algo novo lá dentro (hoje: novidades da versão). */
+  function marcarPontoMenu(sim, texto) {
+    const pt = painel.querySelector("#cx-mais-ponto"), sr = painel.querySelector("#cx-mais-sr");
+    if (pt) pt.hidden = !sim;
+    if (sr) sr.textContent = sim ? ", " + (texto || "há novidades") : "";
+  }
+  function alternarArea(botaoId, areaId) {
+    const b = menu.querySelector("#" + botaoId), a = menu.querySelector("#" + areaId);
+    if (!b || !a) return;
+    b.onclick = () => {
+      const abrir = a.hidden;
+      a.hidden = !abrir;
+      b.setAttribute("aria-expanded", String(abrir));
+    };
+  }
+
+  function renderMenu() {
+    const disp = DISP_IDS.filter(convLigado);
+    CratosHTML.definir(menu, html`
+      <div id="cx-menu-novidades"></div>
+      ${disp.length ? html`<button type="button" class="cx-menu-item" id="cx-menu-disp" aria-expanded="false" aria-controls="cx-menu-disp-area">Verificar disponibilidade de um convênio</button>
+      <div class="cx-menu-area" id="cx-menu-disp-area" hidden>
+        <label class="cx-rotulo-campo" for="cx-disp-conv">Convênio</label>
+        <select id="cx-disp-conv" class="cx-campo">
+          ${disp.map((id) => html`<option value="${id}">${(CONVENIOS.find((c) => c.id === id) || { label: id }).label}</option>`)}
+        </select>
+        <button type="button" class="cx-acao cx-sec" id="cx-disp-verificar">Verificar disponibilidade</button>
+        <div class="cx-status" id="cx-disp-status"></div>
+      </div>` : ""}
+      <button type="button" class="cx-menu-item" id="cx-menu-contraste" aria-pressed="false">Alto contraste</button>
+      <button type="button" class="cx-menu-item" id="cx-menu-atalhos" aria-expanded="false" aria-controls="cx-menu-atalhos-area">Atalhos de teclado</button>
+      <ul class="cx-menu-area cx-atalhos" id="cx-menu-atalhos-area" hidden>
+        <li><kbd>←</kbd> <kbd>→</kbd> trocam de aba (com o foco nas abas)</li>
+        <li><kbd>Esc</kbd> fecha este menu</li>
+      </ul>
+      <button type="button" class="cx-menu-item" id="cx-menu-pref">Preferências</button>`);
+    alternarArea("cx-menu-disp", "cx-menu-disp-area");
+    alternarArea("cx-menu-atalhos", "cx-menu-atalhos-area");
+    const ligar = (sel, fn) => { const b = menu.querySelector(sel); if (b) b.onclick = fn; };
+    ligar("#cx-disp-verificar", verificarDisponibilidade);
+    ligar("#cx-menu-contraste", alternarContraste);
+    ligar("#cx-menu-pref", () => {
+      fecharMenu(false);
+      browser.runtime.sendMessage({ tipo: "abrir_preferencias" }).catch(() => {});
+    });
+    aplicarTema();
+  }
+
+  function fecharPainel() {
+    fecharMenu(false);
+    painel.removeAttribute("aberto");
+    botao.setAttribute("aria-expanded", "false");
+  }
 
   /* Dispara a consulta: monta o plano com as partes marcadas e pede ao background
      para abrir o eCAC em aba nova e registrar. (Pedaço 2c — teste de registro.) */
@@ -160,10 +319,19 @@
 
   // Abrir/fechar o painel — mas só em CLIQUE (não quando o gesto foi arraste).
   function alternarPainel() {
-    if (painel.hasAttribute("aberto")) { painel.removeAttribute("aberto"); return; }
+    if (painel.hasAttribute("aberto")) { fecharPainel(); return; }
     painel.setAttribute("aberto", "");
+    botao.setAttribute("aria-expanded", "true");
     posicionarPainel();
-    if (ligado) capturar(); else renderDesligado();
+    if (!ligado) { renderDesligado(); return; }
+    mostrarConteudo();
+  }
+  /* 2.0: reabrir (ou religar) no MESMO processo não recaptura — a fila em andamento,
+     as coletas e a aba escolhida continuam onde estavam. */
+  function mostrarConteudo() {
+    const id = detectarIdProcesso();
+    if (id && processoAtual && painelDaAba("situacao") && String(processoAtual.id) === String(id)) return;
+    capturar();
   }
 
   /* ── Arraste do botão flutuante (mouse e toque) + persistência ──────────────
@@ -243,6 +411,9 @@
     if (painel.hasAttribute("aberto")) posicionarPainel();
   });
 
+  botao.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); alternarPainel(); }
+  });
   botao.addEventListener("pointerdown", (e) => {
     const r = botao.getBoundingClientRect();
     arrasto = { x0: e.clientX, y0: e.clientY, offX: e.clientX - r.left, offY: e.clientY - r.top, moveu: false };
@@ -382,8 +553,17 @@
       return;
     }
 
+    const outro = !processoAtual || String(processoAtual.numero || processoAtual.id) !== String(proc.numero || proc.id);
     partesAtuais = partes;
     processoAtual = proc;
+    if (outro) {
+      /* Processo novo: nada do anterior fica marcado. Polo ATIVO nasce desmarcado (a
+         execução mira o EXECUTADO); passivo e polo desconhecido nascem marcados. */
+      selPartes = partes.map((p) => !/ativ/i.test(p.polo || ""));
+      selConv.inclusao = new Set();
+      selConv.baixa = new Set();
+      if (!filaRodando) { filaNaAba = null; abaAtual = "situacao"; }
+    }
     modoAtual = null;
     registrarAbaDoProcesso(proc.numero);
     renderModoSelecao();
@@ -412,108 +592,136 @@
     return ev.returnValue;
   });
 
-  /* Tela inicial: dois botões INCLUSÃO / BAIXA em destaque */
-  function renderModoSelecao() {
-    const partes = partesAtuais;
-    /* Polo ATIVO desmarcado por padrão: a execução dos convênios mira o
-       EXECUTADO (polo passivo). Marcar o exequente por engano mandaria o credor
-       para as pesquisas. Passivo (e polo desconhecido) nascem marcados. */
-    /* 1.5.5: polo e documento vêm do PJe e entravam crus no HTML. */
-    const linhas = partes.map((p, i) => html`
-      <div class="cx-parte">
-        <label style="display:flex;gap:8px;flex:1;cursor:pointer">
-          <input type="checkbox" class="cx-sel-parte" data-idx="${i}"${/ativ/i.test(p.polo || "") ? "" : " checked"}>
-          <div style="flex:1">
-            <div class="cx-nome">${p.nome || "(sem nome)"}</div>
-            <div class="cx-doc">${formatarDoc(p.cpfcnpj)}</div>
-          </div>
-        </label>
-        <div class="cx-polo">${p.polo || ""}</div>
-      </div>`);
+  /* ═══ 2.0 — AS QUATRO ABAS ═══════════════════════════════════════════════════
+     Situação / Incluir / Baixar / Coletar, no padrão de abas do WAI-ARIA: só a aba
+     selecionada entra no Tab; ← → Home End trocam de aba.
 
+     Situação e Coletar são desenhadas uma vez por processo e só escondidas (as
+     coletas escrevem no próprio quadro enquanto você olha outra aba). Incluir e
+     Baixar são formulários: só o da aba aberta existe na tela (não há dois
+     conjuntos de caixas com a mesma classe), e o que você marcou fica guardado
+     aqui ao trocar de aba. Quando uma fila começa, o formulário da aba vira a
+     linha do tempo da fila (#cx-progresso) e fica assim até "Nova seleção". */
+  const ABAS = [
+    { id: "situacao", rotulo: "Situação" },
+    { id: "incluir", rotulo: "Incluir" },
+    { id: "baixar", rotulo: "Baixar" },
+    { id: "coletar", rotulo: "Coletar" },
+  ];
+  let abaAtual = "situacao";
+  let filaNaAba = null;     // "inclusao" | "baixa": a aba que mostra uma fila (rodando ou o relatório)
+  let filaRodando = false;
+  const selConv = { inclusao: new Set(), baixa: new Set() };
+  let selPartes = [];       // um booleano por parte (índice de partesAtuais)
+
+  const modoDaAba = (aba) => (aba === "incluir" ? "inclusao" : aba === "baixar" ? "baixa" : null);
+  const abaDoModo = (m) => (m === "baixa" ? "baixar" : "incluir");
+  const painelDaAba = (aba) => corpo.querySelector("#cx-p-" + aba);
+  const NOME_MODO = { inclusao: "inclusão", baixa: "baixa" };
+
+  function montarAbas() {
+    if (painelDaAba("situacao")) return;
     CratosHTML.definir(corpo, html`
-      <div style="color:#9a9a9a;margin-bottom:8px;font-size:12px">
-        Processo ${processoAtual.numero || String(processoAtual.id)}
+      <div class="cx-abas" role="tablist" aria-label="Seções do CRATOS">
+        ${ABAS.map((a) => html`<button type="button" role="tab" class="cx-aba" id="cx-aba-${a.id}" aria-controls="cx-p-${a.id}" aria-selected="false" tabindex="-1">${a.rotulo}</button>`)}
       </div>
-      ${linhas}
-      <div style="display:flex;gap:8px;margin-top:14px">
-        <button class="cx-acao" id="cx-modo-inclusao" style="flex:1;font-size:13px">
-          ➕ INCLUSÃO
-        </button>
-        <button class="cx-acao" id="cx-modo-baixa"
-          style="flex:1;font-size:13px;background:#1a1a1a;border:1px solid #e11d1d;color:#e8e8e8">
-          ➖ BAIXA
-        </button>
-      </div>
-      ${convLigado("INFOJUD") ? html`<div style="border-top:1px solid #333;margin-top:12px;padding-top:10px">
-        <button class="cx-acao" id="cx-localizar"
-          style="background:#1a1a1a;border:1px solid #e11d1d;color:#e8e8e8;font-size:12px">
-          Coletar INFOJUD (resultados na caixa postal)
-        </button>
-      </div>` : ""}
-      <div class="cx-vazio" id="cx-status" style="margin-top:8px"></div>
-      ${convLigado("CCS") ? html`<div style="border-top:1px solid #333;margin-top:10px;padding-top:10px">
-        <button class="cx-acao" id="cx-coletar-ccs"
-          style="background:#1a1a1a;border:1px solid #e11d1d;color:#e8e8e8;font-size:12px">
-          Coletar CCS (respostas das instituições)
-        </button>
-        <div class="cx-vazio" id="cx-ccs-status" style="margin-top:8px"></div>
-      </div>` : ""}
-      ${convLigado("PREVJUD") ? html`<div style="border-top:1px solid #333;margin-top:10px;padding-top:10px">
-        <button class="cx-acao" id="cx-coletar-prevjud"
-          style="background:#1a1a1a;border:1px solid #e11d1d;color:#e8e8e8;font-size:12px">
-          Coletar PREVJUD (dossiês em processamento)
-        </button>
-        <div class="cx-vazio" id="cx-prevjud-status" style="margin-top:8px"></div>
-      </div>` : ""}
-      ${convLigado("SAB") ? html`<div style="border-top:1px solid #333;margin-top:10px;padding-top:10px">
-        <button class="cx-acao" id="cx-coletar-sab"
-          style="background:#1a1a1a;border:1px solid #e11d1d;color:#e8e8e8;font-size:12px">
-          Coletar SAB (posição das ordens + transferências)
-        </button>
-        <div class="cx-vazio" id="cx-sab-status" style="margin-top:8px"></div>
-      </div>` : ""}
-      <div style="border-top:1px solid #333;margin-top:10px;padding-top:10px">
-        <button class="cx-acao" id="cx-juntar"
-          style="background:#1a1a1a;border:1px solid #e11d1d;color:#e8e8e8;font-size:12px">
-          Juntar certidão dos convênios
-        </button>
-        <div style="font-size:11px;color:#9a9a9a;margin-top:6px" id="cx-aviso-aba">Os arquivos do CRATOS ficam disponíveis para juntada só enquanto esta aba do processo estiver aberta.</div>
-        <div class="cx-vazio" id="cx-juntar-status" style="margin-top:8px"></div>
-      </div>
-      ${DISP_IDS.some(convLigado) ? html`<div style="border-top:1px solid #333;margin-top:10px;padding-top:10px">
-        <select id="cx-disp-conv" style="width:100%;margin-bottom:6px;background:#111;color:#e8e8e8;border:1px solid #444;padding:4px;font-size:12px">
-          ${DISP_IDS.filter(convLigado).map((id) => html`<option value="${id}">${(CONVENIOS.find((c) => c.id === id) || { label: id }).label}</option>`)}
-        </select>
-        <button class="cx-acao" id="cx-disp-verificar"
-          style="background:#1a1a1a;border:1px solid #6b7280;color:#e8e8e8;font-size:12px">
-          Verificar disponibilidade do convênio
-        </button>
-        <div class="cx-vazio" id="cx-disp-status" style="margin-top:8px"></div>
-      </div>` : ""}
-    `);
+      ${ABAS.map((a) => html`<section class="cx-aba-p" role="tabpanel" id="cx-p-${a.id}" aria-labelledby="cx-aba-${a.id}" tabindex="-1" hidden></section>`)}`);
+    corpo.querySelectorAll(".cx-aba").forEach((b, i) => {
+      b.onclick = () => irAba(ABAS[i].id);
+      b.onkeydown = (e) => {
+        const n = ABAS.length;
+        const j = e.key === "ArrowRight" ? (i + 1) % n : e.key === "ArrowLeft" ? (i + n - 1) % n
+          : e.key === "Home" ? 0 : e.key === "End" ? n - 1 : null;
+        if (j === null) return;
+        e.preventDefault();
+        irAba(ABAS[j].id, true);
+      };
+    });
+  }
 
-    const irPara = (modo) => {
-      const marcadas = lerPartesMarcadas();
-      if (!marcadas.length) {
-        corpo.querySelector("#cx-status").innerHTML =
-          `<span class="cx-erro">Selecione ao menos uma parte.</span>`;
-        return;
-      }
-      partesSelecionadas = marcadas;
-      modoAtual = modo;
-      renderListaConvenios();
-    };
-    corpo.querySelector("#cx-modo-inclusao").onclick = () => irPara("inclusao");
-    corpo.querySelector("#cx-modo-baixa").onclick    = () => irPara("baixa");
-    const ligar = (sel, fn) => { const b = corpo.querySelector(sel); if (b) b.onclick = fn; };
+  /* Guarda o que está marcado no formulário aberto antes de ele sair da tela. */
+  function guardarSelecao() {
+    const m = modoDaAba(abaAtual);
+    const p = m && painelDaAba(abaAtual);
+    if (!p || filaNaAba === m) return;
+    const convs = p.querySelectorAll(".cx-sel-conv");
+    if (convs.length) selConv[m] = new Set(Array.from(convs).filter((c) => c.checked).map((c) => c.dataset.id));
+    p.querySelectorAll(".cx-sel-parte").forEach((c) => { selPartes[parseInt(c.dataset.idx)] = c.checked; });
+  }
+
+  function irAba(aba, focar) {
+    montarAbas();
+    guardarSelecao();
+    abaAtual = ABAS.some((a) => a.id === aba) ? aba : "situacao";
+    for (const a of ABAS) {
+      const b = corpo.querySelector("#cx-aba-" + a.id), p = painelDaAba(a.id);
+      const sel = a.id === abaAtual;
+      b.setAttribute("aria-selected", String(sel));
+      b.tabIndex = sel ? 0 : -1;
+      p.hidden = !sel;
+    }
+    for (const a of ["incluir", "baixar"]) {
+      const m = modoDaAba(a);
+      if (filaNaAba === m) continue;              // a fila (ou o relatório dela) fica
+      if (a === abaAtual) renderForm(m);
+      else CratosHTML.definir(painelDaAba(a), html``);
+    }
+    /* Aba nova começa do topo; o "grudar no fim" é da linha do tempo da fila. */
+    grudarNoFim = filaNaAba === modoDaAba(abaAtual) && filaRodando;
+    if (!grudarNoFim) painel.scrollTop = 0;
+    if (focar) { const b = corpo.querySelector("#cx-aba-" + abaAtual); if (b) b.focus(); }
+  }
+
+  /* Tela do processo: monta as abas, desenha Situação e Coletar e abre na Situação. */
+  function renderModoSelecao() {
+    renderMenu();
+    definirProcessoNoCabecalho(processoAtual);
+    if (!painelDaAba("situacao")) { filaNaAba = null; filaRodando = false; }
+    montarAbas();
+    renderSituacao();
+    renderColetar();
+    irAba(abaAtual);
+    mostrarNovidades();
+  }
+
+  /* ── Situação (passo 3 da 2.0 preenche) ── */
+  function renderSituacao() {
+    const p = painelDaAba("situacao");
+    if (!p) return;
+    CratosHTML.definir(p, html`<h2 class="cx-h">Situação neste processo</h2>
+      <p class="cx-vazio" id="cx-sit-vazio">Use as abas Incluir, Baixar e Coletar.</p>`);
+  }
+
+  /* ── Coletar: as respostas que chegam depois, convênio por convênio, e a juntada ── */
+  function renderColetar() {
+    const p = painelDaAba("coletar");
+    if (!p) return;
+    const item = (nome, det, botaoId, rotulo, statusId) => html`<li class="cx-item">
+        <h3 class="cx-h3">${nome}</h3>
+        <p class="cx-det">${det}</p>
+        <button type="button" class="cx-acao cx-sec" id="${botaoId}">${rotulo}</button>
+        <div class="cx-status" id="${statusId}"></div>
+      </li>`;
+    const itens = [];
+    if (convLigado("INFOJUD")) itens.push(item("INFOJUD", "Respostas na caixa postal do e-CAC.", "cx-localizar", "Coletar INFOJUD", "cx-status"));
+    if (convLigado("CCS")) itens.push(item("CCS", "Respostas das instituições ao Banco Central.", "cx-coletar-ccs", "Coletar CCS", "cx-ccs-status"));
+    if (convLigado("PREVJUD")) itens.push(item("PREVJUD", "Dossiês que ainda estavam em processamento.", "cx-coletar-prevjud", "Coletar PREVJUD", "cx-prevjud-status"));
+    if (convLigado("SAB")) itens.push(item("SAB (SISBAJUD)", "Posição das ordens e transferências.", "cx-coletar-sab", "Coletar SAB", "cx-sab-status"));
+    CratosHTML.definir(p, html`
+      <h2 class="cx-h">Respostas por convênio</h2>
+      ${itens.length ? html`<ul class="cx-lista">${itens}</ul>` : html`<p class="cx-vazio">Nenhum convênio com coleta está ligado.</p>`}
+      <section class="cx-cofre" aria-labelledby="cx-h-cofre">
+        <h2 class="cx-h2" id="cx-h-cofre">Juntar no PJe</h2>
+        <p class="cx-det" id="cx-aviso-aba">Os arquivos do CRATOS ficam disponíveis para juntada só enquanto esta aba do processo estiver aberta.</p>
+        <button type="button" class="cx-acao" id="cx-juntar">Juntar certidão dos convênios</button>
+        <div class="cx-status" id="cx-juntar-status"></div>
+      </section>`);
+    const ligar = (sel, fn) => { const b = p.querySelector(sel); if (b) b.onclick = fn; };
     ligar("#cx-localizar", localizarResultado);
     ligar("#cx-coletar-ccs", coletarCcs);
     ligar("#cx-coletar-prevjud", coletarPrevjud);
     ligar("#cx-coletar-sab", coletarSab);
-    corpo.querySelector("#cx-juntar").onclick = abrirJuntada;
-    ligar("#cx-disp-verificar", verificarDisponibilidade);
-    mostrarNovidades();
+    ligar("#cx-juntar", abrirJuntada);
   }
 
   /* ═══ 1.9.2 — CONVÊNIO AINDA NÃO CONFIGURADO ═════════════════════════════════
@@ -528,8 +736,8 @@
       if (linha.querySelector(".cx-aviso-config")) return;
       const av = document.createElement("div");
       av.className = "cx-aviso-config";
-      av.style.cssText = "flex-basis:100%;font-size:11px;color:#facc15;margin:2px 0 0 24px";
-      CratosHTML.definir(av, html`⚠ Vara do e-CAC não configurada. <a href="#" class="cx-abrir-primeiros" style="color:#facc15">Abrir os Primeiros passos</a>`);
+      av.style.cssText = "flex-basis:100%;font-size:11px;color:var(--pdtx);margin:2px 0 0 24px";
+      CratosHTML.definir(av, html`⚠ Vara do e-CAC não configurada. <a href="#" class="cx-abrir-primeiros" style="color:var(--pdtx)">Abrir os Primeiros passos</a>`);
       linha.style.flexWrap = "wrap";
       linha.appendChild(av);
       av.querySelector(".cx-abrir-primeiros").onclick = (ev) => {
@@ -545,7 +753,7 @@
      O texto vem de comum/novidades.js (dentro do pacote; nada da rede). */
   async function mostrarNovidades() {
     try {
-      if (typeof CratosNovidades === "undefined" || corpo.querySelector("#cx-novidades")) return;
+      if (typeof CratosNovidades === "undefined" || painel.querySelector("#cx-novidades")) return;
       const pend = await Store.get("novidades_pendente");
       if (!pend || !pend.para) return;
       const cfg = (await Store.get(CHAVES.config)) || {};
@@ -553,33 +761,39 @@
       if (pref && pref.ativo === false) return;
       const entradas = CratosNovidades.paraMostrar(pend.de, pend.para);
       if (!entradas.length) { await Store.set("novidades_pendente", null); return; }
-      const bloco = (e) => html`<div style="margin-top:6px"><div style="color:#9a9a9a;font-size:11px">${e.versao} — ${e.data}</div>
+      const bloco = (e) => html`<div style="margin-top:6px"><div style="color:var(--fg2);font-size:11px">${e.versao} — ${e.data}</div>
         <ul style="margin:4px 0 0 16px;padding:0">${e.itens.map((t) => html`<li style="margin:2px 0">${t}</li>`)}</ul></div>`;
       const card = document.createElement("div");
       card.id = "cx-novidades";
-      card.style.cssText = "border:1px solid #e11d1d;border-radius:6px;padding:8px 10px;margin-bottom:10px;font-size:12px;background:#140b0b";
+      card.className = "cx-cartao";
       const titulo = entradas.length === 1 ? `Novidades da ${pend.para}` : `Novidades desde a ${pend.de}`;
-      CratosHTML.definir(card, html`<div style="font-weight:700;color:#e8e8e8">✨ ${titulo}</div>
+      CratosHTML.definir(card, html`<h2 class="cx-h2">${titulo}</h2>
         ${entradas.map(bloco)}
-        <div id="cx-novidades-hist" style="display:none;border-top:1px solid #333;margin-top:8px;padding-top:4px">
+        <div id="cx-novidades-hist" style="display:none;border-top:1px solid var(--ln);margin-top:8px;padding-top:4px">
           ${CratosNovidades.VERSOES.filter((e) => !entradas.includes(e)).map(bloco)}</div>
         <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
           <button class="cx-acao" id="cx-novidades-ok" style="font-size:12px;width:auto;padding:4px 14px">Entendi</button>
-          <a href="#" id="cx-novidades-ver" style="color:#9a9a9a;font-size:11px">ver versões anteriores</a>
+          <button type="button" class="cx-link" id="cx-novidades-ver" aria-expanded="false" aria-controls="cx-novidades-hist">ver versões anteriores</button>
         </div>`);
       /* 1.9.2 (Rodrigo, 26/10: "está aparecendo dobrado"): a tela inicial é desenhada duas
          vezes seguidas, e as duas chamadas passavam pela checagem do início ANTES de qualquer
          uma inserir o cartão (há leituras do storage no meio). Reconfere aqui, já sem espera. */
-      if (corpo.querySelector("#cx-novidades")) return;
-      corpo.insertBefore(card, corpo.firstChild);
+      /* 2.0: o cartão mora no menu "⋯", e um ponto no botão avisa que há novidade. */
+      const slot = painel.querySelector("#cx-menu-novidades");
+      if (!slot || painel.querySelector("#cx-novidades")) return;
+      slot.appendChild(card);
+      marcarPontoMenu(true, "há novidades");
       card.querySelector("#cx-novidades-ok").onclick = async () => {
         try { await Store.set("novidades_pendente", null); } catch (e) { /* nada */ }
         card.remove();
+        marcarPontoMenu(false);
+        if (!menu.hidden) { const b = menu.querySelector("button"); if (b) b.focus(); else botaoMais.focus(); }
       };
       card.querySelector("#cx-novidades-ver").onclick = (ev) => {
         ev.preventDefault();
         const h = card.querySelector("#cx-novidades-hist");
         h.style.display = h.style.display === "none" ? "block" : "none";
+        card.querySelector("#cx-novidades-ver").setAttribute("aria-expanded", String(h.style.display === "block"));
       };
     } catch (e) { /* novidade nunca atrapalha o painel */ }
   }
@@ -598,11 +812,11 @@
     return isNaN(d.getTime()) ? "" : `${p2(d.getHours())}:${p2(d.getMinutes())}:${p2(d.getSeconds())}`;
   }
   async function verificarDisponibilidade() {
-    const st = corpo.querySelector("#cx-disp-status");
-    const id = (corpo.querySelector("#cx-disp-conv") || {}).value;
+    const st = painel.querySelector("#cx-disp-status");
+    const id = (painel.querySelector("#cx-disp-conv") || {}).value;
     const conv = CONVENIOS.find((c) => c.id === id) || { id, label: id };
     if (!st || !id) return;
-    CratosHTML.definir(st, html`<span style="color:#9a9a9a">Medindo o ${conv.label}… (até 3 tentativas, cerca de 30 segundos)</span>`);
+    CratosHTML.definir(st, html`<span style="color:var(--fg2)">Medindo o ${conv.label}… (até 3 tentativas, cerca de 30 segundos)</span>`);
     const m = await medirConvenio(id);
     renderMedicao(st, m, conv, "botao", null);
   }
@@ -614,17 +828,17 @@
       return;
     }
     const ts = m.tentativas || [];
-    const lista = html`<div style="font-size:11px;color:#9a9a9a;margin-top:4px">${ts.map((t) => html`<div>${hmsDe(t.hora)} — ${t.mensagem}</div>`)}</div>`;
+    const lista = html`<div style="font-size:11px;color:var(--fg2);margin-top:4px">${ts.map((t) => html`<div>${hmsDe(t.hora)} — ${t.mensagem}</div>`)}</div>`;
     if (m.conclusao === "respondeu") {
       const ult = ts[ts.length - 1] || {};
-      CratosHTML.definir(el, html`<div style="color:#4ade80">O ${conv.label} respondeu às ${hmsDe(ult.hora)} (${ult.mensagem}). Nada a certificar.</div>${lista}`);
+      CratosHTML.definir(el, html`<div style="color:var(--oktx)">O ${conv.label} respondeu às ${hmsDe(ult.hora)} (${ult.mensagem}). Nada a certificar.</div>${lista}`);
       return;
     }
     if (m.conclusao === "controle_falhou") {
-      CratosHTML.definir(el, html`<div style="color:#facc15">O ${conv.label} não respondeu, mas o PJe também não: pode ser a rede desta unidade. Nada foi certificado.</div>${lista}`);
+      CratosHTML.definir(el, html`<div style="color:var(--pdtx)">O ${conv.label} não respondeu, mas o PJe também não: pode ser a rede desta unidade. Nada foi certificado.</div>${lista}`);
       return;
     }
-    CratosHTML.definir(el, html`<div style="color:#ff6b6b">O ${conv.label} não respondeu em ${ts.length} tentativa(s), entre ${hmsDe(ts[0].hora)} e ${hmsDe(ts[ts.length - 1].hora)}; o PJe respondeu normalmente.</div>${lista}
+    CratosHTML.definir(el, html`<div style="color:var(--ertx)">O ${conv.label} não respondeu em ${ts.length} tentativa(s), entre ${hmsDe(ts[0].hora)} e ${hmsDe(ts[ts.length - 1].hora)}; o PJe respondeu normalmente.</div>${lista}
       <button class="cx-acao cx-disp-gerar" style="font-size:12px;margin-top:6px">Confirmo: o ${conv.label} está indisponível — gerar certidão</button>`);
     const b = el.querySelector(".cx-disp-gerar");
     b.onclick = async () => {
@@ -636,7 +850,7 @@
           numProcesso: (processoAtual && processoAtual.numero) || "", origem });
       } catch (e) { r = { ok: false, motivo: String(e.message || e) }; }
       if (r && r.ok) {
-        CratosHTML.definir(el, html`<div style="color:#facc15">Certidão de indisponibilidade gerada (${String(r.filename || "").split("/").pop()}). Ela entra na juntada dos convênios.</div>`);
+        CratosHTML.definir(el, html`<div style="color:var(--pdtx)">Certidão de indisponibilidade gerada (${String(r.filename || "").split("/").pop()}). Ela entra na juntada dos convênios.</div>`);
         if (origem === "fila") atualizarProgresso(conv.id, "⛔ Indisponível — certidão de indisponibilidade gerada", "amarelo");
       } else {
         b.disabled = false;
@@ -668,7 +882,7 @@
     const numero = processoAtual?.numero || "";
     if (!st) return;
     if (!numero) { st.textContent = "Sem número de processo capturado."; return; }
-    CratosHTML.definir(st, html`<span style="color:#9a9a9a">Abrindo o CCS… (se pedir login, entre; a coleta segue sozinha na aba do CCS)</span>`);
+    CratosHTML.definir(st, html`<span style="color:var(--fg2)">Abrindo o CCS… (se pedir login, entre; a coleta segue sozinha na aba do CCS)</span>`);
     let r = null;
     try {
       r = await browser.runtime.sendMessage({ tipo: "ccs_coletar", numeroProcesso: numero, partes: partesAtuais || [] });
@@ -677,7 +891,7 @@
       CratosHTML.definir(st, html`<span class="cx-erro">Não consegui iniciar a coleta do CCS (${(r && (r.erro || r.motivo)) || "erro"}).</span>`);
       return;
     }
-    CratosHTML.definir(st, html`<span style="color:#9a9a9a">${r.direto
+    CratosHTML.definir(st, html`<span style="color:var(--fg2)">${r.direto
       ? `Indo direto à(s) requisição(ões) guardada(s) deste processo (${r.requisicoes})…`
       : "Nenhuma requisição guardada neste navegador — o CCS vai procurar pelo processo (janelas de 30 dias)…"}</span>`);
     const off = Store.onChange("ccs_coleta_resultado", (res) => {
@@ -688,7 +902,7 @@
           : x.tipo === "estado" ? `certidão de estado (${x.pendentes} sem resposta)`
           : x.tipo === "timeout" ? "o CCS não terminou de gerar o PDF — colete de novo"
           : `nada novo (${x.pendentes} sem resposta)`;
-        const cor = x.tipo === "timeout" ? "#facc15" : "#4ade80";
+        const cor = x.tipo === "timeout" ? "var(--pdtx)" : "var(--oktx)";
         return html`<div style="color:${cor};margin-top:3px">Requisição ${x.numero}: ${desc}</div>`;
       });
       const temArquivo = (res.resultados || []).some((x) => x.tipo === "pdf" || x.tipo === "estado");
@@ -707,7 +921,7 @@
     const numero = processoAtual?.numero || "";
     if (!st) return;
     if (!numero) { st.textContent = "Sem número de processo capturado."; return; }
-    CratosHTML.definir(st, html`<span style="color:#9a9a9a">Abrindo o PREVJUD… (se pedir login, entre; a coleta segue sozinha na aba do PREVJUD)</span>`);
+    CratosHTML.definir(st, html`<span style="color:var(--fg2)">Abrindo o PREVJUD… (se pedir login, entre; a coleta segue sozinha na aba do PREVJUD)</span>`);
     let r = null;
     try {
       r = await browser.runtime.sendMessage({ tipo: "prevjud_coletar", numeroProcesso: numero,
@@ -718,8 +932,8 @@
       return;
     }
     CratosHTML.definir(st, r.descobrir
-      ? html`<span style="color:#9a9a9a">Procurando no PREVJUD os pedidos deste processo (últimos 7 dias)…</span>`
-      : html`<span style="color:#9a9a9a">Buscando ${r.pedidos} dossiê(s) em processamento deste processo…</span>`);
+      ? html`<span style="color:var(--fg2)">Procurando no PREVJUD os pedidos deste processo (últimos 7 dias)…</span>`
+      : html`<span style="color:var(--fg2)">Buscando ${r.pedidos} dossiê(s) em processamento deste processo…</span>`);
     const off = Store.onChange("prevjud_coleta_resultado", (res) => {
       if (!res || String(res.numProcesso || "").replace(/\D/g, "") !== String(numero).replace(/\D/g, "")) return;
       off();
@@ -728,9 +942,9 @@
         : x.tipo === "antigo" ? "pedido mais recente tem mais de 7 dias — não juntado"
           : x.tipo === "ja" ? "o pedido mais recente já foi juntado pelo CRATOS"
             : "ainda em processamento";
-      const linhas = (res.resultados || []).map((x) => html`<div style="color:${x.tipo === "pdf" ? "#4ade80" : "#facc15"};margin-top:3px">${x.nome || "CPF"}: ${rotuloTipo(x)}</div>`);
+      const linhas = (res.resultados || []).map((x) => html`<div style="color:${x.tipo === "pdf" ? "var(--oktx)" : "var(--pdtx)"};margin-top:3px">${x.nome || "CPF"}: ${rotuloTipo(x)}</div>`);
       const temArquivo = (res.resultados || []).some((x) => x.tipo === "pdf");
-      const aviso = res.aviso ? html`<div style="color:#facc15">${res.aviso}</div>` : "";
+      const aviso = res.aviso ? html`<div style="color:var(--pdtx)">${res.aviso}</div>` : "";
       CratosHTML.definir(st, html`${aviso}${linhas}${temArquivo ? html`<button class="cx-acao" id="cx-prevjud-juntar" style="margin-top:8px">Juntar agora</button>` : ""}`);
       const b = st.querySelector("#cx-prevjud-juntar");
       if (b) b.onclick = abrirJuntada;
@@ -847,12 +1061,12 @@
     if (!st) return;
     if (!numero || !idProcesso) { st.textContent = "Sem processo capturado."; return; }
     const dizer = (frag) => CratosHTML.definir(st, frag);
-    dizer(html`<span style="color:#9a9a9a">Consultando o SAB…</span>`);
+    dizer(html`<span style="color:var(--fg2)">Consultando o SAB…</span>`);
     const cli = SAB.cliente();
     let lista, indice;
     try {
       const proc = await cli.processoPorNumero(numero);
-      if (!proc) { dizer(html`<span style="color:#facc15">Este processo não está no SAB.</span>`); return; }
+      if (!proc) { dizer(html`<span style="color:var(--pdtx)">Este processo não está no SAB.</span>`); return; }
       lista = await cli.determinacoesDoProcesso(proc.id);
       indice = await indiceDosAutos(cli, idProcesso);
     } catch (e) {
@@ -872,13 +1086,13 @@
       } catch (e) { novas[d.id] = 0; }
     }
     const cands = SAB.candidatasColeta(lista, novas);
-    if (!cands.length) { dizer(html`<span style="color:#facc15">Nenhuma determinação deste processo no SAB (minutas não contam).</span>`); return; }
+    if (!cands.length) { dizer(html`<span style="color:var(--pdtx)">Nenhuma determinação deste processo no SAB (minutas não contam).</span>`); return; }
     if (cands.length === 1) { await executarColetaSab(cli, [cands[0].id], numero, indice); return; }
 
-    dizer(html`<div style="color:#e8e8e8;margin-bottom:6px">Este processo tem ${cands.length} determinações no SAB. Marque as que quer certificar (uma certidão para cada):</div>
-      ${cands.map((c) => html`<label style="display:flex;gap:6px;margin:4px 0;cursor:pointer;color:#e8e8e8">
+    dizer(html`<div style="color:var(--fg);margin-bottom:6px">Este processo tem ${cands.length} determinações no SAB. Marque as que quer certificar (uma certidão para cada):</div>
+      ${cands.map((c) => html`<label style="display:flex;gap:6px;margin:4px 0;cursor:pointer;color:var(--fg)">
         <input type="checkbox" class="cx-sab-det" value="${String(c.id)}"${c.marcada ? " checked" : ""}>
-        <span>Determinação nº ${String(c.id)} — ${c.rotulo}${c.desde ? ` (${c.desde.dmy})` : ""}${c.novas ? html` — <b style="color:#4ade80">${String(c.novas)} transferência(s) nova(s)</b>` : ""}</span></label>`)}
+        <span>Determinação nº ${String(c.id)} — ${c.rotulo}${c.desde ? ` (${c.desde.dmy})` : ""}${c.novas ? html` — <b style="color:var(--oktx)">${String(c.novas)} transferência(s) nova(s)</b>` : ""}</span></label>`)}
       <button class="cx-acao" id="cx-sab-ir" style="margin-top:8px">Coletar as marcadas</button>`);
     st.querySelector("#cx-sab-ir").onclick = () => {
       const ids = Array.from(st.querySelectorAll(".cx-sab-det:checked")).map((el) => el.value);
@@ -895,26 +1109,26 @@
     const cfg = await cfgSab();
     const idProcesso = processoAtual?.idProcesso || processoAtual?.id;
     for (const id of ids) {
-      dizer(html`${linhas}<div style="color:#9a9a9a">Determinação nº ${String(id)}: lendo as ordens e baixando os relatórios…</div>`);
+      dizer(html`${linhas}<div style="color:var(--fg2)">Determinação nº ${String(id)}: lendo as ordens e baixando os relatórios…</div>`);
       try {
         const r = await coletarDeterminacaoSab(cli, id, numero, indice, {
           comCertidao: true, operacao: "respostas_sab", grupo: String(id), rotuloGrupo: `determinação nº ${id}`,
         });
         gerou = true;
-        linhas.push(html`<div style="color:#4ade80;margin-top:3px">Determinação nº ${String(id)}: certidão consolidada + ${frasesResumoSab(r)}.</div>`);
+        linhas.push(html`<div style="color:var(--oktx);margin-top:3px">Determinação nº ${String(id)}: certidão consolidada + ${frasesResumoSab(r)}.</div>`);
         if (r.realizada) {
-          linhas.push(html`<div style="color:#facc15;margin-top:3px">⚠ Determinação nº ${String(id)}: ${SAB.ALERTA_REALIZADA}</div>`);
+          linhas.push(html`<div style="color:var(--pdtx);margin-top:3px">⚠ Determinação nº ${String(id)}: ${SAB.ALERTA_REALIZADA}</div>`);
           if (ativoToggle(cfg.gigsObrigacaoRealizada) && idProcesso) {
             const nome = String(cfg.gigsObrigacaoRealizadaAtividade || ATIVIDADE_REALIZADA_PADRAO);
-            try { await criarAtividadeGigs(Number(idProcesso), nome); linhas.push(html`<div style="color:#4ade80">✓ Atividade "${nome}" lançada no GIGS.</div>`); }
-            catch (e) { linhas.push(html`<div style="color:#facc15">Não lancei a atividade no GIGS (${String(e.message || e)}).</div>`); }
+            try { await criarAtividadeGigs(Number(idProcesso), nome); linhas.push(html`<div style="color:var(--oktx)">✓ Atividade "${nome}" lançada no GIGS.</div>`); }
+            catch (e) { linhas.push(html`<div style="color:var(--pdtx)">Não lancei a atividade no GIGS (${String(e.message || e)}).</div>`); }
           }
         }
       } catch (e) {
         linhas.push(html`<div class="cx-erro" style="margin-top:3px">Determinação nº ${String(id)}: ${String(e.message || e)} — nada gerado para ela.</div>`);
       }
     }
-    dizer(html`${linhas}${gerou ? html`<div style="color:#9a9a9a;margin-top:6px">Uma certidão por determinação. O PJe segura um rascunho por vez: assine (ou descarte) uma antes de criar a próxima.</div>
+    dizer(html`${linhas}${gerou ? html`<div style="color:var(--fg2);margin-top:6px">Uma certidão por determinação. O PJe segura um rascunho por vez: assine (ou descarte) uma antes de criar a próxima.</div>
       <button class="cx-acao" id="cx-sab-juntar" style="margin-top:8px">Juntar agora</button>` : ""}`);
     const b = st.querySelector("#cx-sab-juntar");
     if (b) b.onclick = abrirJuntada;
@@ -931,13 +1145,13 @@
     } catch (e) { return { seguir: true }; }        // o módulo confere de novo e avisa
     if (ativas.length < 2) return { seguir: true }; // nenhuma → o módulo diz "não há"; uma → ela
     return new Promise((resolve) => {
-      CratosHTML.definir(prog, html`<div style="color:#facc15;margin-bottom:6px">Há ${String(ativas.length)} determinações ATIVAS no SAB para este processo. Escolha qual interromper:</div>
-        ${ativas.map((d) => html`<label style="display:flex;gap:6px;margin:4px 0;cursor:pointer;color:#e8e8e8">
+      CratosHTML.definir(prog, html`<div style="color:var(--pdtx);margin-bottom:6px">Há ${String(ativas.length)} determinações ATIVAS no SAB para este processo. Escolha qual interromper:</div>
+        ${ativas.map((d) => html`<label style="display:flex;gap:6px;margin:4px 0;cursor:pointer;color:var(--fg)">
           <input type="radio" name="cx-sab-baixa" value="${String(d.id)}">
           <span>Determinação nº ${String(d.id)} — ${SAB.rotuloSit(d.situacao).texto}${(() => { const x = SAB.dataLocal(d.ultimaSituacao && d.ultimaSituacao.ocorridoEm); return x ? ` desde ${x.dmy}` : ""; })()}</span></label>`)}
         <div style="display:flex;gap:8px;margin-top:8px">
           <button class="cx-acao" id="cx-sab-baixa-ok" disabled>Interromper a escolhida</button>
-          <button class="cx-acao" id="cx-sab-baixa-pular" style="background:#1a1a1a;border:1px solid #6b7280;color:#e8e8e8">Não interromper (pular o SAB)</button>
+          <button class="cx-acao cx-sec" id="cx-sab-baixa-pular">Não interromper (pular o SAB)</button>
         </div>`);
       const ok = prog.querySelector("#cx-sab-baixa-ok");
       prog.querySelectorAll('input[name="cx-sab-baixa"]').forEach((r) => { r.onchange = () => { ok.disabled = false; }; });
@@ -951,11 +1165,13 @@
 
   /* ── LOTE: "Coletar respostas SAB" (telas sem processo, como o Meu painel) ─────── */
   function renderSemProcesso() {
+    renderMenu();
+    definirProcessoNoCabecalho(null);
+    processoAtual = null;
     CratosHTML.definir(corpo, html`
       <div class="cx-vazio">Nenhum processo aberto nesta tela. Para os convênios, abra um processo em DETALHES.</div>
-      ${convLigado("SAB") ? html`<div style="border-top:1px solid #333;margin-top:10px;padding-top:10px">
-        <button class="cx-acao" id="cx-lote-sab"
-          style="background:#1a1a1a;border:1px solid #e11d1d;color:#e8e8e8;font-size:12px">
+      ${convLigado("SAB") ? html`<div style="border-top:1px solid var(--ln);margin-top:10px;padding-top:10px">
+        <button class="cx-acao cx-sec" id="cx-lote-sab" style="font-size:12px">
           Coletar respostas SAB (transferências do dia)
         </button>
         <div id="cx-lote-sab-area" style="margin-top:8px;font-size:12px"></div>
@@ -969,9 +1185,9 @@
     const cfg = await cfgSab();
     const modal = cfg.loteModalidade === "certidao" ? "certidao" : "resposta";
     const dia = SAB.diaUtilAnterior(new Date());
-    CratosHTML.definir(area, html`<div style="border:1px solid #444;border-radius:6px;padding:8px;color:#e8e8e8">
+    CratosHTML.definir(area, html`<div style="border:1px solid var(--bd);border-radius:6px;padding:8px;color:var(--fg)">
       <label style="display:block;margin-bottom:6px">Dia das transferências:
-        <input type="date" id="cx-lote-dia" value="${dia}" style="background:#111;color:#e8e8e8;border:1px solid #444;padding:2px 4px"></label>
+        <input type="date" id="cx-lote-dia" value="${dia}" style="background:var(--bg);color:var(--fg);border:1px solid var(--bd);padding:2px 4px"></label>
       <div style="margin:6px 0 2px">Juntar nos processos:</div>
       <label style="display:block;cursor:pointer"><input type="radio" name="cx-lote-modo" value="resposta"${modal === "resposta" ? " checked" : ""}>
         só a resposta (documento "Sisbajud (transferência)" com os relatórios)</label>
@@ -981,9 +1197,9 @@
         lançar atividade no GIGS quando a obrigação estiver realizada</label>
       <div style="display:flex;gap:8px;margin-top:8px">
         <button class="cx-acao" id="cx-lote-ir">Buscar e juntar</button>
-        <button class="cx-acao" id="cx-lote-cancelar" style="background:#1a1a1a;border:1px solid #6b7280;color:#e8e8e8">Cancelar</button>
+        <button class="cx-acao cx-sec" id="cx-lote-cancelar">Cancelar</button>
       </div>
-      <div style="color:#9a9a9a;margin-top:6px">Os documentos ficam como minuta em cada processo; quem assina é você (há uma assinatura assistida no fim).</div>
+      <div style="color:var(--fg2);margin-top:6px">Os documentos ficam como minuta em cada processo; quem assina é você (há uma assinatura assistida no fim).</div>
     </div>`);
     area.querySelector("#cx-lote-cancelar").onclick = () => { area.textContent = ""; };
     area.querySelector("#cx-lote-ir").onclick = () => {
@@ -1008,7 +1224,7 @@
     const diaBr = ymd.split("-").reverse().join("/");
     const cli = SAB.cliente();
     /* 1) As determinações do órgão; cada uma, as ordens COM transferência do dia. */
-    dizer(html`<div style="color:#9a9a9a">Lendo as determinações no SAB…</div>`);
+    dizer(html`<div style="color:var(--fg2)">Lendo as determinações no SAB…</div>`);
     let dets;
     try { dets = await cli.todasDeterminacoes(); }
     catch (e) { dizer(html`<span class="cx-erro">Não consegui ler o SAB (${String(e.message || e)}). Nada foi feito.</span>`); return; }
@@ -1029,7 +1245,7 @@
         for (const o of SAB.ordensDoDia(ords, ymd)) achadas.push({ det: d, ordem: o });
       } catch (e) { falhasLeitura.push(d.id); }
       lidas++;
-      if (lidas % 20 === 0) dizer(html`<div style="color:#9a9a9a">Lendo as ordens… ${String(lidas)} de ${String(alvo.length)} determinações</div>`);
+      if (lidas % 20 === 0) dizer(html`<div style="color:var(--fg2)">Lendo as ordens… ${String(lidas)} de ${String(alvo.length)} determinações</div>`);
     });
     const grupos = SAB.agruparPorProcesso(achadas);
     const rel = [];
@@ -1044,7 +1260,7 @@
       const g = grupos[gi];
       const linha = { numero: g.numero, idPJe: g.idPJe, juntados: [], obtidos: [], aguardando: [], ja: [], conferir: [], falhas: [], alertas: [], gigs: null };
       rel.push(linha);
-      dizer(html`<div style="color:#9a9a9a">Processo ${String(gi + 1)} de ${String(grupos.length)}: ${SAB.numeroCnj(g.numero)}…</div>`);
+      dizer(html`<div style="color:var(--fg2)">Processo ${String(gi + 1)} de ${String(grupos.length)}: ${SAB.numeroCnj(g.numero)}…</div>`);
       try {
         if (!g.idPJe) throw new Error("o SAB não informou o id do processo no PJe");
         /* Os arquivos do lote ficam presos a ESTA aba: fechou, a limpeza (1.9.0) apaga. */
@@ -1106,24 +1322,24 @@
   function renderRelatorioLoteSab(diaBr, rel, assinar, falhasLeitura, total) {
     const area = corpo.querySelector("#cx-lote-sab-area");
     const juntou = rel.filter((l) => l.minuta);
-    const cartao = (l) => html`<div style="border:1px solid #333;border-radius:6px;padding:6px;margin:4px 0">
-      <div style="color:#e8e8e8;font-weight:600">${SAB.numeroCnj(l.numero)}</div>
-      ${l.juntados.length ? html`<div style="color:#4ade80">✓ juntado (minuta): ${l.juntados.join(", ")}</div>` : ""}
-      ${!l.minuta && l.obtidos.length ? html`<div style="color:#facc15">NÃO juntado (veja o motivo abaixo; rode de novo depois de resolver): ${l.obtidos.join(", ")}</div>` : ""}
-      ${l.ja.length ? html`<div style="color:#9a9a9a">já nos autos: ${l.ja.join(", ")}</div>` : ""}
-      ${l.aguardando.length ? html`<div style="color:#9a9a9a">ainda não enviada ao banco ou sem resposta (não juntado): ${l.aguardando.join(", ")}</div>` : ""}
-      ${l.conferir.length ? html`<div style="color:#facc15">possível duplicidade, conferir (não juntado): ${l.conferir.join(", ")}</div>` : ""}
-      ${l.alertas.map((a) => html`<div style="color:#facc15">⚠ ${a}</div>`)}
-      ${l.gigs ? html`<div style="color:${l.gigs === "lançada" ? "#4ade80" : "#facc15"}">GIGS: atividade ${l.gigs}</div>` : ""}
+    const cartao = (l) => html`<div style="border:1px solid var(--ln);border-radius:6px;padding:6px;margin:4px 0">
+      <div style="color:var(--fg);font-weight:600">${SAB.numeroCnj(l.numero)}</div>
+      ${l.juntados.length ? html`<div style="color:var(--oktx)">✓ juntado (minuta): ${l.juntados.join(", ")}</div>` : ""}
+      ${!l.minuta && l.obtidos.length ? html`<div style="color:var(--pdtx)">NÃO juntado (veja o motivo abaixo; rode de novo depois de resolver): ${l.obtidos.join(", ")}</div>` : ""}
+      ${l.ja.length ? html`<div style="color:var(--fg2)">já nos autos: ${l.ja.join(", ")}</div>` : ""}
+      ${l.aguardando.length ? html`<div style="color:var(--fg2)">ainda não enviada ao banco ou sem resposta (não juntado): ${l.aguardando.join(", ")}</div>` : ""}
+      ${l.conferir.length ? html`<div style="color:var(--pdtx)">possível duplicidade, conferir (não juntado): ${l.conferir.join(", ")}</div>` : ""}
+      ${l.alertas.map((a) => html`<div style="color:var(--pdtx)">⚠ ${a}</div>`)}
+      ${l.gigs ? html`<div style="color:${l.gigs === "lançada" ? "var(--oktx)" : "var(--pdtx)"}">GIGS: atividade ${l.gigs}</div>` : ""}
       ${l.falhas.length ? html`<div class="cx-erro">${listaBrSab(l.falhas)}</div>` : ""}
     </div>`;
     CratosHTML.definir(area, html`
-      <div style="color:#e8e8e8;font-weight:600">Respostas SAB de ${diaBr}: ${String(total)} processo(s) com transferência; ${String(juntou.length)} com juntada.</div>
+      <div style="color:var(--fg);font-weight:600">Respostas SAB de ${diaBr}: ${String(total)} processo(s) com transferência; ${String(juntou.length)} com juntada.</div>
       ${falhasLeitura.length ? html`<div class="cx-erro">Não consegui ler as ordens de ${String(falhasLeitura.length)} determinação(ões) (nº ${falhasLeitura.join(", ")}). Elas NÃO foram verificadas: rode de novo.</div>` : ""}
-      ${!total ? html`<div style="color:#9a9a9a">Nenhuma ordem com transferência nesse dia.</div>` : ""}
+      ${!total ? html`<div style="color:var(--fg2)">Nenhuma ordem com transferência nesse dia.</div>` : ""}
       ${rel.map(cartao)}
       ${assinar.length ? html`<button class="cx-acao" id="cx-lote-assinar" style="margin-top:8px">Assinar em sequência (${String(assinar.length)})</button>
-        <div style="color:#9a9a9a;margin-top:4px">Abre cada minuta numa janela do CRATOS; quando você assinar, segue para a próxima. O CRATOS não assina.</div>` : ""}
+        <div style="color:var(--fg2);margin-top:4px">Abre cada minuta numa janela do CRATOS; quando você assinar, segue para a próxima. O CRATOS não assina.</div>` : ""}
       <div id="cx-lote-assinatura" style="margin-top:8px"></div>`);
     const b = area.querySelector("#cx-lote-assinar");
     if (b) b.onclick = () => assinaturaAssistida(assinar);
@@ -1141,10 +1357,10 @@
       const f = fila[i];
       pular = false;
       window.open(`${location.origin}/pjekz/processo/${f.idPJe}/documento/anexar`, "cratos-assinatura");
-      CratosHTML.definir(caixa, html`<div style="color:#e8e8e8">Assinatura ${String(i + 1)} de ${String(fila.length)}: ${SAB.numeroCnj(f.numero)} — confira e assine na janela aberta.</div>
+      CratosHTML.definir(caixa, html`<div style="color:var(--fg)">Assinatura ${String(i + 1)} de ${String(fila.length)}: ${SAB.numeroCnj(f.numero)} — confira e assine na janela aberta.</div>
         <div style="display:flex;gap:8px;margin-top:6px">
-          <button class="cx-acao" id="cx-ass-pular" style="background:#1a1a1a;border:1px solid #6b7280;color:#e8e8e8">Pular</button>
-          <button class="cx-acao" id="cx-ass-parar" style="background:#1a1a1a;border:1px solid #e11d1d;color:#e8e8e8">Parar</button>
+          <button class="cx-acao cx-sec" id="cx-ass-pular">Pular</button>
+          <button class="cx-acao cx-sec" id="cx-ass-parar">Parar</button>
         </div>`);
       caixa.querySelector("#cx-ass-pular").onclick = () => { pular = true; };
       caixa.querySelector("#cx-ass-parar").onclick = () => { parar = true; };
@@ -1159,101 +1375,185 @@
       }
       feitos.push(`${SAB.numeroCnj(f.numero)}: ${assinado ? "assinado" : pular ? "pulado" : "parado"}`);
     }
-    CratosHTML.definir(caixa, html`<div style="color:#e8e8e8">Assinatura assistida encerrada.</div><div style="color:#9a9a9a">${listaBrSab(feitos)}</div>`);
+    CratosHTML.definir(caixa, html`<div style="color:var(--fg)">Assinatura assistida encerrada.</div><div style="color:var(--fg2)">${listaBrSab(feitos)}</div>`);
   }
 
-  function lerPartesMarcadas() {
-    return Array.from(corpo.querySelectorAll(".cx-sel-parte:checked"))
+  function lerPartesMarcadas(raizForm) {
+    return Array.from((raizForm || corpo).querySelectorAll(".cx-sel-parte:checked"))
       .map((el) => partesAtuais[parseInt(el.dataset.idx)])
       .filter(Boolean);
   }
 
-  /* Lista de convênios filtrada pelo modo, com checkbox + ▲▼ */
+  /* Compatível com o gancho antigo (setModo + renderListaConvenios): abre a aba do modo. */
   function renderListaConvenios() {
-    const lista = conveniosOrdenados().filter(c =>
-      modoAtual === "inclusao" ? true : c.ops.includes("baixa")
-    );
-    const titulo = modoAtual === "inclusao" ? "➕ INCLUSÃO" : "➖ BAIXA";
+    const m = modoAtual === "baixa" ? "baixa" : "inclusao";
+    montarAbas();
+    if (abaAtual !== abaDoModo(m)) irAba(abaDoModo(m));
+    else renderForm(m);
+  }
 
-    const itens = lista.map((c, i) => {
-      const dis = c.disponivel ? "" : "opacity:0.4;pointer-events:none";
-      const tag = c.disponivel ? "" : html` <small style="color:#666">(em breve)</small>`;
-      return html`
-        <div class="cx-parte" data-conv-id="${c.id}" style="align-items:center;padding:4px 0">
-          <label style="display:flex;gap:8px;flex:1;cursor:pointer;${dis}">
-            <input type="checkbox" class="cx-sel-conv" data-id="${c.id}"
-              ${c.disponivel ? "" : "disabled"}>
-            <span style="font-size:13px">${c.label}${tag}</span>
-          </label>
-          <div style="display:flex;flex-direction:column;gap:2px">
-            <button class="cx-ord-up" data-idx="${i}" title="Mover para cima"
-              style="background:none;border:none;color:#9a9a9a;cursor:pointer;font-size:10px;padding:0 4px"
-              ${i === 0 ? "disabled" : ""}>▲</button>
-            <button class="cx-ord-down" data-idx="${i}" title="Mover para baixo"
-              style="background:none;border:none;color:#9a9a9a;cursor:pointer;font-size:10px;padding:0 4px"
-              ${i === lista.length - 1 ? "disabled" : ""}>▼</button>
-          </div>
-        </div>`;
-    });
+  /* Formulário de Incluir / Baixar: convênios (com a ordem) e partes, e o "Executar". */
+  function renderForm(modo) {
+    const p = painelDaAba(abaDoModo(modo));
+    if (!p || filaNaAba === modo) return;
+    if (filaRodando && filaNaAba) {
+      CratosHTML.definir(p, html`<p class="cx-aviso">Há uma fila de ${NOME_MODO[filaNaAba]} em andamento na aba ${filaNaAba === "baixa" ? "Baixar" : "Incluir"}. Espere ela terminar.</p>`);
+      return;
+    }
+    modoAtual = modo;
+    const lista = conveniosOrdenados().filter((c) => modo === "inclusao" ? true : c.ops.includes("baixa"));
+    const sel = selConv[modo];
+    const hc = "cx-h-conv-" + modo, hp = "cx-h-partes-" + modo;
+    const itens = lista.map((c, i) => html`
+      <li class="cx-parte cx-conv" data-conv-id="${c.id}">
+        <label class="cx-rot">
+          <input type="checkbox" class="cx-sel-conv" data-id="${c.id}"${sel.has(c.id) ? " checked" : ""}${c.disponivel ? "" : " disabled"}>
+          <span>${c.label}${c.disponivel ? "" : " (em breve)"}</span>
+        </label>
+        <span class="cx-ord">
+          <button type="button" class="cx-icone cx-ord-up" data-idx="${i}" aria-label="Mover ${c.label} para cima"${i === 0 ? " disabled" : ""}>▲</button>
+          <button type="button" class="cx-icone cx-ord-down" data-idx="${i}" aria-label="Mover ${c.label} para baixo"${i === lista.length - 1 ? " disabled" : ""}>▼</button>
+        </span>
+      </li>`);
+    const partes = partesAtuais.map((pt, i) => html`
+      <li class="cx-parte">
+        <label class="cx-rot">
+          <input type="checkbox" class="cx-sel-parte" data-idx="${i}"${selPartes[i] ? " checked" : ""}>
+          <span class="cx-parte-txt"><span class="cx-nome">${pt.nome || "(sem nome)"}</span>
+          <span class="cx-doc">${formatarDoc(pt.cpfcnpj)}</span></span>
+        </label>
+        <span class="cx-polo">${pt.polo || ""}</span>
+      </li>`);
 
-    CratosHTML.definir(corpo, html`
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
-        <button id="cx-voltar-modo"
-          style="background:none;border:none;color:#9a9a9a;cursor:pointer;font-size:18px;padding:0">‹</button>
-        <span style="font-weight:700;font-size:13px">${titulo}</span>
+    CratosHTML.definir(p, html`
+      ${modo === "baixa" ? html`<p class="cx-aviso cx-aviso-perigo">A baixa retira restrições. Você confirma cada uma na aba do convênio.</p>` : ""}
+      <h2 class="cx-h" id="${hc}">Convênios, na ordem em que vão rodar</h2>
+      <p class="cx-dica">Os automáticos rodam primeiro. Os botões ▲ ▼ mudam a ordem.</p>
+      ${itens.length ? html`<ul class="cx-lista" aria-labelledby="${hc}">${itens}</ul>`
+        : html`<p class="cx-vazio">Nenhum convênio ${modo === "inclusao" ? "" : "com baixa "}ligado. Ligue os que você usa em Preferências → "Convênios em uso".</p>`}
+      ${partes.length ? html`<h2 class="cx-h" id="${hp}">Partes</h2>
+      <ul class="cx-lista" aria-labelledby="${hp}">${partes}</ul>` : ""}
+      <div class="cx-form-msg" id="cx-form-msg" role="alert"></div>
+      <div class="cx-rodape">
+        <span class="cx-resumo" id="cx-resumo"></span>
+        <button type="button" class="cx-acao${modo === "baixa" ? " cx-perigo-borda" : ""}" id="cx-executar-selecionados">${modo === "baixa" ? "Executar baixa" : "Executar inclusão"}</button>
       </div>
-      <div style="color:#9a9a9a;font-size:11px;margin-bottom:8px">
-        Selecione os convênios e ajuste a ordem (▲▼). Automáticos rodam primeiro.
-      </div>
-      <div style="font-size:11px;color:#e8e8e8;background:#1a1a1a;border-left:3px solid #e11d1d;
-                  padding:6px 8px;margin-bottom:10px;border-radius:4px">
-        <b>${partesSelecionadas.length} parte(s):</b>
-        ${partesSelecionadas.map((p) => p.nome).join(" · ")}
-      </div>
-      ${itens.length ? itens : html`<div class="cx-vazio">Nenhum convênio ${modoAtual === "inclusao" ? "" : "com baixa "}ligado. Ligue os que você usa em Preferências → "Convênios em uso".</div>`}
-      <button class="cx-acao" id="cx-executar-selecionados" style="margin-top:12px">
-        Executar selecionados
-      </button>
-      <div id="cx-progresso" style="margin-top:8px"></div>
-    `);
+      <div id="cx-confirmar"></div>`);
 
-    corpo.querySelector("#cx-voltar-modo").onclick = renderModoSelecao;
-    corpo.querySelector("#cx-executar-selecionados").onclick = executarSelecionados;
+    const resumo = () => {
+      const nc = p.querySelectorAll(".cx-sel-conv:checked").length;
+      const np = p.querySelectorAll(".cx-sel-parte").length ? p.querySelectorAll(".cx-sel-parte:checked").length : partesSelecionadas.length;
+      const r = p.querySelector("#cx-resumo");
+      if (r) r.textContent = `${nc} ${nc === 1 ? "convênio" : "convênios"} · ${np} ${np === 1 ? "parte" : "partes"}`;
+    };
+    p.onchange = resumo;
+    resumo();
+    p.querySelector("#cx-executar-selecionados").onclick = () =>
+      (modo === "baixa" ? pedirConfirmacaoBaixa() : executarSelecionados());
     wireAvisoMaisPjeRenajud();   // aviso do MaisPJE ao marcar o RENAJUD
     avisarConfigPendente();      // 1.9.2: INFOJUD sem vara → link para os Primeiros passos
 
-    // Botões de reordenação
     /* Troca com o VIZINHO VISÍVEL (no modo baixa, ou com convênio desligado, o vizinho na
-       ordem global pode estar escondido — a troca não aparecia). */
-    const trocarOrdem = (a, b) => {
+       ordem global pode estar escondido — a troca não aparecia). O foco volta para o
+       mesmo botão do convênio que andou, para quem usa teclado não se perder. */
+    const trocarOrdem = (a, b, classe) => {
+      guardarSelecao();
       ordemAtual = conveniosTodosOrdenados().map((c) => c.id);
       const i = ordemAtual.indexOf(a), k = ordemAtual.indexOf(b);
       if (i < 0 || k < 0) return;
       [ordemAtual[i], ordemAtual[k]] = [ordemAtual[k], ordemAtual[i]];
       Store.set(CHAVE_ORDEM, ordemAtual).catch(() => {});
-      renderListaConvenios();
+      renderForm(modo);
+      const alvo = p.querySelector(`.cx-conv[data-conv-id="${a}"] .${classe}`);
+      if (alvo && !alvo.disabled) alvo.focus();
+      else { const outro = p.querySelector(`.cx-conv[data-conv-id="${a}"] .cx-ord button:not([disabled])`); if (outro) outro.focus(); }
     };
-    corpo.querySelectorAll(".cx-ord-up").forEach(btn => {
+    p.querySelectorAll(".cx-ord-up").forEach((btn) => {
       btn.onclick = () => {
         const idx = parseInt(btn.dataset.idx);
-        if (idx > 0) trocarOrdem(lista[idx].id, lista[idx - 1].id);
+        if (idx > 0) trocarOrdem(lista[idx].id, lista[idx - 1].id, "cx-ord-up");
       };
     });
-    corpo.querySelectorAll(".cx-ord-down").forEach(btn => {
+    p.querySelectorAll(".cx-ord-down").forEach((btn) => {
       btn.onclick = () => {
         const idx = parseInt(btn.dataset.idx);
-        if (idx < lista.length - 1) trocarOrdem(lista[idx].id, lista[idx + 1].id);
+        if (idx < lista.length - 1) trocarOrdem(lista[idx].id, lista[idx + 1].id, "cx-ord-down");
       };
     });
   }
 
+  function msgForm(texto) {
+    const el = corpo.querySelector("#cx-form-msg") || corpo.querySelector("#cx-progresso");
+    if (el) CratosHTML.definir(el, html`<span class="cx-erro">${texto}</span>`);
+  }
+
+  /* Baixa: diálogo de confirmação antes de a fila andar. O foco vai para "Voltar"
+     (a opção segura); Esc fecha e devolve o foco ao "Executar baixa". */
+  function pedirConfirmacaoBaixa() {
+    const p = painelDaAba("baixar");
+    if (!p) return;
+    const marcados = Array.from(p.querySelectorAll(".cx-sel-conv:checked")).map((el) => el.dataset.id);
+    if (!marcados.length) { msgForm("Selecione ao menos um convênio."); return; }
+    const nomes = marcados.map((id) => (CONVENIOS.find((c) => c.id === id) || { label: id }).label);
+    const area = p.querySelector("#cx-confirmar");
+    const exec = p.querySelector("#cx-executar-selecionados");
+    CratosHTML.definir(area, html`<div class="cx-dialogo" role="alertdialog" aria-modal="false" aria-labelledby="cx-conf-t" aria-describedby="cx-conf-d">
+        <h2 class="cx-h2" id="cx-conf-t">Baixar em ${String(marcados.length)} ${marcados.length === 1 ? "convênio" : "convênios"}?</h2>
+        <p class="cx-det" id="cx-conf-d">${nomes.join(", ")}.</p>
+        <div class="cx-botoes">
+          <button type="button" class="cx-acao cx-sec" id="cx-conf-voltar">Voltar</button>
+          <button type="button" class="cx-acao cx-perigo" id="cx-conf-ok">Confirmar baixa</button>
+        </div>
+      </div>`);
+    exec.disabled = true;
+    const fechar = () => { CratosHTML.definir(area, html``); exec.disabled = false; exec.focus(); };
+    area.querySelector("#cx-conf-voltar").onclick = fechar;
+    area.querySelector("#cx-conf-ok").onclick = () => { CratosHTML.definir(area, html``); exec.disabled = false; executarSelecionados(); };
+    area.querySelector(".cx-dialogo").addEventListener("keydown", (e) => {
+      if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); fechar(); }
+    });
+    area.querySelector("#cx-conf-voltar").focus();
+  }
+
+  /* A aba da fila vira a linha do tempo. "Nova seleção" aparece quando ela termina. */
+  function mostrarFila(modo) {
+    if (filaNaAba && filaNaAba !== modo) {
+      const velho = painelDaAba(abaDoModo(filaNaAba));
+      if (velho) CratosHTML.definir(velho, html``);
+    }
+    filaNaAba = modo;
+    filaRodando = true;
+    grudarNoFim = true;
+    const p = painelDaAba(abaDoModo(modo));
+    if (!p) return;
+    CratosHTML.definir(p, html`<div class="cx-fila-topo">
+        <h2 class="cx-h2" id="cx-fila-titulo">${modo === "baixa" ? "Baixando restrições" : "Incluindo restrições"}</h2>
+        <button type="button" class="cx-acao cx-sec cx-mini" id="cx-nova-selecao" hidden>Nova seleção</button>
+      </div>
+      <div id="cx-progresso" aria-labelledby="cx-fila-titulo"></div>`);
+    p.querySelector("#cx-nova-selecao").onclick = () => {
+      filaNaAba = null;
+      filaRodando = false;
+      renderForm(modo);
+      const b = corpo.querySelector("#cx-aba-" + abaDoModo(modo));
+      if (b) b.focus();
+    };
+  }
+  function filaTerminou() {
+    filaRodando = false;
+    const b = corpo.querySelector("#cx-nova-selecao");
+    if (b) b.hidden = false;
+  }
+
   /* Executa os convênios selecionados na ordem: automáticos primeiro, interativos depois */
   async function executarSelecionados() {
-    const marcados = Array.from(corpo.querySelectorAll(".cx-sel-conv:checked"))
+    if (filaRodando) { msgForm("Já há uma fila em andamento. Espere ela terminar."); return; }
+    /* 2.0: lê o formulário da aba do modo (só ele existe na tela). */
+    const form = painelDaAba(abaDoModo(modoAtual)) || corpo;
+    const marcados = Array.from(form.querySelectorAll(".cx-sel-conv:checked"))
       .map(el => el.dataset.id);
     if (!marcados.length) {
-      corpo.querySelector("#cx-progresso").innerHTML =
-        `<span class="cx-erro">Selecione ao menos um convênio.</span>`;
+      msgForm("Selecione ao menos um convênio.");
       return;
     }
 
@@ -1264,14 +1564,19 @@
       ...lista.filter(c => c.tipo === "interativo"),
     ];
 
-    // Usa a seleção CONGELADA na tela anterior. Nada de reler o DOM aqui: os
-    // checkboxes não existem mais nesta tela.
-    const partesM = partesSelecionadas;
+    /* 2.0: as partes estão no mesmo formulário. Sem caixas de parte (processo sem
+       partes reconhecidas, ou o gancho de teste), vale a seleção já guardada. */
+    const temCaixasParte = form.querySelectorAll(".cx-sel-parte").length > 0;
+    const partesM = temCaixasParte ? lerPartesMarcadas(form) : partesSelecionadas;
     if (!partesM.length) {
-      corpo.querySelector("#cx-progresso").innerHTML =
-        `<span class="cx-erro">Nenhuma parte selecionada — volte e marque ao menos uma.</span>`;
+      msgForm("Selecione ao menos uma parte.");
       return;
     }
+    partesSelecionadas = partesM;
+    if (temCaixasParte) guardarSelecao();
+    selConv[modoAtual === "baixa" ? "baixa" : "inclusao"] = new Set(marcados);
+    /* A aba vira a linha do tempo da fila; a escolha do SAB (baixa) também mora nela. */
+    if (form !== corpo) mostrarFila(modoAtual === "baixa" ? "baixa" : "inclusao");
 
     const ctx = {
       idProcesso: processoAtual?.id,
@@ -1292,6 +1597,7 @@
       else if (esc.id) ctx.sabIdDeterminacao = esc.id;
       if (!fila.length) {
         corpo.querySelector("#cx-progresso").innerHTML = `<span class="cx-erro">Nada a executar.</span>`;
+        filaTerminou();
         return;
       }
     }
@@ -1395,7 +1701,7 @@
     }
     area.innerHTML = "";
     const aviso = document.createElement("div");
-    aviso.style.cssText = "font-size:11px;color:#facc15;margin-bottom:6px";
+    aviso.style.cssText = "font-size:11px;color:var(--pdtx);margin-bottom:6px";
     aviso.textContent = esperados
       ? `Conclua o ${conv.label} no sistema. O CRATOS espera ${esperados} ` +
         `certidão(ões) e segue sozinho quando chegarem — ou clique abaixo.`
@@ -1420,7 +1726,7 @@
       if (vigia) clearTimeout(vigia);
       if (off) off();
       anotar(ledgerStatus || "ok", ledgerDetalhe || sufixo || "");
-      area.innerHTML = `<div style="font-size:12px;color:#9a9a9a">Seguindo…</div>`;
+      area.innerHTML = `<div style="font-size:12px;color:var(--fg2)">Seguindo…</div>`;
       if (gerarCertidao && conv.id === "SAB" && modoAtual === "inclusao") {
         const nomeAbrev = (ctx.partes && ctx.partes[0])
           ? doisPrimeirosNomesPainel(ctx.partes[0].nome) : "PARTE";
@@ -1453,7 +1759,7 @@
       anotar("trava", `${p.feitos || 0} de ${esp}` + (p.motivo ? " — " + p.motivo : ""));
       atualizarProgresso(conv.id, "⛔ Parou — confira antes de seguir", "erro");
       const m = document.createElement("div");
-      m.style.cssText = "font-size:11px;color:#ff6b6b;margin:6px 0";
+      m.style.cssText = "font-size:11px;color:var(--ertx);margin:6px 0";
       m.textContent = `${conv.label}: saíram ${p.feitos || 0} de ${esp}. ` +
         `Confira no sistema antes de seguir. O botão abaixo continua a fila quando você decidir.`;
       area.insertBefore(m, area.firstChild.nextSibling);
@@ -1526,9 +1832,8 @@
        e SINALIZA no relatório ("pulado"), diferente do "Concluí" (que marca ok).
        Nada some em silêncio. */
     const btnPular = document.createElement("button");
-    btnPular.className = "cx-acao";
-    btnPular.style.cssText = "font-size:12px;margin-top:6px;background:#1a1a1a;" +
-      "border:1px solid #6b7280;color:#cbd5e1";
+    btnPular.className = "cx-acao cx-sec";
+    btnPular.style.cssText = "font-size:12px;margin-top:6px";
     btnPular.textContent = `⏭ Pular ${conv.label} — próximo da fila`;
     btnPular.onclick = () => {
       const quanto = esperados ? ` (${chegaram.size} de ${esperados})` : "";
@@ -1543,11 +1848,12 @@
     if (!orquestraRefeitos.has(conv.id)) {
       const btnRefazer = document.createElement("button");
       btnRefazer.className = "cx-acao cx-refazer";
-      btnRefazer.style.cssText = "font-size:12px;margin-top:6px;background:#1a1a1a;border:1px solid #6b7280;color:#cbd5e1";
+      btnRefazer.style.cssText = "font-size:12px;margin-top:6px";
+      btnRefazer.classList.add("cx-sec");
       btnRefazer.textContent = `↻ Refazer ${conv.label} — no fim da fila`;
       const notaRefazer = document.createElement("div");
       notaRefazer.className = "cx-refazer-nota";
-      notaRefazer.style.cssText = "font-size:11px;color:#9a9a9a;margin:3px 0 0";
+      notaRefazer.style.cssText = "font-size:11px;color:var(--fg2);margin:3px 0 0";
       let marcoAtual = null;
       const avaliarMarco = (m) => {
         const vale = m && String(m.convenio || "").toUpperCase() === String(conv.id).toUpperCase() &&
@@ -1555,14 +1861,13 @@
         marcoAtual = vale ? m : null;
         if (marcoAtual && ehAto) {
           btnRefazer.disabled = true;
-          btnRefazer.style.opacity = "0.5";
-          btnRefazer.style.cursor = "not-allowed";
-          notaRefazer.style.color = "#ff6b6b";
+          /* (2.0: o visual de desabilitado vem do CSS de .cx-acao:disabled) */
+          notaRefazer.style.color = "var(--ertx)";
           notaRefazer.textContent = `Refazer bloqueado: ${marcoAtual.oque || "o pedido foi preparado"} — ele pode ter chegado ao ` +
             `${conv.label}. Confira lá; se não chegou, use Pular e rode o ${conv.label} de novo depois.`;
         } else if (marcoAtual) {
           btnRefazer.disabled = false;
-          notaRefazer.style.color = "#facc15";
+          notaRefazer.style.color = "var(--pdtx)";
           notaRefazer.textContent = `Atenção: ${marcoAtual.oque || "o pedido já foi feito"}. Refazer registra outro pedido no ${conv.label}.`;
         } else {
           btnRefazer.disabled = false;
@@ -1633,22 +1938,23 @@
     const precisa = valem.filter((e) => e.status !== "ok");
     const div = document.createElement("div");
     div.id = "cx-relatorio";
-    div.style.cssText = "margin-top:10px;padding-top:8px;border-top:1px solid #333;font-size:12px";
+    div.style.cssText = "margin-top:10px;padding-top:8px;border-top:1px solid var(--ln);font-size:12px";
     const itensPrecisa = precisa.map((e, i) => {
       const vermelho = e.status === "erro" || e.status === "trava";
       if (e.status === "indisponivel") {
-        return html`<div style="color:#facc15;margin-top:3px">⛔ ${e.label} — ${e.detalhe}</div>`;
+        return html`<div style="color:var(--pdtx);margin-top:3px">⛔ ${e.label} — ${e.detalhe}</div>`;
       }
       const disp = e.indisponivel && e.medicao
-        ? html`<div style="color:#ff6b6b;margin:2px 0 0 14px">⛔ o sistema estava indisponível (medido às ${hmsDe(e.medicao.medidoEm)})</div><div data-disp="${i}" style="margin-left:14px"></div>`
+        ? html`<div style="color:var(--ertx);margin:2px 0 0 14px">⛔ o sistema estava indisponível (medido às ${hmsDe(e.medicao.medidoEm)})</div><div data-disp="${i}" style="margin-left:14px"></div>`
         : "";
-      return html`<div style="color:${vermelho ? "#ff6b6b" : "#facc15"};margin-top:3px">⚠ ${e.label} — ${e.detalhe || e.status}</div>${disp}`;
+      return html`<div style="color:${vermelho ? "var(--ertx)" : "var(--pdtx)"};margin-top:3px">⚠ ${e.label} — ${e.detalhe || e.status}</div>${disp}`;
     });
-    const corTopo = precisa.length ? "#facc15" : "#4ade80";
+    const corTopo = precisa.length ? "var(--pdtx)" : "var(--oktx)";
     const quemPrecisa = precisa.length ? `, ${precisa.length} precisa(m) de você` : "";
-    const itensRefeitos = refeitos.map((e) => html`<div style="color:#9a9a9a;margin-top:3px">↻ ${e.label} — ${e.detalhe}</div>`);
+    const itensRefeitos = refeitos.map((e) => html`<div style="color:var(--fg2);margin-top:3px">↻ ${e.label} — ${e.detalhe}</div>`);
     CratosHTML.definir(div, html`<div style="font-weight:700;color:${corTopo}">${total} convênio(s): ${okN} concluído(s)${quemPrecisa}</div>${itensPrecisa}${itensRefeitos}`);
     prog.appendChild(div);
+    filaTerminou();
     precisa.forEach((e, i) => {
       const alvo = div.querySelector(`[data-disp="${i}"]`);
       if (alvo) renderMedicao(alvo, e.medicao, CONVENIOS.find((c) => c.id === e.id) || { id: e.id, label: e.label }, "fila", null);
@@ -1709,7 +2015,7 @@
     if (semPedido) {
       const aviso = document.createElement("div");
       aviso.id = "cx-colheita-auto";
-      aviso.style.cssText = "font-size:12px;margin-top:8px;padding-top:8px;border-top:1px solid #333;color:#9a9a9a";
+      aviso.style.cssText = "font-size:12px;margin-top:8px;padding-top:8px;border-top:1px solid var(--ln);color:var(--fg2)";
       aviso.textContent = reg.soRecuperar
         ? "INFOJUD: só o Recuperar NI foi feito (a resposta é na hora) — não há solicitação para buscar na caixa postal."
         : "INFOJUD: nenhuma solicitação foi registrada nesta execução (nenhum tipo marcado) — não há resposta a buscar na caixa postal.";
@@ -1718,13 +2024,13 @@
     }
     const caixa = document.createElement("div");
     caixa.id = "cx-colheita-auto";
-    caixa.style.cssText = "font-size:12px;margin-top:8px;padding-top:8px;border-top:1px solid #333";
+    caixa.style.cssText = "font-size:12px;margin-top:8px;padding-top:8px;border-top:1px solid var(--ln)";
     prog.appendChild(caixa);
     /* 1.5.5: `dizer` recebe fragmento html``; texto solto entraria escapado. */
     const dizer = (frag) => CratosHTML.definir(caixa, frag);
     const btnRecolher = html`<button class="cx-acao" id="cx-recolher" style="margin-top:6px">Verificar de novo</button>`;
 
-    dizer(html`<span style="color:#9a9a9a">Verificando a caixa postal do eCAC… (a aba abre fria e pode levar até um minuto)</span>`);
+    dizer(html`<span style="color:var(--fg2)">Verificando a caixa postal do eCAC… (a aba abre fria e pode levar até um minuto)</span>`);
     let r = null;
     try {
       r = await browser.runtime.sendMessage({ tipo: "coletar_achar", numeroProcesso: numero });
@@ -1736,7 +2042,7 @@
       /* Cada motivo tem uma frase própria. "Ainda não respondeu" não é erro e
          não pode aparecer em vermelho — o pedido FOI registrado. */
       if (r && (r.motivo === "nao_encontrada" || r.motivo === "sem_mensagem_nao_lida")) {
-        dizer(html`<div style="color:#9a9a9a">A Receita ainda não respondeu ao INFOJUD deste processo — o retorno costuma levar de minutos a horas.</div>${btnRecolher}`);
+        dizer(html`<div style="color:var(--fg2)">A Receita ainda não respondeu ao INFOJUD deste processo — o retorno costuma levar de minutos a horas.</div>${btnRecolher}`);
       } else if (r && (r.motivo === "caixa_nao_carregou" || r.motivo === "caixa_sem_token" ||
                        r.motivo === "sem_sessao_receita")) {
         /* Estes três são o MESMO conserto do ponto de vista de quem usa: a aba da
@@ -1749,9 +2055,9 @@
             : "a sessão do gov.br não está ativa.";
         const oQueFazer = r.abaAberta ? " Deixei a aba aberta para você — se ela pedir login, entre."
                                       : " Abra a Caixa Postal do eCAC logada.";
-        dizer(html`<div style="color:#facc15">Não consegui ler a caixa postal: ${detalhe}${oQueFazer} Depois clique abaixo.</div>${btnRecolher}`);
+        dizer(html`<div style="color:var(--pdtx)">Não consegui ler a caixa postal: ${detalhe}${oQueFazer} Depois clique abaixo.</div>${btnRecolher}`);
       } else {
-        dizer(html`<div style="color:#facc15">Não consegui verificar a caixa postal (${(r && (r.erro || r.motivo)) || "erro"}).</div>${btnRecolher}`);
+        dizer(html`<div style="color:var(--pdtx)">Não consegui verificar a caixa postal (${(r && (r.erro || r.motivo)) || "erro"}).</div>${btnRecolher}`);
       }
       const b = caixa.querySelector("#cx-recolher");
       if (b) b.onclick = () => { caixa.remove(); colheitaAoFimDaFila(); };
@@ -1761,20 +2067,20 @@
     const s0 = r.solicitacao;
     const naoLidas = (typeof r.naoLidas === "number") ? r.naoLidas : (s0.lida ? 0 : 1);
     const casadas = r.totalCasadas > 1 ? ` (${r.totalCasadas} solicitações, ${naoLidas} não lida(s))` : "";
-    const resumo = html`<div style="color:#4ade80">✓ Resposta do INFOJUD encontrada — solicitação ${s0.numSolicitacao}, de ${s0.dataEnvio}.${casadas}</div>`;
+    const resumo = html`<div style="color:var(--oktx)">✓ Resposta do INFOJUD encontrada — solicitação ${s0.numSolicitacao}, de ${s0.dataEnvio}.${casadas}</div>`;
 
     if (modo !== "colher") {
       dizer(html`${resumo}<button class="cx-acao" id="cx-colher-auto" style="margin-top:6px">Colher tudo (automático)</button>`);
       const b = caixa.querySelector("#cx-colher-auto");
       if (b) b.onclick = async () => {
         b.disabled = true;
-        dizer(html`${resumo}<span style="color:#9a9a9a">Colhendo… (não feche a aba que abrir)</span>`);
+        dizer(html`${resumo}<span style="color:var(--fg2)">Colhendo… (não feche a aba que abrir)</span>`);
         dizer(html`${resumo}${await _colher(numero)}`);
       };
       return;
     }
 
-    dizer(html`${resumo}<span style="color:#9a9a9a">Colhendo as respostas… (não feche a aba que abrir)</span>`);
+    dizer(html`${resumo}<span style="color:var(--fg2)">Colhendo as respostas… (não feche a aba que abrir)</span>`);
     dizer(html`${resumo}${await _colher(numero)}`);
   }
 
@@ -1787,11 +2093,11 @@
       });
     } catch (e) { r = { ok: false, erro: String(e.message || e) }; }
     if (!r || !r.ok) {
-      return html`<div style="color:#facc15">Achei a resposta, mas não consegui colher (${(r && (r.erro || r.motivo)) || "erro"}). Use o botão "Coletar INFOJUD (resultados na caixa postal)" no pé do painel.</div>`;
+      return html`<div style="color:var(--pdtx)">Achei a resposta, mas não consegui colher (${(r && (r.erro || r.motivo)) || "erro"}). Use o botão "Coletar INFOJUD (resultados na caixa postal)" no pé do painel.</div>`;
     }
     const n = (r.baixados != null) ? r.baixados : (r.total != null ? r.total : null);
     const qtd = n != null ? ` (${n} arquivo(s))` : "";
-    return html`<div style="color:#4ade80">✓ Respostas do INFOJUD colhidas${qtd} e salvas na pasta CRATOS.</div>`;
+    return html`<div style="color:var(--oktx)">✓ Respostas do INFOJUD colhidas${qtd} e salvas na pasta CRATOS.</div>`;
   }
 
 
@@ -1836,16 +2142,16 @@
     if (!prog) return;
     const caixa = document.createElement("div");
     caixa.id = "cx-juntada-auto";
-    caixa.style.cssText = "font-size:12px;margin-top:8px;padding-top:8px;border-top:1px solid #333";
+    caixa.style.cssText = "font-size:12px;margin-top:8px;padding-top:8px;border-top:1px solid var(--ln)";
     prog.appendChild(caixa);
     /* O status da juntada é escrito por `acaoJuntar`, que procura
        `#cx-juntar-status` — então o bloco cria esse id aqui também, em vez de
        duplicar a lógica de mensagem. */
     const render = (cabecalho) => {
       const cartoes = certidoes.map((c, i) =>
-          html`<div style="border:1px solid #333;border-radius:6px;padding:8px;margin:6px 0">
-             <div style="color:#e8e8e8;font-weight:600">${c.titulo}</div>
-             <div style="color:#9a9a9a;font-size:12px;margin:4px 0">${c.convenios.join(", ")}
+          html`<div style="border:1px solid var(--ln);border-radius:6px;padding:8px;margin:6px 0">
+             <div style="color:var(--fg);font-weight:600">${c.titulo}</div>
+             <div style="color:var(--fg2);font-size:12px;margin:4px 0">${c.convenios.join(", ")}
                — ${c.arquivos.length} arquivo(s)</div>
              <button class="cx-acao" data-cert-auto="${i}">Criar no processo</button>
            </div>`);
@@ -1857,15 +2163,15 @@
     };
 
     if (modo !== "sim") {
-      render(html`<div style="color:#facc15">Pronto para certificar nos autos (${certidoes.length}):</div>`);
+      render(html`<div style="color:var(--pdtx)">Pronto para certificar nos autos (${certidoes.length}):</div>`);
       return;
     }
 
-    render(html`<div style="color:#9a9a9a">Criando a certidão no processo…</div>`);
+    render(html`<div style="color:var(--fg2)">Criando a certidão no processo…</div>`);
     await acaoJuntar(certidoes[0], Number(idProcesso), numero);
     if (certidoes.length > 1) {
       const extra = document.createElement("div");
-      extra.style.cssText = "color:#facc15;margin-top:8px";
+      extra.style.cssText = "color:var(--pdtx);margin-top:8px";
       extra.textContent = "Há mais de uma certidão a fazer neste processo, e o PJe " +
         "segura um rascunho por vez. Assine ou descarte a que acabei de criar e use o " +
         "botão acima para a próxima.";
@@ -1877,7 +2183,7 @@
     const prog = corpo.querySelector("#cx-progresso");
     if (!prog) return;
     CratosHTML.definir(prog, html`${orquestraFila.map(c =>
-      html`<div id="cx-prog-${c.id}" style="font-size:12px;padding:2px 0;color:#9a9a9a">
+      html`<div id="cx-prog-${c.id}" style="font-size:12px;padding:2px 0;color:var(--fg2)">
         ⏳ ${c.label}
       </div>`
     )}`);
@@ -1889,15 +2195,15 @@
     if (!id) {
       // Mensagem global
       const div = document.createElement("div");
-      div.style.cssText = "font-size:12px;padding:4px 0;color:#4ade80;font-weight:700";
+      div.style.cssText = "font-size:12px;padding:4px 0;color:var(--oktx);font-weight:700";
       div.textContent = texto;
       prog.appendChild(div);
       return;
     }
     const el = prog.querySelector(`#cx-prog-${id}`);
     if (!el) return;
-    const cores = { verde: "#4ade80", amarelo: "#facc15", erro: "#ff6b6b", cinza: "#9a9a9a" };
-    el.style.color = cores[cor] || "#9a9a9a";
+    const cores = { verde: "var(--oktx)", amarelo: "var(--pdtx)", erro: "var(--ertx)", cinza: "var(--fg2)" };
+    el.style.color = cores[cor] || "var(--fg2)";
     // reescreve com o nome do convênio (textContent: não precisa de escape)
     const conv = CONVENIOS.find(c => c.id === id);
     el.textContent = conv ? `${texto} — ${conv.label}` : texto;
@@ -1926,8 +2232,8 @@
     /* 1.5.5: nº da solicitação, processo e data vêm da caixa postal da Receita
        e entravam crus no HTML. */
     CratosHTML.definir(status, html`
-      <div style="color:#4ade80">✓ Solicitação localizada (trava de processo OK)</div>
-      <div style="color:#9a9a9a;margin-top:4px">
+      <div style="color:var(--oktx)">✓ Solicitação localizada (trava de processo OK)</div>
+      <div style="color:var(--fg2);margin-top:4px">
         Nº solicitação: ${s.numSolicitacao}<br>
         Processo: ${s.numProcesso}<br>
         Enviada em: ${s.dataEnvio} ${s.lida ? "(lida)" : "(não lida)"}<br>
@@ -1947,7 +2253,7 @@
     const st = corpo.querySelector("#cx-colher-status");
     const numero = processoAtual?.numero || "";
     if (!numero) { st.textContent = "Sem número de processo capturado."; return; }
-    CratosHTML.definir(st, html`<span style="color:#9a9a9a">Colhendo ${soEfin ? "o e-Financeira" : "automaticamente"} na caixa postal… (não feche a aba que abrir)</span>`);
+    CratosHTML.definir(st, html`<span style="color:var(--fg2)">Colhendo ${soEfin ? "o e-Financeira" : "automaticamente"} na caixa postal… (não feche a aba que abrir)</span>`);
     const r = await browser.runtime.sendMessage({
       tipo: "coletar_tudo",
       numeroProcesso: numero,
@@ -1964,16 +2270,16 @@
       return;
     }
     if (r.filaVazia) {
-      CratosHTML.definir(st, html`<span style="color:#facc15">Nenhuma resposta não lida ainda para este processo${r.totalCasadas ? ` (há ${r.totalCasadas} já lida(s))` : ""}. Tente novamente em instantes.</span>`);
+      CratosHTML.definir(st, html`<span style="color:var(--pdtx)">Nenhuma resposta não lida ainda para este processo${r.totalCasadas ? ` (há ${r.totalCasadas} já lida(s))` : ""}. Tente novamente em instantes.</span>`);
       return;
     }
     const pendTxt = (r.pendentes && r.pendentes.length)
-      ? html`<div style="color:#facc15;margin-top:4px">Pendentes (colher depois): ${r.pendentes.join(" | ")}</div>` : "";
+      ? html`<div style="color:var(--pdtx);margin-top:4px">Pendentes (colher depois): ${r.pendentes.join(" | ")}</div>` : "";
     const falhasTxt = (r.falhas && r.falhas.length)
-      ? html`<div style="color:#ff6b6b;margin-top:4px">Falhas: ${r.falhas.join(" | ")}</div>` : "";
+      ? html`<div style="color:var(--ertx);margin-top:4px">Falhas: ${r.falhas.join(" | ")}</div>` : "";
     const cab = r.timeout
-      ? html`<span style="color:#facc15">⏱ Tempo esgotado — ${r.colhidos}/${r.total} colhidos em ${r.mensagens} solicitação(ões).</span>`
-      : html`<span style="color:#4ade80">✓ ${r.colhidos}/${r.total} itens colhidos em ${r.mensagens} solicitação(ões).</span>`;
+      ? html`<span style="color:var(--pdtx)">⏱ Tempo esgotado — ${r.colhidos}/${r.total} colhidos em ${r.mensagens} solicitação(ões).</span>`
+      : html`<span style="color:var(--oktx)">✓ ${r.colhidos}/${r.total} itens colhidos em ${r.mensagens} solicitação(ões).</span>`;
     CratosHTML.definir(st, html`${cab}${pendTxt}${falhasTxt}`);
   }
 
@@ -2371,7 +2677,7 @@
   async function acaoJuntar(certidao, idProcesso, numProcesso) {
     const st = corpo.querySelector("#cx-juntar-status");
     const dizer = (frag) => CratosHTML.definir(st, frag);
-    dizer(html`<span style="color:#9a9a9a">Criando a certidão no processo…</span>`);
+    dizer(html`<span style="color:var(--fg2)">Criando a certidão no processo…</span>`);
     try {
       const r = await juntarCertidao(idProcesso, certidao, numProcesso);
       /* `familia`, e não `tipo`: o literal já usa `tipo` para o NOME da mensagem,
@@ -2398,26 +2704,26 @@
 
       /* 1.5.5: lista de fragmentos html`` em vez de string concatenada. */
       const listaBr = (itens) => itens.map((t, i) => html`${i ? html`<br>` : ""}• ${t}`);
-      const partesMsg = [html`<div style="color:#4ade80">✓ "${certidao.titulo}" criada como minuta no processo.</div>`];
+      const partesMsg = [html`<div style="color:var(--oktx)">✓ "${certidao.titulo}" criada como minuta no processo.</div>`];
       if (an.anexados.length) {
-        partesMsg.push(html`<div style="color:#4ade80;margin-top:6px">✓ ${an.anexados.length} documento(s) anexado(s) pelo CRATOS:<br>${listaBr(an.anexados)}</div>`);
+        partesMsg.push(html`<div style="color:var(--oktx);margin-top:6px">✓ ${an.anexados.length} documento(s) anexado(s) pelo CRATOS:<br>${listaBr(an.anexados)}</div>`);
       }
       const vis = r && r.visibilidade;
       if (vis && vis.ok && vis.pessoas) {
-        partesMsg.push(html`<div style="color:#4ade80;margin-top:6px">✓ visibilidade dada a ${vis.pessoas} parte(s) em ${vis.docs} documento(s).</div>`);
+        partesMsg.push(html`<div style="color:var(--oktx);margin-top:6px">✓ visibilidade dada a ${vis.pessoas} parte(s) em ${vis.docs} documento(s).</div>`);
       } else if (vis && vis.ok === false) {
-        partesMsg.push(html`<div style="color:#facc15;margin-top:6px">Não consegui dar visibilidade às partes (${vis.erro || "erro"}) — dê à mão na tela do documento.</div>`);
+        partesMsg.push(html`<div style="color:var(--pdtx);margin-top:6px">Não consegui dar visibilidade às partes (${vis.erro || "erro"}) — dê à mão na tela do documento.</div>`);
       }
       if (an.falharam.length) {
-        partesMsg.push(html`<div style="color:#facc15;margin-top:6px">Não consegui anexar:<br>${listaBr(an.falharam.map((f) => f.nome + " — " + f.motivo))}</div>`);
+        partesMsg.push(html`<div style="color:var(--pdtx);margin-top:6px">Não consegui anexar:<br>${listaBr(an.falharam.map((f) => f.nome + " — " + f.motivo))}</div>`);
       }
       if (faltando.length) {
         /* "semBytes" quase sempre quer dizer: o arquivo é de outra sessão do
            navegador. Não é erro, e a frase diz isso em vez de acusar falha. */
         const comoAnexar = an.anexados.length ? "Falta anexar à mão" : "Anexe da pasta CRATOS";
-        partesMsg.push(html`<div style="color:#9a9a9a;margin-top:6px">${comoAnexar} (arquivo de outra sessão do navegador, fora do alcance da extensão):<br>${listaBr(faltando)}</div>`);
+        partesMsg.push(html`<div style="color:var(--fg2);margin-top:6px">${comoAnexar} (arquivo de outra sessão do navegador, fora do alcance da extensão):<br>${listaBr(faltando)}</div>`);
       }
-      partesMsg.push(html`<div style="color:#facc15;margin-top:6px">Falta você conferir e assinar — o CRATOS não assina.</div><button class="cx-acao" id="cx-abrir-anexar" style="margin-top:8px">Abrir o documento no processo</button>`);
+      partesMsg.push(html`<div style="color:var(--pdtx);margin-top:6px">Falta você conferir e assinar — o CRATOS não assina.</div><button class="cx-acao" id="cx-abrir-anexar" style="margin-top:8px">Abrir o documento no processo</button>`);
       dizer(html`${partesMsg}`);
       const b = corpo.querySelector("#cx-abrir-anexar");
       if (b) b.onclick = () => {
@@ -2437,18 +2743,18 @@
     const numero = processoAtual?.numero || "";
     const idProcesso = processoAtual?.idProcesso || processoAtual?.id;
     if (!numero || !idProcesso) { st.textContent = "Sem processo capturado."; return; }
-    st.innerHTML = `<span style="color:#9a9a9a">Lendo o que foi feito neste processo…</span>`;
+    st.innerHTML = `<span style="color:var(--fg2)">Lendo o que foi feito neste processo…</span>`;
 
     const r = await browser.runtime.sendMessage({ tipo: "diario_ler", numProcesso: numero });
     const certidoes = (r && r.certidoes) || [];
     if (!certidoes.length) {
-      st.innerHTML = `<span style="color:#facc15">Nada a certificar neste processo — ou tudo que rodou já foi juntado.</span>`;
+      st.innerHTML = `<span style="color:var(--pdtx)">Nada a certificar neste processo — ou tudo que rodou já foi juntado.</span>`;
       return;
     }
     CratosHTML.definir(st, html`${certidoes.map((c, i) =>
-      html`<div style="border:1px solid #333;border-radius:6px;padding:8px;margin-bottom:6px">
-         <div style="color:#e8e8e8;font-weight:600">${c.titulo}</div>
-         <div style="color:#9a9a9a;font-size:12px;margin:4px 0">${c.convenios.join(", ")}
+      html`<div style="border:1px solid var(--ln);border-radius:6px;padding:8px;margin-bottom:6px">
+         <div style="color:var(--fg);font-weight:600">${c.titulo}</div>
+         <div style="color:var(--fg2);font-size:12px;margin:4px 0">${c.convenios.join(", ")}
            — ${c.arquivos.length} arquivo(s) para anexar</div>
          <button class="cx-acao" data-cert="${i}">Criar no processo</button>
        </div>`)}`);
@@ -2521,7 +2827,7 @@
       CratosFaixa.mostrar("juntada",
         `"${p.titulo}" está aqui como minuta.\n\nAnexe estes arquivos, da pasta CRATOS:\n` +
         p.arquivos.map((a) => "  • " + a).join("\n") +
-        `\n\nDepois confira e assine — o CRATOS não assina por você.`, "#facc15");
+        `\n\nDepois confira e assine — o CRATOS não assina por você.`, "var(--pdtx)");
       await Store.set("juntada_pendente", null);   // um lembrete, não um alarme
     } catch (e) { /* lembrete é melhor-esforço */ }
   })();
@@ -2555,7 +2861,7 @@
     if (nx && nx.classList && nx.classList.contains("cx-maispje-inline")) return;
     const linha = document.createElement("div");
     linha.className = "cx-maispje-inline";
-    linha.style.cssText = "font-size:11px;color:#facc15;margin:-2px 0 4px 26px;line-height:1.35";
+    linha.style.cssText = "font-size:11px;color:var(--pdtx);margin:-2px 0 4px 26px;line-height:1.35";
     linha.textContent = "⚠ MaisPJE ativo pode conflitar no RENAJUD — desabilite-o antes de rodar.";
     row.parentNode.insertBefore(linha, row.nextSibling);
   }
@@ -2585,6 +2891,10 @@
      de conclusão via Store.set — exercitando o orquestrador REAL, não uma cópia. */
   window.__cratosPainel = {
     host, raiz,
+    // 2.0 — abas e menu
+    irAba, get abaAtual() { return abaAtual; }, get filaNaAba() { return filaNaAba; },
+    get filaRodando() { return filaRodando; }, renderSituacao, renderColetar, renderMenu,
+    abrirMenu, fecharMenu, alternarContraste, pedirConfirmacaoBaixa, alternarPainel, fecharPainel,
     rodarProximoConvenio,
     renderBotaoConcluiu,
     renderRelatorioFinal,

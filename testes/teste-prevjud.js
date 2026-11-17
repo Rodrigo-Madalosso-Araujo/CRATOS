@@ -273,7 +273,7 @@ const seguro = (fn) => { try { return fn(); } catch (e) { return false; } };
       man.background.scripts.includes("modulos/prevjud.js") && man.permissions.includes("https://previdenciario.pdpj.jus.br/*"), "manifest: PREVJUD ligado (host, content script, grampo, módulo)");
     checar(/case "PREVJUD":\s*return ModuloPREVJUD\.executar/.test(bg) && /case "prevjud_pdf":\s*return salvarPdfPrevjud/.test(bg) &&
       /case "prevjud_coletar":\s*return ModuloPREVJUD\.coletar/.test(bg) && /case "prevjud_fechar_aba":[\s\S]{0,120}fecharAbaSab\(sender\)/.test(bg), "background: orquestrador, PDF, coleta e fechar aba");
-    checar(/id: "PREVJUD",[^\n]*ops: \["consulta"\]/.test(painel) && /id="cx-coletar-prevjud"/.test(painel) && /tipo: "prevjud_coletar"/.test(painel),
+    checar(/id: "PREVJUD",[^\n]*ops: \["consulta"\]/.test(painel) && /"cx-coletar-prevjud"/.test(painel) && /tipo: "prevjud_coletar"/.test(painel),
       "painel: PREVJUD na lista e botão \"Coletar PREVJUD\"");
   }
 

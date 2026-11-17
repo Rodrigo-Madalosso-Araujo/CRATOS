@@ -447,6 +447,7 @@ const botaoPular = (w) => {
       { nome: "ANTONIO EXEMPLO", cpfcnpj: "45645645609", polo: "passivo" },
     ],
   });
+  if (P.irAba) P.irAba("incluir");   // 2.0: as partes moram no formulário da aba Incluir
   const cbs = Array.from((w.__cratosPainel.raiz || w.document).querySelectorAll(".cx-sel-parte"));
   checar(cbs.length === 3, "renderiza um checkbox por parte");
   checar(cbs[0] && cbs[0].checked === false, "⛔ o polo ATIVO nasce DESMARCADO");

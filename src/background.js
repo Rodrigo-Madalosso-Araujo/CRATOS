@@ -40,6 +40,8 @@ browser.runtime.onMessage.addListener((msg, sender) => {
       return abrirEcacParaVaras();
     case "fechar_esta_aba":
       return fecharEstaAba(sender);
+    case "abrir_preferencias":      // 2.0: menu "⋯" do painel
+      return browser.runtime.openOptionsPage().then(() => ({ ok: true }), (e) => ({ ok: false, erro: String(e) }));
     case "abrir_primeiros":
       return abrirPrimeirosPassos();
     case "abrir_manual":

@@ -125,6 +125,7 @@ async function secaoPainel() {
 
   P.renderProcesso({ id: 1, numero: "0000001-11.2024.5.18.0001",
     partes: [{ nome: P1, polo: P2, cpfcnpj: "<b>123</b>" }] });
+  if (P.irAba) P.irAba("incluir");   // 2.0: as partes moram no formulário da aba Incluir
   checar(injetado(corpo) === 0, "⛔ painel/partes: nome, polo e documento maliciosos NÃO injetam elemento");
   checar(corpo.querySelector(".cx-nome").textContent === P1, "painel/partes: o nome aparece literal, como texto");
   checar(corpo.querySelector(".cx-polo").textContent === P2 && !corpo.querySelector(".cx-polo b"),

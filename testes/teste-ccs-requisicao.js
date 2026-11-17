@@ -237,7 +237,7 @@ function moduloDeFundo(mem, abas) {
       /CCS: "https:\/\/www3\.bcb\.gov\.br\/ccs\/\*"/.test(b), "background: orquestrador, coleta, PDF e fechamento de aba do CCS");
     const p = fs.readFileSync(path.join(H.SRC, "conteudo", "painel.js"), "utf8");
     checar(/id: "CCS",[^\n]*ops: \["consulta"\]/.test(p), "painel: CCS na lista (consulta, aparece na INCLUSÃO)");
-    checar(/id="cx-coletar-ccs"/.test(p) && /tipo: "ccs_coletar"/.test(p), "painel: botão “Coletar CCS”");
+    checar(/"cx-coletar-ccs"/.test(p) && /tipo: "ccs_coletar"/.test(p), "painel: botão “Coletar CCS”");
   }
 
   H.relatorio(NOME, oks, falhas);
