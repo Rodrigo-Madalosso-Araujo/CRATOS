@@ -684,12 +684,168 @@
     mostrarNovidades();
   }
 
-  /* ── Situação (passo 3 da 2.0 preenche) ── */
-  function renderSituacao() {
+  /* ── Situação: uma linha por convênio em uso (comum/situacao.js monta a linha) ──
+     Lê sozinha, ao abrir o processo, as quatro fontes: pendências de configuração; o
+     diário desta aba (pronto para juntar) e as falhas da fila desta aba; o SAB ao vivo;
+     e os eventos (histórico sem dado de parte + linha do tempo do PJe).
+     REGRA DE FERRO: fonte que não respondeu nunca vira "nada": o SAB que não leu é
+     "não obtido", e a linha do tempo que não leu gera um aviso no topo. */
+  let geracaoSit = 0;
+  const comPrazo = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error("tempo esgotado")), ms))]);
+  const CHIP_SIT = {
+    pendente: "cx-chip-pd", pronto: "cx-chip-ac", naoobtido: "cx-chip-tracejado", aguardando: "cx-chip-wt",
+    juntado: "cx-chip-ok", incluido: "cx-chip-ok", baixado: "cx-chip-ok", consultado: "cx-chip-ok",
+    indisponivel: "cx-chip-er", semregistro: "cx-chip-neutro",
+  };
+  /* Convênios cuja resposta se colhe depois (aba Coletar) — e o SAB. */
+  const COLETAVEIS = { INFOJUD: "cx-localizar", CCS: "cx-coletar-ccs", PREVJUD: "cx-coletar-prevjud", SAB: "cx-coletar-sab" };
+
+  async function lerFontesSituacao(proc) {
+    const numero = proc.numero || "";
+    const dig = String(numero).replace(/\D/g, "");
+    const idPJe = proc.idProcesso || proc.id;
+    const f = { convenios: conveniosOrdenados().map((c) => c.id), pendencias: {}, sessao: { prontos: {}, falhas: {} }, sab: null, eventos: [] };
+    const avisos = [];
+
+    /* 1. pendências de configuração */
+    try {
+      const cfg = (await Store.get(CHAVES.config)) || {};
+      if (convLigado("INFOJUD") && !String((cfg.infojud || {}).vara || "").trim()) f.pendencias.INFOJUD = "Vara do e-CAC não configurada";
+    } catch (e) { /* sem config: nada pendente a dizer */ }
+
+    /* 2. esta aba: o diário (o que ainda não foi juntado) e as falhas da fila */
+    try {
+      const d = await Store.get("diario:" + dig);
+      for (const it of ((d && d.itens) || [])) {
+        if (it.juntadoEm || it.substituidoEm) continue;
+        const c = String(it.convenio || "").toUpperCase();
+        if (c) f.sessao.prontos[c] = (f.sessao.prontos[c] || 0) + 1;
+      }
+    } catch (e) { /* nada */ }
+    for (const e of orquestraLedger) {
+      if (["erro", "trava", "indisponivel"].includes(e.status)) f.sessao.falhas[e.id] = e.detalhe || "Falhou nesta aba";
+      else if (e.status === "ok") delete f.sessao.falhas[e.id];
+    }
+
+    /* 3 e 4. eventos e SAB — em paralelo, cada um com prazo */
+    const cli = (typeof SAB !== "undefined" && SAB) ? SAB.cliente() : null;
+    const pHist = comPrazo(browser.runtime.sendMessage({ tipo: "historico_ler", numProcesso: numero }), 8000)
+      .then((r) => { for (const e of ((r && r.eventos) || [])) f.eventos.push(e); })
+      .catch(() => avisos.push("Não consegui ler o histórico do CRATOS deste processo."));
+    let timeline = null;
+    const pAutos = cli && idPJe
+      ? comPrazo(cli.timeline(idPJe), 10000)
+        .then((t) => { timeline = t; for (const e of CratosSituacao.eventosDosAutos(t)) f.eventos.push(e); })
+        .catch(() => avisos.push("Não consegui ler a linha do tempo do PJe agora; o que o CRATOS juntou nos autos pode não aparecer."))
+      : Promise.resolve();
+    await Promise.all([pHist, pAutos]);
+
+    if (cli && convLigado("SAB")) {
+      try {
+        f.sab = await comPrazo((async () => {
+          if (!timeline) throw new Error("sem a linha do tempo");
+          const indice = SAB.indiceJuntados(timeline);
+          const p = await cli.processoPorNumero(numero);
+          if (!p) return { paraJuntar: 0, aguardando: 0 };
+          const lista = await cli.determinacoesDoProcesso(p.id);
+          let paraJuntar = 0, aguardando = 0;
+          for (const d of lista) {
+            if (String(d.situacao || "").toUpperCase() === "MINUTA") continue;
+            const ords = await cli.ordens(d.id);
+            for (const o of ords) {
+              const nos = SAB.situacaoNosAutos(indice, o.numeroProtocolo, o.dataUltimoProtocolo || o.dataProtocolo);
+              if (!nos && SAB.ordemJuntavel(o)) paraJuntar++;
+              else if (SAB.ehAtiva(d.situacao) && String(o.situacao || "") === "ENVIADA" && !SAB.ordemJuntavel(o)) aguardando++;
+            }
+          }
+          return { paraJuntar, aguardando };
+        })(), 15000);
+      } catch (e) {
+        if (!f.sessao.prontos.SAB) f.sessao.falhas.SAB = "Não consegui ler o SAB agora (falha técnica, não é resposta negativa)";
+      }
+    }
+    return { f, avisos };
+  }
+
+  async function renderSituacao() {
     const p = painelDaAba("situacao");
     if (!p) return;
-    CratosHTML.definir(p, html`<h2 class="cx-h">Situação neste processo</h2>
-      <p class="cx-vazio" id="cx-sit-vazio">Use as abas Incluir, Baixar e Coletar.</p>`);
+    const proc = processoAtual;
+    const minha = ++geracaoSit;
+    if (typeof CratosSituacao === "undefined" || !proc) {
+      CratosHTML.definir(p, html`<p class="cx-vazio">Situação indisponível nesta tela.</p>`);
+      return;
+    }
+    CratosHTML.definir(p, html`<h2 class="cx-h" id="cx-h-sit">Situação neste processo</h2>
+      <p class="cx-vazio" id="cx-sit-lendo" role="status">Lendo os autos, o histórico e o SAB…</p>`);
+    let r;
+    try { r = await lerFontesSituacao(proc); } catch (e) { r = null; }
+    if (minha !== geracaoSit || !painelDaAba("situacao") || processoAtual !== proc) return;   // outra leitura passou na frente
+    if (!r) {
+      CratosHTML.definir(p, html`<h2 class="cx-h">Situação neste processo</h2><p class="cx-erro">Não consegui montar a situação agora. Use as outras abas normalmente.</p>
+        <button type="button" class="cx-acao cx-sec" id="cx-sit-atualizar">Tentar de novo</button>`);
+      p.querySelector("#cx-sit-atualizar").onclick = () => renderSituacao();
+      return;
+    }
+    const linhas = CratosSituacao.montar(r.f);
+    ultimaSituacao = linhas;
+    const acao = (l) => {
+      if (l.estado === "pendente") return { rotulo: "Configurar", fn: () => browser.runtime.sendMessage({ tipo: "abrir_primeiros" }).catch(() => {}) };
+      if ((l.estado === "pronto" || l.estado === "naoobtido") && COLETAVEIS[l.id]) {
+        return { rotulo: l.estado === "pronto" ? (l.id === "SAB" ? "Coletar e juntar" : "Juntar") : "Tentar de novo", fn: () => irParaConvenio(l.id, l.estado === "pronto" && l.id !== "SAB" ? "cx-juntar" : COLETAVEIS[l.id]) };
+      }
+      if (l.estado === "pronto") return { rotulo: "Juntar", fn: () => irParaConvenio(l.id, "cx-juntar") };
+      if (l.estado === "naoobtido") return { rotulo: "Tentar de novo", fn: () => irParaConvenio(l.id, null) };
+      return null;
+    };
+    const itens = linhas.map((l, i) => {
+      const a = acao(l);
+      return html`<li class="cx-item cx-sit" data-conv-id="${l.id}">
+        <div class="cx-sit-topo"><h3 class="cx-h3">${l.nome}<span class="cx-sr">:</span></h3>
+          <span class="cx-chip ${CHIP_SIT[l.estado] || "cx-chip-neutro"}">${l.estado === "pronto" && l.n ? String(l.n) + " para juntar" : l.rotulo}</span></div>
+        <p class="cx-det">${l.detalhe}</p>
+        ${a ? html`<button type="button" class="cx-acao cx-sec cx-mini cx-sit-acao" data-i="${String(i)}">${a.rotulo}<span class="cx-sr"> — ${l.nome}</span></button>` : ""}
+      </li>`;
+    });
+    CratosHTML.definir(p, html`
+      ${r.avisos.map((t) => html`<p class="cx-aviso" role="note">${t}</p>`)}
+      <div class="cx-fila-topo"><h2 class="cx-h" id="cx-h-sit">Situação neste processo</h2>
+        <button type="button" class="cx-acao cx-sec cx-mini" id="cx-sit-atualizar">Atualizar</button></div>
+      ${itens.length ? html`<ul class="cx-lista" aria-labelledby="cx-h-sit">${itens}</ul>`
+        : html`<p class="cx-vazio">Nenhum convênio ligado. Ligue os que você usa em Preferências → "Convênios em uso".</p>`}
+      <p class="cx-nota">"Não obtido" é falha técnica, nunca resposta negativa. "Sem registro do CRATOS" quer dizer que ele não fez nem juntou nada aqui; alguém pode ter feito à mão.</p>`);
+    p.querySelector("#cx-sit-atualizar").onclick = () => renderSituacao();
+    p.querySelectorAll(".cx-sit-acao").forEach((b) => {
+      const a = acao(linhas[Number(b.dataset.i)]);
+      b.onclick = () => a && a.fn();
+    });
+    /* ponto na aba Situação: há algo pedindo você (pronto ou configuração pendente) */
+    const abaSit = corpo.querySelector("#cx-aba-situacao");
+    if (abaSit) {
+      const pede = linhas.some((l) => l.estado === "pronto" || l.estado === "pendente");
+      let pt = abaSit.querySelector(".cx-ponto-aba");
+      if (pede && !pt) {
+        CratosHTML.definir(abaSit, html`Situação<span class="cx-ponto-aba" aria-hidden="true"></span><span class="cx-sr">, há pendência</span>`);
+      } else if (!pede && pt) {
+        abaSit.textContent = "Situação";
+      }
+    }
+  }
+  let ultimaSituacao = [];
+
+  /* Da Situação para o lugar de agir: a aba certa, com o foco no botão do convênio. */
+  function irParaConvenio(conv, botaoId) {
+    if (botaoId) {
+      irAba("coletar");
+      const b = painelDaAba("coletar") && painelDaAba("coletar").querySelector("#" + botaoId);
+      if (b) b.focus();
+      return;
+    }
+    const modo = "inclusao";                  // refazer um pedido/consulta é uma nova inclusão
+    selConv[modo].add(conv);
+    irAba(abaDoModo(modo));
+    const cb = painelDaAba(abaDoModo(modo)).querySelector(`.cx-sel-conv[data-id="${conv}"]`);
+    if (cb) cb.focus();
   }
 
   /* ── Coletar: as respostas que chegam depois, convênio por convênio, e a juntada ── */

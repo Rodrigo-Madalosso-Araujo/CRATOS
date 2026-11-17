@@ -163,6 +163,22 @@ kbd { font: 600 12px/1 system-ui, sans-serif; border: var(--bw) solid var(--bd2)
 .cx-cartao { margin: 4px 4px 8px; padding: 10px 12px; border-radius: 10px; background: var(--acsel); border: var(--bw) solid var(--acbd); font-size: 13px; }
 .cx-cartao .cx-acao { width: auto; }
 
+/* ── Situação ──────────────────────────────────────────────────────────────── */
+.cx-sit-topo { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.cx-sit .cx-acao { margin-top: 8px; }
+.cx-chip { flex: none; padding: 2px 10px; border-radius: 999px; font-size: 12px; white-space: nowrap; border: var(--bw) solid var(--bd); color: var(--fg3); }
+.cx-chip-ac { background: var(--acbg); color: var(--actx); border-color: var(--acbd); }
+.cx-chip-wt { background: var(--wtbg); color: var(--wttx); border-color: var(--wtbd); }
+.cx-chip-ok { background: var(--okbg); color: var(--oktx); border-color: var(--okbd); }
+.cx-chip-pd { background: var(--pdbg); color: var(--pdtx); border-color: var(--pdbd); }
+.cx-chip-er { background: var(--erbg); color: var(--ertx); border-color: var(--erbd); }
+.cx-chip-tracejado { background: transparent; color: var(--fg2); border-style: dashed; border-color: var(--fg2); }
+.cx-chip-neutro { background: transparent; color: var(--fg2); border-color: var(--bd); }
+.cx-nota { margin: 10px 4px 0; font-size: 12px; color: var(--fg2); }
+.cx-aba { position: relative; }
+.cx-ponto-aba { display: inline-block; width: 7px; height: 7px; margin-left: 6px; vertical-align: middle; border-radius: 50%; background: var(--ac); }
+.cx-fila-topo .cx-h { margin: 0; }
+
 .cx-desligado { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 24px 12px; text-align: center; }
 .cx-desligado .cx-acao { width: auto; }
 .cx-power-grande { color: var(--ertx); }

@@ -69,7 +69,7 @@ function montarPainel(SRC, opcoes) {
   if (fs.existsSync(sabL)) w.eval(fs.readFileSync(sabL, "utf8"));
   const usoL = path.join(SRC, "comum", "convenios-uso.js");    // 1.9.4
   if (fs.existsSync(usoL)) w.eval(fs.readFileSync(usoL, "utf8"));
-  for (const extra of [["comum", "tema.js"], ["conteudo", "painel-estilo.js"]]) {   // 2.0
+  for (const extra of [["comum", "situacao.js"], ["comum", "tema.js"], ["conteudo", "painel-estilo.js"]]) {   // 2.0
     const f = path.join(SRC, ...extra);
     if (fs.existsSync(f)) w.eval(fs.readFileSync(f, "utf8"));
   }

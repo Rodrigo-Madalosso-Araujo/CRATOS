@@ -58,7 +58,7 @@ function abrir(op) {
     const lista = a.r.querySelector('[role="tablist"]');
     const abas = Array.from(a.r.querySelectorAll('[role="tab"]'));
     checar(!!lista && lista.getAttribute("aria-label"), "uma tablist com nome acessível");
-    checar(abas.map((b) => b.textContent.trim()).join("|") === "Situação|Incluir|Baixar|Coletar", "⛔ quatro abas: Situação, Incluir, Baixar, Coletar");
+    checar(abas.map((b) => b.childNodes[0].textContent.trim()).join("|") === "Situação|Incluir|Baixar|Coletar", "⛔ quatro abas: Situação, Incluir, Baixar, Coletar");
     checar(abas[0].getAttribute("aria-selected") === "true" && abas.slice(1).every((b) => b.getAttribute("aria-selected") === "false"),
       "abre na Situação");
     checar(abas.filter((b) => b.tabIndex === 0).length === 1 && abas[0].tabIndex === 0, "só a aba selecionada entra no Tab");
