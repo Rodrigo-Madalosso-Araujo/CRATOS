@@ -95,6 +95,12 @@ browser.runtime.onMessage.addListener((msg, sender) => {
       return coletarColher(msg.contexto);
     case "coletar_tudo":
       return coletarTudo(msg.numeroProcesso, msg.pasta, msg.soEfin);
+    case "historico_registrar":
+      return Promise.resolve(globalThis.CratosHistorico
+        ? CratosHistorico.registrar(msg.numProcesso, msg.convenio, msg.fase) : null).then(() => ({ ok: true }));
+    case "historico_ler":
+      return Promise.resolve(globalThis.CratosHistorico ? CratosHistorico.ler(msg.numProcesso) : [])
+        .then((eventos) => ({ ok: true, eventos }));
     case "diario_ler":
       return Diario.ler(msg.numProcesso).then((d) => ({ ok: true, diario: d, certidoes: montarCertidoes(d) }));
     case "diario_limpar":
@@ -1088,6 +1094,11 @@ function baixarERegistrar(url, filename, registro, base64) {
       ...(registro.rotuloGrupo ? { rotuloGrupo: String(registro.rotuloGrupo).slice(0, 60) } : {}),
     });
     emitirPulsoConclusao(registro, nomeFinal);
+    /* 2.0 — histórico sem dado de parte: só convênio, fase e data. */
+    try {
+      const fase = globalThis.CratosSituacao && CratosSituacao.faseDoRegistro(registro, nomeFinal);
+      if (fase && globalThis.CratosHistorico) CratosHistorico.registrar(registro.numProcesso, registro.convenio, fase);
+    } catch (e) { /* o histórico nunca derruba o fluxo */ }
   }
 }
 
@@ -1643,6 +1654,7 @@ if (typeof Limpeza !== "undefined") {
   if (browser.runtime && browser.runtime.onStartup) {
     browser.runtime.onStartup.addListener(() => {
       Limpeza.aoIniciar().catch((e) => console.warn("CRATOS: limpeza ao abrir o Firefox:", e.message));
+      if (globalThis.CratosHistorico) CratosHistorico.purgar().catch(() => {});
     });
   }
 }

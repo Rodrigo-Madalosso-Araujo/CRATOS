@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="11.15 10.05 76 76" role="img" aria-label="CRATOS">
+<!-- CRATOS — emblema chapado (fonte única da marca, 2.0). Prata #C9CBD1, ouro #D9A441. -->
+<path d="M33.74 76.64A32.5 32.5 0 0 1 49.55 15.50" fill="none" stroke="#C9CBD1" stroke-width="4" stroke-linecap="round"/>
+<path d="M56.58 16.37A32.5 32.5 0 1 1 40.36 79.30" fill="none" stroke="#D9A441" stroke-width="3.9" stroke-linecap="round"/>
+<path d="M35.51 67.05A23.4 23.4 0 0 1 38.70 27.04" fill="none" stroke="#C9CBD1" stroke-width="1.5" stroke-linecap="round"/>
+<path d="M54.9 12L33.3 51.7L46.7 51.4L33.9 84.1L64.4 41.6L49.4 41.9Z" fill="#D9A441"/>
+<g fill="none" stroke="#D9A441" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+<path d="M52.8 39.2L61.2 31.5M55.4 57.3L63.6 47.7H69.4M49 65.4H59.8L64.8 61M45.5 70.2H54.5L56.9 71.8"/>
+<g stroke-width="1.75"><circle cx="63.2" cy="29.7" r="2.5"/><circle cx="71.9" cy="47.7" r="2.5"/><circle cx="66.6" cy="58.8" r="2.5"/><circle cx="59.0" cy="73.2" r="2.5"/></g>
+</g>
+</svg>

@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+<!-- 16 e 32 px: só o raio sobre a chapa (C+); os arcos e circuitos somem nesse tamanho. -->
+<rect x="0.5" y="0.5" width="31" height="31" rx="7" fill="#121419" stroke="#FFFFFF" stroke-opacity="0.18"/>
+<svg x="9" y="3" width="14" height="26" viewBox="31 10 36 76"><path d="M54.9 12L33.3 51.7L46.7 51.4L33.9 84.1L64.4 41.6L49.4 41.9Z" fill="#D9A441"/></svg>
+</svg>

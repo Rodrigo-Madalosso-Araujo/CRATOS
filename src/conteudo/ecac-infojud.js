@@ -1256,6 +1256,7 @@ async function finalizarRegistro(opts) {
   }
   const emitir = (ok, motivo) => {
     if (!numProcesso) return;
+    if (ok) browser.runtime.sendMessage({ tipo: "historico_registrar", numProcesso, convenio: "INFOJUD", fase: "pedido" }).catch(() => {});
     return Store.set("orq_conv_feito", {
       convenio: "INFOJUD", numProcesso, operacao: "consulta",
       feitos: ok ? 1 : 0, esperados: 1, ok, motivo: motivo || null, em: Date.now(),

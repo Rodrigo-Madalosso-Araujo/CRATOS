@@ -16,6 +16,9 @@
 const LIMPEZA_MANTER = ["config", "extensao_ligada", "novidades_pendente", "trt", "orquestra_ordem", "botao_pos", "cnib_organizacao",
   "infojud_varas", "renajud_listas"]
   .map((k) => "cratos:" + k);
+/* 2.0: o histórico SEM DADO DE PARTE (convênio, fase, data) sobrevive à aba; tem prazo
+   próprio de 6 meses (modulos/historico.js). Decisão do Rodrigo, 16/11/2026. */
+const LIMPEZA_HISTORICO = "cratos:historico:";
 
 const Limpeza = {
   abas: new Map(),            // tabId -> Set(nº do processo, 20 dígitos)
@@ -57,7 +60,7 @@ const Limpeza = {
     const tudo = await this.armazem().get(null);
     const fora = [];
     for (const [k, v] of Object.entries(tudo || {})) {
-      if (!k.startsWith("cratos:") || LIMPEZA_MANTER.includes(k)) continue;
+      if (!k.startsWith("cratos:") || LIMPEZA_MANTER.includes(k) || k.startsWith(LIMPEZA_HISTORICO)) continue;
       const suf = k.match(/:(\d{20})$/);
       if (suf) { if (suf[1] === n) fora.push(k); continue; }
       if (this.procDe(v) === n && !(v && v.ativo)) fora.push(k);
@@ -69,10 +72,10 @@ const Limpeza = {
 
   async aoIniciar() {
     const tudo = await this.armazem().get(null);
-    const fora = Object.keys(tudo || {}).filter((k) => k.startsWith("cratos:") && !LIMPEZA_MANTER.includes(k));
+    const fora = Object.keys(tudo || {}).filter((k) => k.startsWith("cratos:") && !LIMPEZA_MANTER.includes(k) && !k.startsWith(LIMPEZA_HISTORICO));
     if (fora.length) await this.armazem().remove(fora);
     return fora;
   },
 };
 
-if (typeof module !== "undefined" && module.exports) module.exports = { Limpeza, LIMPEZA_MANTER };
+if (typeof module !== "undefined" && module.exports) module.exports = { Limpeza, LIMPEZA_MANTER, LIMPEZA_HISTORICO };

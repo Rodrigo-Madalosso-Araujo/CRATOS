@@ -61,6 +61,8 @@
       "modulos/disponibilidade.js",
       "modulos/juntada.js",
       "comum/unzip.js",
+      "comum/situacao.js",
+      "modulos/historico.js",
       "modulos/limpeza.js",
       "background.js"
     ]
@@ -210,6 +212,10 @@
       "16": "icones/cratos-16.png",
       "32": "icones/cratos-32.png"
     },
+    "theme_icons": [
+      { "light": "icones/cratos-barra-escura-16.png", "dark": "icones/cratos-barra-clara-16.png", "size": 16 },
+      { "light": "icones/cratos-barra-escura-32.png", "dark": "icones/cratos-barra-clara-32.png", "size": 32 }
+    ],
     "default_title": "CRATOS"
   },
   "options_ui": {
