@@ -32,6 +32,23 @@
       { nome: "SÓCIO EXEMPLO", cpfcnpj: "44455566610", polo: "PASSIVO", tipoPessoa: "fisica" },
     ],
   };
+  /* Segundo processo fictício, com 150 partes (Rodrigo, 17/11: há ações com cem partes
+     ou mais), para testar a janela "Escolher partes". Documentos inventados, sem dígito
+     verificador válido. */
+  const NUM2 = "0009876-54.2026.5.18.0099";
+  const PROC2 = { id: 2, idProcesso: 2, numero: NUM2, partes: [] };
+  const NOMES = ["ALVES", "BARBOSA", "CARDOSO", "DIAS", "ESTEVES", "FARIAS", "GOMES", "HOLANDA", "IGNACIO", "JARDIM"];
+  for (let i = 1; i <= 150; i++) {
+    const n = String(i).padStart(3, "0");
+    const ativo = i <= 4;
+    const pj = !ativo && i % 5 === 0;
+    PROC2.partes.push({
+      nome: ativo ? `EXEQUENTE EXEMPLO ${n} ${NOMES[i % 10]}` : pj ? `EMPRESA EXEMPLO ${n} ${NOMES[i % 10]} LTDA` : `EXECUTADO EXEMPLO ${n} ${NOMES[i % 10]}`,
+      cpfcnpj: pj ? "900000" + String(i).padStart(8, "0") : "900" + String(i).padStart(8, "0"),
+      polo: ativo ? "ATIVO" : "PASSIVO", tipoPessoa: pj ? "juridica" : "fisica",
+    });
+  }
+  const ID_DEMO = /[?&]idProcesso=2(?:&|$)/.test(location.search) ? 2 : 1;
   const DIAS = (n) => new Date(Date.now() - n * 864e5).toISOString();
 
   /* ── storage em memória ────────────────────────────────────────────────── */
@@ -70,7 +87,7 @@
   async function responder(m) {
     const tipo = m && m.tipo;
     switch (tipo) {
-      case "capturar": await espera(400); return { ok: true, processo: PROC };
+      case "capturar": await espera(400); return { ok: true, processo: String(m.idProcesso) === "2" ? PROC2 : PROC };
       case "historico_ler":
         return { ok: true, eventos: [
           { convenio: "INFOJUD", fase: "pedido", em: DIAS(6) },
@@ -180,6 +197,17 @@
 
   /* O painel lê o processo do endereço, como no PJe (o fundo já abre com ?idProcesso=1;
      isto cobre quem abrir a página sem ele). */
+  if (ID_DEMO === 2) {
+    const h1 = document.querySelector("h1");
+    if (h1) h1.textContent = "Processo " + NUM2 + " (fictício, 150 partes)";
+    const lp = document.getElementById("demo-partes");
+    if (lp) {
+      lp.textContent = "";
+      const li = document.createElement("li");
+      li.textContent = "4 no polo ativo e 146 no polo passivo, todas fictícias. Abra Incluir e use \"Escolher partes…\".";
+      lp.appendChild(li);
+    }
+  }
   if (!/[?&]idProcesso=/.test(location.search)) {
     try { history.replaceState(null, "", location.pathname + "?idProcesso=1"); } catch (e) { /* nada */ }
   }

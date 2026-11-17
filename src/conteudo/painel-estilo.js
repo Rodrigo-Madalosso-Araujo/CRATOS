@@ -184,6 +184,30 @@ kbd { font: 600 12px/1 system-ui, sans-serif; border: var(--bw) solid var(--bd2)
 .cx-ponto-aba { display: inline-block; width: 7px; height: 7px; margin-left: 6px; vertical-align: middle; border-radius: 50%; background: var(--ac); }
 .cx-fila-topo .cx-h { margin: 0; }
 
+/* ── Partes: resumo (mais de seis) e a janela "Escolher partes" ────────────── */
+.cx-partes-resumo { padding: 12px; background: var(--sf); border: var(--bw) solid var(--ln); border-radius: 12px; }
+.cx-partes-cont { margin: 0; font-weight: 600; }
+.cx-partes-resumo .cx-acao { margin-top: 8px; }
+.cx-modal-fundo {
+  position: fixed; inset: 0; z-index: 2147483001; display: flex; align-items: center; justify-content: center;
+  background: rgba(0, 0, 0, 0.5) !important; font-size: 14px; line-height: 1.45;
+}
+.cx-modal-fundo *, .cx-modal-fundo *::before, .cx-modal-fundo *::after { box-sizing: border-box; }
+.cx-modal-fundo button, .cx-modal-fundo input { font-family: inherit; font-size: inherit; color: inherit; }
+.cx-modal {
+  display: flex; flex-direction: column; width: min(600px, 94vw); max-height: 88vh; padding: 16px;
+  background: var(--bg); color: var(--fg); border: var(--bw) solid var(--bd2); border-radius: 14px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.55);
+}
+.cx-modal-topo { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.cx-modal-topo .cx-h2 { font-size: 16px; }
+.cx-pp-filtros { display: flex; flex-direction: column; gap: 6px; margin: 8px 0 10px; }
+.cx-pp-polo { display: flex; flex-wrap: wrap; gap: 2px 12px; margin: 4px 0 0; }
+.cx-pp-polo .cx-temas-titulo { width: 100%; }
+.cx-pp-lista { flex: 1; min-height: 120px; overflow-y: auto; }
+.cx-modal-pe { margin-top: 12px; }
+.cx-modal-pe .cx-acao { margin-top: 0; }
+
 .cx-desligado { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 24px 12px; text-align: center; }
 .cx-desligado .cx-acao { width: auto; }
 .cx-power-grande { color: var(--ertx); }

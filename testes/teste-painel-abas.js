@@ -93,7 +93,7 @@ function abrir(op) {
     checar(partes.length === 2 && !partes[0].checked && partes[1].checked, "Incluir: partes no mesmo formulário (polo ativo desmarcado)");
     const ren = pInc.querySelector('.cx-sel-conv[data-id="RENAJUD"]');
     ren.checked = true; ren.dispatchEvent(new a.w.Event("change", { bubbles: true }));
-    checar(/1 convênio · 1 parte/.test(pInc.querySelector("#cx-resumo").textContent), "o rodapé resume a seleção (1 convênio · 1 parte)");
+    checar(/1 parte · 1 convênio/.test(pInc.querySelector("#cx-resumo").textContent), "o rodapé resume a seleção (1 parte · 1 convênio)");
     a.P.irAba("baixar");
     checar(!pInc.querySelector(".cx-sel-conv") && convs().every((c) => pBx.contains(c)), "⛔ ao trocar de aba, só o formulário de Baixar fica na tela");
     checar(!convs().some((c) => ["INFOJUD", "CENSEC", "CCS", "SNIPER", "PREVJUD"].includes(c.dataset.id)), "Baixar: só convênios com baixa");

@@ -1669,7 +1669,8 @@
           <button type="button" class="cx-icone cx-ord-down" data-idx="${i}" aria-label="Mover ${c.label} para baixo"${i === lista.length - 1 ? " disabled" : ""}>▼</button>
         </span>
       </li>`);
-    const partes = partesAtuais.map((pt, i) => html`
+    const muitas = partesAtuais.length > LIMITE_PARTES_NA_TELA;
+    const partes = muitas ? [] : partesAtuais.map((pt, i) => html`
       <li class="cx-parte">
         <label class="cx-rot">
           <input type="checkbox" class="cx-sel-parte" data-idx="${i}"${selPartes[i] ? " checked" : ""}>
@@ -1681,12 +1682,18 @@
 
     CratosHTML.definir(p, html`
       ${modo === "baixa" ? html`<p class="cx-aviso cx-aviso-perigo">A baixa retira restrições. Você confirma cada uma na aba do convênio.</p>` : ""}
+      ${partes.length ? html`<h2 class="cx-h" id="${hp}">Partes</h2>
+      <ul class="cx-lista" aria-labelledby="${hp}">${partes}</ul>` : ""}
+      ${muitas ? html`<h2 class="cx-h" id="${hp}">Partes</h2>
+      <div class="cx-partes-resumo" aria-labelledby="${hp}">
+        <p class="cx-partes-cont" id="cx-partes-cont"></p>
+        <p class="cx-det" id="cx-partes-nomes"></p>
+        <button type="button" class="cx-acao cx-sec" id="cx-escolher-partes" aria-haspopup="dialog">Escolher partes…</button>
+      </div>` : ""}
       <h2 class="cx-h" id="${hc}">Convênios, na ordem em que vão rodar</h2>
       <p class="cx-dica">Os automáticos rodam primeiro. Os botões ▲ ▼ mudam a ordem.</p>
       ${itens.length ? html`<ul class="cx-lista" aria-labelledby="${hc}">${itens}</ul>`
         : html`<p class="cx-vazio">Nenhum convênio ${modo === "inclusao" ? "" : "com baixa "}ligado. Ligue os que você usa em Preferências → "Convênios em uso".</p>`}
-      ${partes.length ? html`<h2 class="cx-h" id="${hp}">Partes</h2>
-      <ul class="cx-lista" aria-labelledby="${hp}">${partes}</ul>` : ""}
       <div class="cx-form-msg" id="cx-form-msg" role="alert"></div>
       <div class="cx-rodape">
         <span class="cx-resumo" id="cx-resumo"></span>
@@ -1696,12 +1703,25 @@
 
     const resumo = () => {
       const nc = p.querySelectorAll(".cx-sel-conv:checked").length;
-      const np = p.querySelectorAll(".cx-sel-parte").length ? p.querySelectorAll(".cx-sel-parte:checked").length : partesSelecionadas.length;
+      const np = p.querySelectorAll(".cx-sel-parte").length ? p.querySelectorAll(".cx-sel-parte:checked").length
+        : partesAtuais.length ? selPartes.filter(Boolean).length : partesSelecionadas.length;
       const r = p.querySelector("#cx-resumo");
-      if (r) r.textContent = `${nc} ${nc === 1 ? "convênio" : "convênios"} · ${np} ${np === 1 ? "parte" : "partes"}`;
+      if (r) r.textContent = `${np} ${np === 1 ? "parte" : "partes"} · ${nc} ${nc === 1 ? "convênio" : "convênios"}`;
+      if (muitas) {
+        const marcadas = partesAtuais.filter((_, i) => selPartes[i]);
+        const c = p.querySelector("#cx-partes-cont"), n = p.querySelector("#cx-partes-nomes");
+        if (c) c.textContent = `${marcadas.length} de ${partesAtuais.length} marcadas`;
+        if (n) {
+          const primeiros = marcadas.slice(0, 3).map((x) => x.nome || "(sem nome)");
+          n.textContent = !marcadas.length ? "Nenhuma parte marcada."
+            : primeiros.join(", ") + (marcadas.length > 3 ? ` e mais ${marcadas.length - 3}` : "") + ".";
+        }
+      }
     };
     p.onchange = resumo;
     resumo();
+    const bEscolher = p.querySelector("#cx-escolher-partes");
+    if (bEscolher) bEscolher.onclick = () => abrirEscolhaPartes(bEscolher, resumo);
     p.querySelector("#cx-executar-selecionados").onclick = () =>
       (modo === "baixa" ? pedirConfirmacaoBaixa() : executarSelecionados());
     wireAvisoMaisPjeRenajud();   // aviso do MaisPJE ao marcar o RENAJUD
@@ -1734,6 +1754,132 @@
         if (idx < lista.length - 1) trocarOrdem(lista[idx].id, lista[idx + 1].id, "cx-ord-down");
       };
     });
+  }
+
+  /* ═══ 2.0 — ESCOLHER PARTES (processo com mais de seis partes) ════════════════
+     Pedido do Rodrigo (17/11): há processos com cem partes ou mais (Caldas Novas). Até
+     seis, as partes ficam no formulário; acima disso, o formulário mostra um resumo e
+     esta janela faz a escolha, sem limite de partes. A lista não é paginada nem
+     virtualizada: linhas que somem e reaparecem confundem o leitor de tela. A busca
+     e o filtro de polo levam rápido a quem interessa.
+     Diálogo de verdade: o foco entra na busca e fica preso na janela; Esc e Cancelar
+     desfazem o que mudou; ao fechar, o foco volta ao "Escolher partes…". */
+  const LIMITE_PARTES_NA_TELA = 6;
+  const ehPassivo = (pt) => /passiv/i.test((pt && pt.polo) || "");
+  const ehAtivo = (pt) => /ativ/i.test((pt && pt.polo) || "") && !ehPassivo(pt);
+  const normBusca = (t) => String(t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+
+  function abrirEscolhaPartes(origem, aoConfirmar) {
+    if (raiz.querySelector(".cx-modal-fundo")) return;
+    const antes = selPartes.slice();
+    const fundo = document.createElement("div");
+    fundo.className = "cx-modal-fundo";
+    if (globalThis.CratosTema) CratosTema.aplicar(fundo, CratosTema.resolver(prefTema));
+    const linhas = partesAtuais.map((pt, i) => html`<li class="cx-parte cx-pp-item" data-idx="${String(i)}">
+        <label class="cx-rot">
+          <input type="checkbox" class="cx-pp-sel" data-idx="${String(i)}"${selPartes[i] ? " checked" : ""}>
+          <span class="cx-parte-txt"><span class="cx-nome">${pt.nome || "(sem nome)"}</span>
+          <span class="cx-doc">${formatarDoc(pt.cpfcnpj)}</span></span>
+        </label>
+        <span class="cx-polo">${pt.polo || ""}</span>
+      </li>`);
+    CratosHTML.definir(fundo, html`<div class="cx-modal" role="dialog" aria-modal="true" aria-labelledby="cx-pp-titulo" aria-describedby="cx-pp-cont">
+        <div class="cx-modal-topo">
+          <h2 class="cx-h2" id="cx-pp-titulo">Escolher partes</h2>
+          <p class="cx-partes-cont" id="cx-pp-cont" role="status" aria-live="polite"></p>
+        </div>
+        <div class="cx-pp-filtros">
+          <label class="cx-rotulo-campo" for="cx-pp-busca">Buscar por nome ou CPF/CNPJ</label>
+          <input type="search" class="cx-campo" id="cx-pp-busca" autocomplete="off">
+          <fieldset class="cx-temas cx-pp-polo">
+            <legend class="cx-temas-titulo">Mostrar</legend>
+            <label class="cx-tema-op"><input type="radio" name="cx-pp-polo" value="todos" checked><span>Todas</span></label>
+            <label class="cx-tema-op"><input type="radio" name="cx-pp-polo" value="passivo"><span>Polo passivo</span></label>
+            <label class="cx-tema-op"><input type="radio" name="cx-pp-polo" value="ativo"><span>Polo ativo</span></label>
+          </fieldset>
+          <div class="cx-botoes">
+            <button type="button" class="cx-acao cx-sec cx-mini" id="cx-pp-passivo"></button>
+            <button type="button" class="cx-acao cx-sec cx-mini" id="cx-pp-nenhuma">Desmarcar todas</button>
+          </div>
+          <p class="cx-sr" id="cx-pp-res" role="status" aria-live="polite"></p>
+        </div>
+        <p class="cx-vazio" id="cx-pp-vazio" hidden>Nenhuma parte encontrada com essa busca.</p>
+        <ul class="cx-lista cx-pp-lista" aria-label="Partes do processo">${linhas}</ul>
+        <div class="cx-botoes cx-modal-pe">
+          <button type="button" class="cx-acao cx-sec" id="cx-pp-cancelar">Cancelar</button>
+          <button type="button" class="cx-acao" id="cx-pp-ok">Confirmar</button>
+        </div>
+      </div>`);
+    raiz.appendChild(fundo);
+    const caixa = fundo.querySelector(".cx-modal");
+    const q = (sel) => fundo.querySelector(sel);
+    const caixas = Array.from(fundo.querySelectorAll(".cx-pp-sel"));
+    const passivos = caixas.filter((c) => ehPassivo(partesAtuais[Number(c.dataset.idx)]));
+
+    const atualizar = () => {
+      const n = caixas.filter((c) => c.checked).length;
+      q("#cx-pp-cont").textContent = `${n} de ${caixas.length} marcadas`;
+      const todosPassivos = passivos.length > 0 && passivos.every((c) => c.checked);
+      const bp = q("#cx-pp-passivo");
+      bp.textContent = todosPassivos ? "Desmarcar todo o polo passivo" : "Marcar todo o polo passivo";
+      bp.disabled = !passivos.length;
+    };
+    const filtrar = () => {
+      const termo = normBusca(q("#cx-pp-busca").value).trim();
+      /* cada palavra precisa estar no nome, em qualquer ordem ("empresa 010" acha
+         "EMPRESA EXEMPLO 010"); só números (3 ou mais) também procuram no CPF/CNPJ */
+      const palavras = termo.split(/\s+/).filter(Boolean);
+      const dig = /^[\d.\-\/\s]+$/.test(termo) ? termo.replace(/\D/g, "") : "";
+      const polo = (fundo.querySelector('input[name="cx-pp-polo"]:checked') || {}).value || "todos";
+      let vis = 0;
+      fundo.querySelectorAll(".cx-pp-item").forEach((li) => {
+        const pt = partesAtuais[Number(li.dataset.idx)] || {};
+        const okPolo = polo === "todos" || (polo === "passivo" ? ehPassivo(pt) : ehAtivo(pt));
+        const nome = normBusca(pt.nome);
+        const okBusca = !palavras.length || palavras.every((w) => nome.includes(w)) ||
+          (dig.length >= 3 && String(pt.cpfcnpj || "").replace(/\D/g, "").includes(dig));
+        li.hidden = !(okPolo && okBusca);
+        if (!li.hidden) vis++;
+      });
+      q("#cx-pp-res").textContent = vis === 1 ? "1 parte na lista" : vis ? `${vis} partes na lista` : "Nenhuma parte encontrada";
+      q("#cx-pp-vazio").hidden = vis > 0;
+    };
+    let espera = null;
+    q("#cx-pp-busca").addEventListener("input", () => { clearTimeout(espera); espera = setTimeout(filtrar, 250); });
+    fundo.querySelectorAll('input[name="cx-pp-polo"]').forEach((r) => { r.onchange = filtrar; });
+    caixas.forEach((c) => { c.onchange = atualizar; });
+    q("#cx-pp-passivo").onclick = () => {
+      const marcar = !passivos.every((c) => c.checked);
+      passivos.forEach((c) => { c.checked = marcar; });
+      atualizar();
+    };
+    q("#cx-pp-nenhuma").onclick = () => { caixas.forEach((c) => { c.checked = false; }); atualizar(); };
+
+    const fechar = (confirmar) => {
+      if (confirmar) caixas.forEach((c) => { selPartes[Number(c.dataset.idx)] = c.checked; });
+      else selPartes = antes;
+      fundo.remove();
+      if (aoConfirmar) aoConfirmar();
+      if (origem && origem.isConnected) origem.focus();
+      if (confirmar) anunciar(`${selPartes.filter(Boolean).length} de ${partesAtuais.length} partes marcadas.`);
+    };
+    q("#cx-pp-cancelar").onclick = () => fechar(false);
+    q("#cx-pp-ok").onclick = () => fechar(true);
+    /* clique no fundo escuro não fecha (evita perder a escolha por engano) */
+    fundo.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); fechar(false); return; }
+      if (e.key !== "Tab") return;
+      const foco = Array.from(caixa.querySelectorAll("button, input, select, textarea"))
+        .filter((el) => !el.disabled && !el.closest("[hidden]"));
+      if (!foco.length) return;
+      const primeiro = foco[0], ultimo = foco[foco.length - 1];
+      const atual = raiz.activeElement;
+      if (e.shiftKey && atual === primeiro) { e.preventDefault(); ultimo.focus(); }
+      else if (!e.shiftKey && atual === ultimo) { e.preventDefault(); primeiro.focus(); }
+    });
+    atualizar();
+    filtrar();
+    q("#cx-pp-busca").focus();
   }
 
   function msgForm(texto) {
@@ -1821,7 +1967,10 @@
     /* 2.0: as partes estão no mesmo formulário. Sem caixas de parte (processo sem
        partes reconhecidas, ou o gancho de teste), vale a seleção já guardada. */
     const temCaixasParte = form.querySelectorAll(".cx-sel-parte").length > 0;
-    const partesM = temCaixasParte ? lerPartesMarcadas(form) : partesSelecionadas;
+    /* Muitas partes: a escolha mora na janela "Escolher partes…" (selPartes). */
+    const partesM = temCaixasParte ? lerPartesMarcadas(form)
+      : partesAtuais.length > LIMITE_PARTES_NA_TELA ? partesAtuais.filter((_, i) => selPartes[i])
+        : partesSelecionadas;
     if (!partesM.length) {
       msgForm("Selecione ao menos uma parte.");
       return;
@@ -3159,7 +3308,8 @@
     host, raiz, anunciar, abrirPorAtalho,
     // 2.0 — abas e menu
     irAba, get abaAtual() { return abaAtual; }, get filaNaAba() { return filaNaAba; },
-    get filaRodando() { return filaRodando; }, renderSituacao, renderColetar, renderMenu,
+    get filaRodando() { return filaRodando; }, abrirEscolhaPartes, LIMITE_PARTES_NA_TELA,
+    get selPartes() { return selPartes.slice(); }, renderSituacao, renderColetar, renderMenu,
     abrirMenu, fecharMenu, escolherTema, pedirConfirmacaoBaixa, alternarPainel, fecharPainel,
     rodarProximoConvenio,
     renderBotaoConcluiu,
