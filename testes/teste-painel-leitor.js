@@ -145,7 +145,7 @@ async function axe(a, rotulo) {
     checar(c && c.suggested_key && c.suggested_key.default === "Alt+Shift+C" && c.description, "⛔ manifesto: commands \"abrir-cratos\" com Alt+Shift+C");
     checar(!/commands/.test(JSON.stringify(man.permissions || [])), "o atalho não pede permissão nova");
     const bg = fs.readFileSync(path.join(SRC, "background.js"), "utf8");
-    checar(/commands\.onCommand\.addListener[\s\S]{0,300}"abrir-cratos"[\s\S]{0,300}tabs\.sendMessage\([^)]*tipo: "cratos_atalho"/.test(bg),
+    checar(/commands\.onCommand\.addListener[\s\S]{0,300}"abrir-cratos"[\s\S]{0,800}tabs\.sendMessage\([^)]*tipo: "cratos_atalho"/.test(bg),
       "o fundo repassa o atalho para a aba ativa");
   }
 

@@ -25,7 +25,13 @@ if (browser.commands && browser.commands.onCommand) {
     if (comando !== "abrir-cratos") return;
     try {
       const [aba] = await browser.tabs.query({ active: true, currentWindow: true });
-      if (aba) await browser.tabs.sendMessage(aba.id, { tipo: "cratos_atalho" });
+      if (!aba) return;
+      /* A página do modo de demonstração é da própria extensão: ela ouve pelo runtime. */
+      if (String(aba.url || "").indexOf(browser.runtime.getURL("demo/")) === 0) {
+        await browser.runtime.sendMessage({ tipo: "cratos_atalho" });
+        return;
+      }
+      await browser.tabs.sendMessage(aba.id, { tipo: "cratos_atalho" });
     } catch (e) { /* aba sem o CRATOS: nada a fazer */ }
   });
 }
@@ -53,6 +59,8 @@ browser.runtime.onMessage.addListener((msg, sender) => {
       return abrirEcacParaVaras();
     case "fechar_esta_aba":
       return fecharEstaAba(sender);
+    case "abrir_demo":              // 2.0: modo de demonstração (página da extensão, dados fictícios)
+      return browser.tabs.create({ url: browser.runtime.getURL("demo/demo.html?idProcesso=1") }).then(() => ({ ok: true }), (e) => ({ ok: false, erro: String(e) }));
     case "abrir_preferencias":      // 2.0: menu "⋯" do painel
       return browser.runtime.openOptionsPage().then(() => ({ ok: true }), (e) => ({ ok: false, erro: String(e) }));
     case "abrir_primeiros":

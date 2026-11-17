@@ -1,0 +1,17 @@
+/* demo/demo.css — a página que imita a tela do processo, em tons neutros. */
+body { margin: 0; font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: #eef1f5; color: #1b1c1f; min-height: 100vh; }
+.faixa-demo { background: #3a2d12; color: #f7e3b5; padding: 10px 20px; border-bottom: 3px solid #d9a441; }
+.faixa-demo p { margin: 0; max-width: 860px; }
+main { max-width: 860px; padding: 20px; }
+h1 { font-size: 22px; margin: 8px 0 0; }
+h2 { font-size: 17px; margin: 24px 0 6px; }
+.sub { margin: 2px 0 0; color: #555963; }
+kbd { font: 600 13px/1 system-ui, sans-serif; border: 1px solid #b9b5aa; border-radius: 4px; padding: 2px 6px; background: #fff; }
+#demo-erro { margin-top: 20px; padding: 12px; border-radius: 8px; background: #fcecec; color: #8a2222; border: 1px solid #d98c8c; }
+@media (prefers-color-scheme: dark) {
+  body { background: #121419; color: #ecEAe4; }
+  .sub { color: #a3a7b0; }
+  kbd { background: #22262f; border-color: #3a404c; }
+}
+/* o painel ocupa ~420 px à direita: o texto não fica embaixo dele em tela larga */
+@media (min-width: 960px) { main { margin-right: 440px; } }

@@ -264,12 +264,17 @@
         <li><kbd>←</kbd> <kbd>→</kbd> trocam de aba (com o foco nas abas)</li>
         <li><kbd>Esc</kbd> fecha este menu; de novo, fecha o painel</li>
       </ul>
+      ${browser.__cratosDemo ? "" : html`<button type="button" class="cx-menu-item" id="cx-menu-demo">Modo de demonstração (dados fictícios)</button>`}
       <button type="button" class="cx-menu-item" id="cx-menu-pref">Preferências</button>`);
     alternarArea("cx-menu-disp", "cx-menu-disp-area");
     alternarArea("cx-menu-atalhos", "cx-menu-atalhos-area");
     const ligar = (sel, fn) => { const b = menu.querySelector(sel); if (b) b.onclick = fn; };
     ligar("#cx-disp-verificar", verificarDisponibilidade);
     ligar("#cx-menu-contraste", alternarContraste);
+    ligar("#cx-menu-demo", () => {
+      fecharMenu(false);
+      browser.runtime.sendMessage({ tipo: "abrir_demo" }).catch(() => {});
+    });
     ligar("#cx-menu-pref", () => {
       fecharMenu(false);
       browser.runtime.sendMessage({ tipo: "abrir_preferencias" }).catch(() => {});
