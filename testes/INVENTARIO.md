@@ -18,7 +18,7 @@ método que travou todo bug real desta lista.
 
 ## Situação
 
-### As que RODAM hoje (18/11/2026 — 1.9.7: nacionalização (24 TRTs), partes na certidão principal, SNIPER só com as partes marcadas, X-XSRF-TOKEN nas leituras): 52 suítes, 1534 asserções
+### As que RODAM hoje (18/11/2026 — 1.9.7: nacionalização (24 TRTs), partes na certidão principal, SNIPER só com as partes marcadas, X-XSRF-TOKEN nas leituras, leituras do PJe pela página): 53 suítes, 1556 asserções
 
 >>> 1.9.7 (18/11): duas suítes novas, que reprovam a 1.9.6, e `teste-sniper.js` 100 → 105.
     · nova `teste-nacionalizacao.js` (37): manifest com os 24 TRTs um por um (sem curinga amplo; demais permissões
@@ -28,6 +28,11 @@ método que travou todo bug real desta lista.
       (TRT19, TRT3, guardado TRT10; sem PJe = erro, nunca TRT18); disponibilidade com controle no PJe da aba;
       X-XSRF-TOKEN em toda LEITURA do PJe (o TRT19 recusa GET sem ele: 400 "SJT-004") — captura, cálculo, SAB no
       fundo e na página, juntada; sem token, o 400 é falha da captura; token nunca no storage.
+    · nova `teste-leitura-pagina.js` (22): o PJe simulado só aceita a chamada feita PELA PÁGINA (o fundo recebe
+      400 SJT-004, como no TRT19 ao vivo); fetchPagina (fetch da página → content.fetch → o de sempre); captura
+      lida pelo painel e mandada em bruto; "pje_ler" (só caminho do PJe; erro com status); lerNaAbaPje (recolhe e
+      apaga; aba muda = erro claro); cálculo e SAB do fundo pela aba. `harness-painel.js` guarda os ouvintes de
+      mensagem e aceita `fetchPagina` e `cookie`.
     · nova `teste-certidao-partes.js` (18): "em face de" na abertura (partes iguais) ou por linha (diferentes),
       nas famílias realizados e cancelamento (com nada a cancelar); item antigo sem partes sai como antes; nome
       escapado; demais famílias e título intactos; diário (corte por convênio, janela de 6 h do despacho, partes

@@ -19,6 +19,7 @@ function montarPainel(SRC, opcoes) {
   const dispara = (changes) => { listeners.slice().forEach((l) => { try { l(changes, "local"); } catch (e) { /* nada */ } }); };
   const msgs = [];
   const respostas = {};
+  const ouvintesMsg = [];
   w.browser = {
     storage: {
       local: {
@@ -47,7 +48,7 @@ function montarPainel(SRC, opcoes) {
     runtime: {
       getURL: (p) => p,
       getManifest: () => ({ version: op.versao || "1.9.0" }),
-      onMessage: { addListener: () => {}, removeListener: () => {} },
+      onMessage: { addListener: (fn) => ouvintesMsg.push(fn), removeListener: () => {} },   // 1.9.7: guardados
       sendMessage: async (msg) => {
         if (!msg) return { ok: true };
         msgs.push(JSON.parse(JSON.stringify(msg)));
@@ -70,8 +71,10 @@ function montarPainel(SRC, opcoes) {
   const usoL = path.join(SRC, "comum", "convenios-uso.js");    // 1.9.4
   if (fs.existsSync(usoL)) w.eval(fs.readFileSync(usoL, "utf8"));
   if (op.fetch) w.fetch = op.fetch;
+  if (op.fetchPagina) w.wrappedJSObject = { fetch: op.fetchPagina };      // 1.9.7: o fetch DA PÁGINA
+  if (op.cookie) w.document.cookie = op.cookie;
   w.eval(fs.readFileSync(path.join(SRC, "conteudo", "painel.js"), "utf8"));
-  return { w, d: w.document, mem, msgs, respostas, P: w.__cratosPainel };
+  return { w, d: w.document, mem, msgs, respostas, ouvintesMsg, P: w.__cratosPainel };
 }
 
 module.exports = { montarPainel };
