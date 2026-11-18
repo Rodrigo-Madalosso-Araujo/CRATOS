@@ -406,22 +406,34 @@
        EXECUTADO (polo passivo). Marcar o exequente por engano mandaria o credor
        para as pesquisas. Passivo (e polo desconhecido) nascem marcados. */
     /* 1.5.5: polo e documento vêm do PJe e entravam crus no HTML. */
+    /* 1.9.7: os TERCEIROS passaram a aparecer (até a 1.9.6 sumiam — ver api-pje.js). Eles e
+       a parte de polo não identificado nascem DESMARCADOS: um processo do TRT19 tem 35
+       terceiros interessados, e marcá-los de saída mandaria todos para os convênios. Nasce
+       marcado só o passivo (e a parte sem polo nenhum, como sempre foi). */
+    const nasceMarcada = (p) => !/ativ|terceir|indefinido/i.test(String(p.polo || ""));
+    const semPolo = partes.filter((p) => p.polo === "indefinido").length;
+    const avisoPolo = semPolo ? html`
+      <div class="cx-aviso-polo" style="color:#facc15;margin-bottom:8px;font-size:12px">
+        ⚠ ${String(semPolo)} parte(s) com polo não identificado pelo CRATOS (o PJe deste tribunal usa um formato
+        que eu não conheço). Elas aparecem abaixo, desmarcadas: confira o polo no PJe antes de marcar.
+      </div>` : "";
     const linhas = partes.map((p, i) => html`
       <div class="cx-parte">
         <label style="display:flex;gap:8px;flex:1;cursor:pointer">
-          <input type="checkbox" class="cx-sel-parte" data-idx="${i}"${/ativ/i.test(p.polo || "") ? "" : " checked"}>
+          <input type="checkbox" class="cx-sel-parte" data-idx="${i}"${nasceMarcada(p) ? " checked" : ""}>
           <div style="flex:1">
             <div class="cx-nome">${p.nome || "(sem nome)"}</div>
             <div class="cx-doc">${formatarDoc(p.cpfcnpj)}</div>
           </div>
         </label>
-        <div class="cx-polo">${p.polo || ""}</div>
+        <div class="cx-polo">${p.polo === "indefinido" ? "polo não identificado" : (p.polo || "")}</div>
       </div>`);
 
     CratosHTML.definir(corpo, html`
       <div style="color:#9a9a9a;margin-bottom:8px;font-size:12px">
         Processo ${processoAtual.numero || String(processoAtual.id)}
       </div>
+      ${avisoPolo}
       ${linhas}
       <div style="display:flex;gap:8px;margin-top:14px">
         <button class="cx-acao" id="cx-modo-inclusao" style="flex:1;font-size:13px">

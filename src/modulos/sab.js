@@ -124,6 +124,7 @@ const ModuloSAB = (() => {
           const justificativa =
             (cfgTudo.sab && cfgTudo.sab.justificativaBaixa) || "Determinação judicial";
           await abrirDeterminacaoSab({
+            base: ctx.base,                 // 1.9.7: o PJe do processo, não mais o do TRT18
             idDeterminacao,
             numProcesso: ctx.numeroProcesso,
             operacao: "baixa",
@@ -191,6 +192,7 @@ const ModuloSAB = (() => {
         // runtime.sendMessage enviado do background NÃO volta para o próprio background
         // (era a causa do "Receiving end does not exist" no último passo).
         await abrirOrdemSab({
+          base: ctx.base,                   // 1.9.7: o PJe do processo, não mais o do TRT18
           idSab,
           numProcesso: ctx.numeroProcesso,
           calc,   // { total, valorFormatado, dataFormatada } | null

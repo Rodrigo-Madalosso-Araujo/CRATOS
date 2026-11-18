@@ -32,7 +32,10 @@ const DISPONIBILIDADE_ALVOS = {
   SNIPER: { rotulo: "SNIPER", url: "https://sniper.pdpj.jus.br/" },
   PREVJUD: { rotulo: "PREVJUD", url: "https://previdenciario.pdpj.jus.br/" },
 };
-const DISPONIBILIDADE_CONTROLE = "https://pje.trt18.jus.br/pjekz/";
+/* 1.9.7 (nacionalização): o controle é o PJe DA ABA de quem pediu — `medir(id, base)`,
+   com a base validada no fundo (CratosConveniosUso.basePje). Sem base, não há controle a
+   fazer, e a conclusão é "controle_falhou": nunca se afirma indisponibilidade sem ele. */
+const DISPONIBILIDADE_CONTROLE = (base) => (base ? String(base).replace(/\/+$/, "") + "/pjekz/" : null);
 
 const ModuloDisponibilidade = {
   io: {
@@ -75,7 +78,7 @@ const ModuloDisponibilidade = {
     }
   },
 
-  async medir(convenioId) {
+  async medir(convenioId, base) {
     const id = String(convenioId || "").toUpperCase();
     const alvo = DISPONIBILIDADE_ALVOS[id];
     if (!alvo) return { ok: false, motivo: `Não há verificação de disponibilidade para "${convenioId}".` };
@@ -89,8 +92,14 @@ const ModuloDisponibilidade = {
     const todasFalharam = tentativas.every((t) => t.falhou);
     let controle = null;
     if (todasFalharam) {
-      const c = await this.sondar(DISPONIBILIDADE_CONTROLE);
-      controle = Object.assign(c, { ok: !c.falhou && !(c.codigo >= 500) });
+      const urlControle = DISPONIBILIDADE_CONTROLE(base);
+      if (urlControle) {
+        const c = await this.sondar(urlControle);
+        controle = Object.assign(c, { ok: !c.falhou && !(c.codigo >= 500) });
+      } else {
+        controle = { hora: new Date(this.io.agora()).toISOString(), falhou: true, ok: false,
+          erro: "o PJe deste Tribunal não foi identificado na aba" };
+      }
     }
     const conclusao = !todasFalharam ? "respondeu" : (controle && controle.ok ? "indisponivel" : "controle_falhou");
     let host = alvo.url;

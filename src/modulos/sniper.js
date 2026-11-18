@@ -71,8 +71,9 @@ const ModuloSNIPER = {
       if (!config.fontes.length) {
         return { ok: false, motivo: "Todas as fontes do SNIPER estão desligadas nas Preferências." };
       }
-      /* Partes marcadas no painel: só para CONFERIR contra a lista que o SNIPER traz
-         (v1 usa a seleção padrão do SNIPER — todo o polo passivo com documento). */
+      /* Partes marcadas no painel. 1.9.7 (Rodrigo, 18/11): são ELAS que o SNIPER investiga —
+         o content script deixa marcadas no campo "Pessoa Pesquisada" só estas (até a 1.9.6
+         ficava a seleção padrão do SNIPER, todo o polo passivo). */
       const docsPainel = [];
       const vistos = new Set();
       for (const p of ctx.partes || []) {
@@ -80,6 +81,9 @@ const ModuloSNIPER = {
         if ((d.length !== 11 && d.length !== 14) || vistos.has(d)) continue;
         vistos.add(d);
         docsPainel.push({ nome: String(p.nome || "").trim(), doc: d, polo: p.polo || null });
+      }
+      if (!docsPainel.length) {
+        return { ok: false, motivo: "Nenhuma das partes marcadas tem CPF/CNPJ: não há quem investigar no SNIPER." };
       }
       await Store.set("sniper_estado", {
         ativo: true,

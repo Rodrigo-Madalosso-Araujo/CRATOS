@@ -51,3 +51,5 @@ A 1.9.3 também foi publicada completa por decisão do Rodrigo (11/11), antes da
 A 1.9.4 e a 1.9.5 foram assinadas e **não publicadas** (números queimados): a 1.9.4 não juntava a transferência já enviada ao banco, e a 1.9.5 não tinha as correções do primeiro lote real.
 
 A 1.9.6 também foi publicada por decisão do Rodrigo (13/11, confirmada em 16/11), antes da homologação pela STI, depois do teste ao vivo do lote "Coletar respostas SAB" de 12/11 (três processos juntados, sem falhas). É a versão que substitui a extensão SABRe nas varas.
+
+A 1.9.7 (18/11) leva o CRATOS ao PJe dos 24 TRTs. O uso nos demais tribunais está autorizado pelo CSJT, por requisição direta entre as presidências (informado pelo Rodrigo em 18/11). Como a lista de hosts muda, o Firefox pede a quem atualizar que autorize as permissões novas.
