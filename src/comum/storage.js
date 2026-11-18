@@ -204,18 +204,29 @@ if (!globalThis.CratosPje) {
      (Firefox) é o da página — igual ao teste no console, com cookie e origem do PJe.
      A resposta volta embrulhada: o corpo é lido como TEXTO e convertido aqui (objeto
      criado na página não atravessa direito para o script da extensão). */
+  /* 2ª tentativa (18/11, ao vivo): o `content.fetch` ainda saiu SEM o cookie (a aba Rede
+     mostrou o pedido no Inspecionar da extensão, não na aba do PJe). Agora a chamada usa
+     o `fetch` DA PRÓPRIA PÁGINA, via `window.wrappedJSObject` — o mesmo objeto do console
+     do F12 — com as opções clonadas para o escopo da página (cloneInto). Ordem: página
+     (wrappedJSObject) → content.fetch → fetch da extensão. O caminho usado vai ao console
+     da aba, uma vez, para o diagnóstico. */
+  let _avisouCaminho = false;
   const fetchPagina = async (url, opcoes) => {
-    let f = null, alvo = null;
-    /* só num content script, numa página https (nunca no fundo, moz-extension://) */
-    try {
-      if (typeof location !== "undefined" && location.protocol === "https:" &&
-          typeof content !== "undefined" && content && typeof content.fetch === "function") { f = content.fetch; alvo = content; }
-    } catch (e) { /* nada */ }
-    let o = opcoes;
-    if (f) {
-      try { if (opcoes && typeof cloneInto === "function") o = cloneInto(opcoes, alvo); } catch (e) { o = opcoes; }
+    let f = null, alvo = null, via = "fetch da extensão";
+    const emPagina = typeof location !== "undefined" && location.protocol === "https:";
+    if (emPagina) {
+      try {
+        const w = typeof window !== "undefined" && window.wrappedJSObject;
+        if (w && typeof w.fetch === "function") { f = w.fetch; alvo = w; via = "fetch da página (wrappedJSObject)"; }
+      } catch (e) { /* nada */ }
+      if (!f) {
+        try { if (typeof content !== "undefined" && content && typeof content.fetch === "function") { f = content.fetch; alvo = content; via = "content.fetch"; } } catch (e) { /* nada */ }
+      }
     }
+    if (!_avisouCaminho && emPagina) { _avisouCaminho = true; try { console.info("CRATOS: leituras do PJe por", via); } catch (e) { /* nada */ } }
     if (!f) return fetch(url, opcoes);      // fora de página (fundo, testes): o fetch de sempre
+    let o = opcoes;
+    try { if (opcoes && typeof cloneInto === "function") o = cloneInto(opcoes, typeof window !== "undefined" ? window : alvo); } catch (e) { o = opcoes; }
     const r = await f.call(alvo, String(url), o);
     return {
       ok: !!r.ok,
