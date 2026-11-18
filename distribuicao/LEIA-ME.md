@@ -41,6 +41,7 @@ Pôr `updates.json` na raiz do `main` do repositório. Pode ir vazio (`"updates"
 | 1.9.2 | 05/11/2026 | `322156532640c154682f6542c6b7e9e0a5305ea941fce2e1953bca4bba09f465` | #4 (junto com src/testes/manual da 1.9.2) | `v1.9.2` — a criar pelo Rodrigo, antes do merge |
 | 1.9.3 | 11/11/2026 | `3093f079068ae11e8773f9fe2f3a808c049769464058138d94a1bab5aa041181` | #5 (junto com src/testes/manual da 1.9.3) | `v1.9.3` — a criar pelo Rodrigo, antes do merge |
 | 1.9.6 | 16/11/2026 | `f0e5131a93b767fde2c86be7336d7e02969e31d532fec5df18725bc89105d398` | #6 (junto com src/testes/manual da 1.9.6) | `v1.9.6` — antes do merge |
+| 1.9.7 | 18/11/2026 | `b427fe147ecc1f50177aff5311831f5df0278d0c9abc7d4cd5529683da49f49c` | junto com src/testes da 1.9.7 | `v1.9.7` — antes do merge |
 
 A 1.9.1 é a primeira versão entregue pela atualização automática. Ela foi publicada para testar o mecanismo, com só o Rodrigo na 1.9.0. Daqui em diante vale o portão: versão homologada.
 
@@ -53,3 +54,5 @@ A 1.9.4 e a 1.9.5 foram assinadas e **não publicadas** (números queimados): a 
 A 1.9.6 também foi publicada por decisão do Rodrigo (13/11, confirmada em 16/11), antes da homologação pela STI, depois do teste ao vivo do lote "Coletar respostas SAB" de 12/11 (três processos juntados, sem falhas). É a versão que substitui a extensão SABRe nas varas.
 
 A 1.9.7 (18/11) leva o CRATOS ao PJe dos 24 TRTs. O uso nos demais tribunais está autorizado pelo CSJT, por requisição direta entre as presidências (informado pelo Rodrigo em 18/11). Como a lista de hosts muda, o Firefox pede a quem atualizar que autorize as permissões novas.
+
+A 1.9.7 também foi publicada por decisão do Rodrigo (18/11), antes da homologação pela STI, depois do teste ao vivo no TRT19 (captura, terceiros, SAB ausente) e no TRT18 (certidão com "em face de", SNIPER só com a parte marcada, SAB na inclusão e na baixa, verificação de disponibilidade). Sem manual em PDF nesta versão: o manual não mudou, só o carimbo de versão.
