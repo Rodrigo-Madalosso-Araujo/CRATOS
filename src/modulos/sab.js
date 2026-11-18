@@ -33,12 +33,20 @@ const ModuloSAB = (() => {
   }
 
   /* Busca o idSab do processo na API do SAB (same-origin). */
-  async function _buscarIdSab(base, numeroProcesso) {
+  async function _buscarIdSab(base, numeroProcesso, xsrf) {
     const url = `${base}${SAB_API_PROCESSOS}` +
       `?pagina=1&tamanhoPagina=10&numeroProcesso=${encodeURIComponent(numeroProcesso)}`;
-    const resp = await fetch(url, { headers: { Accept: "application/json" } });
-    if (!resp.ok) throw new Error(`SAB API ${resp.status}`);
-    const dados = await resp.json();
+    /* 1.9.7: lido PELA ABA do PJe quando houver (ApiPje._leitor — o fundo não leva o
+       cookie de sessão em todo tribunal); sem aba, o caminho antigo. */
+    let dados;
+    if (ApiPje._leitor) {
+      try { dados = await ApiPje._leitor(url.slice(base.length)); }
+      catch (e) { throw new Error(`SAB API ${e.status || e.message}`); }
+    } else {
+      const resp = await fetch(url, { headers: globalThis.CratosPje.cabecalhosLeitura(xsrf) });   // 1.9.7
+      if (!resp.ok) throw new Error(`SAB API ${resp.status}`);
+      dados = await resp.json();
+    }
     if (!dados.resultado || !dados.resultado[0]) {
       throw new Error("Processo não encontrado no SAB — verifique se o movimento foi aceito.");
     }
@@ -50,11 +58,11 @@ const ModuloSAB = (() => {
   }
 
   /* Busca o idSab com retentativas — cobre indexação lenta do SAB após os 10s. */
-  async function _buscarIdSabComRetry(base, numeroProcesso, tentativas = 3, intervaloMs = 5000) {
+  async function _buscarIdSabComRetry(base, numeroProcesso, xsrf, tentativas = 3, intervaloMs = 5000) {
     let ultimoErro;
     for (let i = 1; i <= tentativas; i++) {
       try {
-        return await _buscarIdSab(base, numeroProcesso);
+        return await _buscarIdSab(base, numeroProcesso, xsrf);
       } catch (e) {
         ultimoErro = e;
         console.log(`CRATOS/SAB: idSab ainda não disponível (tentativa ${i}/${tentativas}). ` +
@@ -73,9 +81,16 @@ const ModuloSAB = (() => {
        · nenhuma ativa → erro "não há determinação ativa para interromper";
        · uma → ela;
        · duas ou mais → só com a escolha feita no painel (`idEscolhido`). */
-  async function _buscarDeterminacaoAtiva(base, numeroProcesso, idEscolhido) {
+  async function _buscarDeterminacaoAtiva(base, numeroProcesso, idEscolhido, xsrf) {
     const L = globalThis.CratosSabLeitura;
-    const cli = L.cliente({ base });
+    /* 1.9.7: com a aba do PJe disponível, as leituras do SAB passam por ela */
+    const pelaAba = ApiPje._leitor ? async (url) => {
+      try {
+        const corpo = await ApiPje._leitor(String(url).slice(String(base).length));
+        return { ok: true, status: 200, json: async () => corpo };
+      } catch (e) { return { ok: false, status: e.status || 0, json: async () => ({}) }; }
+    } : undefined;
+    const cli = L.cliente({ base, xsrf: xsrf || "", fetch: pelaAba });      // 1.9.7: X-XSRF-TOKEN do painel
     let lista = null, ultimoErro = null;
     for (let i = 1; i <= 2 && !lista; i++) {
       try {
@@ -118,12 +133,13 @@ const ModuloSAB = (() => {
         // preenche a justificativa fixa e confirma, depois gera a certidão.
         try {
           console.log("CRATOS/SAB: baixa — buscando determinação ativa de", ctx.numeroProcesso);
-          const { idDeterminacao } = await _buscarDeterminacaoAtiva(ctx.base, ctx.numeroProcesso, ctx.sabIdDeterminacao);
+          const { idDeterminacao } = await _buscarDeterminacaoAtiva(ctx.base, ctx.numeroProcesso, ctx.sabIdDeterminacao, ctx.xsrfToken);
           console.log("CRATOS/SAB: idDeterminacao =", idDeterminacao);
           const cfgTudo = (await Store.get(CHAVES.config)) || {};
           const justificativa =
             (cfgTudo.sab && cfgTudo.sab.justificativaBaixa) || "Determinação judicial";
           await abrirDeterminacaoSab({
+            base: ctx.base,                 // 1.9.7: o PJe do processo, não mais o do TRT18
             idDeterminacao,
             numProcesso: ctx.numeroProcesso,
             operacao: "baixa",
@@ -177,7 +193,7 @@ const ModuloSAB = (() => {
 
         // ETAPA 2: obtém o idSab do processo
         console.log("CRATOS/SAB: buscando idSab para o processo", ctx.numeroProcesso);
-        const { idSab, idPJe } = await _buscarIdSabComRetry(ctx.base, ctx.numeroProcesso);
+        const { idSab, idPJe } = await _buscarIdSabComRetry(ctx.base, ctx.numeroProcesso, ctx.xsrfToken);
         console.log("CRATOS/SAB: idSab =", idSab);
 
         // ETAPA 3: obtém o valor do último cálculo (PJe-Calc)
@@ -191,6 +207,7 @@ const ModuloSAB = (() => {
         // runtime.sendMessage enviado do background NÃO volta para o próprio background
         // (era a causa do "Receiving end does not exist" no último passo).
         await abrirOrdemSab({
+          base: ctx.base,                   // 1.9.7: o PJe do processo, não mais o do TRT18
           idSab,
           numProcesso: ctx.numeroProcesso,
           calc,   // { total, valorFormatado, dataFormatada } | null

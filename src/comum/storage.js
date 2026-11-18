@@ -174,3 +174,69 @@ if (typeof globalThis.CratosMascara === "undefined") {
     },
   };
 }
+
+/* ═══ CratosPje — o cabeçalho das LEITURAS no PJe (1.9.7) ═════════════════════
+ * O PJe do TRT19 recusa GET sem o X-XSRF-TOKEN ("SJT-004 — Token de autenticação
+ * não informado", HTTP 400; console do Rodrigo, 18/11). O próprio PJe manda esse
+ * cabeçalho em toda chamada, com o valor do cookie Xsrf-Token. O TRT18 ainda aceita
+ * leitura só com o cookie — mas o CRATOS passa a fazer como o PJe, em todo lugar.
+ * Na página, o valor vem do cookie, lido na hora; no fundo (que não vê o cookie da
+ * página), vem do painel e fica só em memória. Nunca vai para o storage. */
+if (!globalThis.CratosPje) {
+  const xsrfDaPagina = () => {
+    try {
+      const c = String((typeof document !== "undefined" && document.cookie) || "").split(";")
+        .map((x) => x.trim()).find((x) => x.toLowerCase().startsWith("xsrf-token="));
+      return c ? c.split("=").slice(1).join("=") : "";
+    } catch (e) { return ""; }
+  };
+  const cabecalhosLeitura = (xsrfBruto) => {
+    const h = { Accept: "application/json" };
+    let v = "";
+    try { v = decodeURIComponent(String(xsrfBruto || "")); } catch (e) { v = String(xsrfBruto || ""); }
+    if (v) h["X-XSRF-TOKEN"] = v;
+    return h;
+  };
+  /* 1.9.7 (2ª correção, 18/11): a chamada ao PJe tem de SAIR DA PÁGINA. No TRT19 o
+     cookie de sessão (access_token) não vai em requisição feita pelo fundo da
+     extensão (a aba Rede mostrou: X-XSRF-TOKEN presente, Cookie ausente → 400
+     SJT-004). No content script, o `fetch` comum é o da extensão; o `content.fetch`
+     (Firefox) é o da página — igual ao teste no console, com cookie e origem do PJe.
+     A resposta volta embrulhada: o corpo é lido como TEXTO e convertido aqui (objeto
+     criado na página não atravessa direito para o script da extensão). */
+  /* 2ª tentativa (18/11, ao vivo): o `content.fetch` ainda saiu SEM o cookie (a aba Rede
+     mostrou o pedido no Inspecionar da extensão, não na aba do PJe). Agora a chamada usa
+     o `fetch` DA PRÓPRIA PÁGINA, via `window.wrappedJSObject` — o mesmo objeto do console
+     do F12 — com as opções clonadas para o escopo da página (cloneInto). Ordem: página
+     (wrappedJSObject) → content.fetch → fetch da extensão. O caminho usado vai ao console
+     da aba, uma vez, para o diagnóstico. */
+  let _avisouCaminho = false;
+  const fetchPagina = async (url, opcoes) => {
+    let f = null, alvo = null, via = "fetch da extensão";
+    const emPagina = typeof location !== "undefined" && location.protocol === "https:";
+    if (emPagina) {
+      try {
+        const w = typeof window !== "undefined" && window.wrappedJSObject;
+        if (w && typeof w.fetch === "function") { f = w.fetch; alvo = w; via = "fetch da página (wrappedJSObject)"; }
+      } catch (e) { /* nada */ }
+      if (!f) {
+        try { if (typeof content !== "undefined" && content && typeof content.fetch === "function") { f = content.fetch; alvo = content; via = "content.fetch"; } } catch (e) { /* nada */ }
+      }
+    }
+    if (!_avisouCaminho && emPagina) { _avisouCaminho = true; try { console.info("CRATOS: leituras do PJe por", via); } catch (e) { /* nada */ } }
+    if (!f) return fetch(url, opcoes);      // fora de página (fundo, testes): o fetch de sempre
+    let o = opcoes;
+    try { if (opcoes && typeof cloneInto === "function") o = cloneInto(opcoes, typeof window !== "undefined" ? window : alvo); } catch (e) { o = opcoes; }
+    const r = await f.call(alvo, String(url), o);
+    return {
+      ok: !!r.ok,
+      status: Number(r.status),
+      statusText: String(r.statusText || ""),
+      text: async () => String(await r.text()),
+      json: async () => JSON.parse(String(await r.text())),
+      arrayBuffer: async () => new Uint8Array(await r.arrayBuffer()).slice().buffer,
+    };
+  };
+  globalThis.CratosPje = Object.freeze({ xsrfDaPagina, cabecalhosLeitura, fetchPagina });
+  if (typeof module !== "undefined" && module.exports) module.exports.CratosPje = globalThis.CratosPje;
+}

@@ -32,7 +32,10 @@ function telaInicial(o) {
       <h2>Busca e restrição de bens</h2>
       <mat-form-field><label for="mat-input-1">Nº do processo*</label>
         <input id="mat-input-1" formcontrolname="proc" type="text"></mat-form-field>
-      <mat-select id="mat-select-1"><span>Pessoa(s)</span></mat-select>
+      <mat-form-field class="mat-mdc-form-field custom-field-consultation small process-person-option mat-mdc-form-field-type-mat-select">
+        <mat-label>Pessoa Pesquisada*</mat-label>
+        <mat-select id="mat-select-1" role="combobox" class="mat-mdc-select mat-mdc-select-multiple" aria-controls="mat-select-1-panel"><span>Todas</span></mat-select>
+      </mat-form-field>
       <mat-checkbox><input type="checkbox" id="mat-mdc-checkbox-0-input" checked>
         <label for="mat-mdc-checkbox-0-input">Selecionar todos</label></mat-checkbox>
       ${caixas}

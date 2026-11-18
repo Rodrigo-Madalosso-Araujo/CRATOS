@@ -109,8 +109,8 @@
       try { estAgora = await Store.get("sab_estado"); } catch (e) {}
       if (!estAgora || !estAgora.ativo) { clearInterval(timer); return; }
       try {
-        const resp = await fetch(`${base}/sab-api/api/determinacoes/${idDeterminacao}`,
-          { headers: { Accept: "application/json" } });
+        const resp = await CratosPje.fetchPagina(`${base}/sab-api/api/determinacoes/${idDeterminacao}`,
+          { headers: CratosPje.cabecalhosLeitura(_xsrfDoCookie()) });
         if (!resp.ok) return;
         const det = await resp.json();
         const situacao = String(det.situacao || "").toUpperCase();
@@ -175,8 +175,8 @@
     // Baseline da situação (não dependemos de saber a string "interrompida").
     let situacaoInicial = "";
     try {
-      const r = await fetch(`${base}/sab-api/api/determinacoes/${idDeterminacao}`,
-        { headers: { Accept: "application/json" } });
+      const r = await CratosPje.fetchPagina(`${base}/sab-api/api/determinacoes/${idDeterminacao}`,
+        { headers: CratosPje.cabecalhosLeitura(_xsrfDoCookie()) });
       if (r.ok) situacaoInicial = String((await r.json()).situacao || "").toUpperCase();
     } catch (e) { /* segue */ }
 
@@ -224,8 +224,8 @@
       try { estAgora = await Store.get("sab_estado"); } catch (e) {}
       if (!estAgora || !estAgora.ativo) { clearInterval(timer); return; }
       try {
-        const r = await fetch(`${base}/sab-api/api/determinacoes/${idDeterminacao}`,
-          { headers: { Accept: "application/json" } });
+        const r = await CratosPje.fetchPagina(`${base}/sab-api/api/determinacoes/${idDeterminacao}`,
+          { headers: CratosPje.cabecalhosLeitura(_xsrfDoCookie()) });
         if (!r.ok) return;
         const det = await r.json();
         const s = String(det.situacao || "").toUpperCase();
@@ -515,7 +515,7 @@
     /* O corpo que a tela do PJe manda é um objeto HttpHeaders do Angular
        serializado por engano — os parâmetros vão todos na query string. Mandamos
        o mesmo formato de propósito: é o que se sabe que o servidor aceita. */
-    const r = await fetch(url, {
+    const r = await CratosPje.fetchPagina(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

@@ -18,7 +18,30 @@ método que travou todo bug real desta lista.
 
 ## Situação
 
-### As que RODAM hoje (13/11/2026 — 1.9.5 em construção (1.9.4 + transferência enviada): respostas do SAB/SISBAJUD, lote do dia, baixa por escolha, travessão nos PDFs, Convênios em uso, transferência enviada também se junta, correções do 1º lote real): 50 suítes, 1469 asserções
+### As que RODAM hoje (18/11/2026 — 1.9.7: nacionalização (24 TRTs), partes na certidão principal, SNIPER só com as partes marcadas, X-XSRF-TOKEN nas leituras, leituras do PJe pela página): 53 suítes, 1556 asserções
+
+>>> 1.9.7 (18/11): duas suítes novas, que reprovam a 1.9.6, e `teste-sniper.js` 100 → 105.
+    · nova `teste-nacionalizacao.js` (37): manifest com os 24 TRTs um por um (sem curinga amplo; demais permissões
+      iguais); `basePje` (só https://pje.trtN.jus.br, N de 1 a 24); partes no formato do TRT19 (ATIVO/PASSIVO/
+      TERCEIROS, 35 terceiros entram; chave desconhecida usa o polo da parte; sem polo = "indefinido", entra);
+      painel no TRT19 (terceiros e polo indefinido nascem desmarcados; aviso de polo); SAB abre no PJe do processo
+      (TRT19, TRT3, guardado TRT10; sem PJe = erro, nunca TRT18); disponibilidade com controle no PJe da aba;
+      X-XSRF-TOKEN em toda LEITURA do PJe (o TRT19 recusa GET sem ele: 400 "SJT-004") — captura, cálculo, SAB no
+      fundo e na página, juntada; sem token, o 400 é falha da captura; token nunca no storage.
+    · nova `teste-leitura-pagina.js` (22): o PJe simulado só aceita a chamada feita PELA PÁGINA (o fundo recebe
+      400 SJT-004, como no TRT19 ao vivo); fetchPagina (fetch da página → content.fetch → o de sempre); captura
+      lida pelo painel e mandada em bruto; "pje_ler" (só caminho do PJe; erro com status); lerNaAbaPje (recolhe e
+      apaga; aba muda = erro claro); cálculo e SAB do fundo pela aba. `harness-painel.js` guarda os ouvintes de
+      mensagem e aceita `fetchPagina` e `cookie`.
+    · nova `teste-certidao-partes.js` (18): "em face de" na abertura (partes iguais) ou por linha (diferentes),
+      nas famílias realizados e cancelamento (com nada a cancelar); item antigo sem partes sai como antes; nome
+      escapado; demais famílias e título intactos; diário (corte por convênio, janela de 6 h do despacho, partes
+      informadas pelo SNIPER mandam); despacho registrado antes do módulo.
+    · `teste-sniper.js`: harness com o mat-select "Pessoa Pesquisada" (estrutura lida em 18/11) e POST com as
+      pessoas marcadas; bloco 9 (só a parte marcada no CRATOS; "Desmarcar todas" nunca clicada; nenhuma marcada
+      na lista = não inicia; opção que não desmarca = não inicia; doc_partes divergente = certidão do que o SNIPER
+      recebeu + aviso; módulo recusa sem parte com documento). Padrão do harness: as duas partes marcadas no painel.
+    · `teste-disponibilidade.js`: o controle virou função da base (`medir(id, base)`); asserções iguais.
 
 >>> 1.9.4 (13/11, 2ª leva): nova `teste-convenios-uso.js` (33), que reprova a 1.9.3. Regra (SAB só nos TRTs 3, 10 e 18,
     mesmo com o config "ligado"; tribunal desconhecido não esconde; nada salvo = tudo ligado), o bloco das Preferências

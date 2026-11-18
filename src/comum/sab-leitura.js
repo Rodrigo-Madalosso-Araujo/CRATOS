@@ -407,9 +407,20 @@
   function cliente(opcoes) {
     const o = opcoes || {};
     const base = o.base || (typeof location !== "undefined" ? location.origin : "");
-    const f = o.fetch || ((...a) => fetch(...a));
+    /* 1.9.7: na página, a chamada sai pela página (CratosPje.fetchPagina — com o cookie
+       de sessão); no fundo, quem chama passa `o.fetch` (a leitura pela aba do PJe). */
+    const f = o.fetch || ((...a) => (globalThis.CratosPje ? globalThis.CratosPje.fetchPagina(...a) : fetch(...a)));
+    /* 1.9.7: X-XSRF-TOKEN, como o PJe faz (o TRT19 recusa leitura sem ele). No fundo, vem
+       em `o.xsrf`; na página, do cookie, lido a cada chamada. */
+    const cabecalhos = () => {
+      const x = o.xsrf != null ? o.xsrf : (globalThis.CratosPje ? globalThis.CratosPje.xsrfDaPagina() : "");
+      if (globalThis.CratosPje) return globalThis.CratosPje.cabecalhosLeitura(x);
+      const h = { Accept: "application/json" };
+      if (x) { try { h["X-XSRF-TOKEN"] = decodeURIComponent(x); } catch (e) { h["X-XSRF-TOKEN"] = String(x); } }
+      return h;
+    };
     async function json(caminho) {
-      const r = await f(base + caminho, { headers: { Accept: "application/json" }, credentials: "include" });
+      const r = await f(base + caminho, { headers: cabecalhos(), credentials: "include" });
       if (!r.ok) throw new Error(`o SAB respondeu ${r.status} (${caminho.split("?")[0]})`);
       return r.json();
     }
@@ -445,13 +456,13 @@
       ordemPorProtocolo(p) { return json(`${API}/ordens/protocolo/${encodeURIComponent(dig(p))}`); },
       async timeline(idPJe) {
         const r = await f(`${base}/pje-comum-api/api/processos/id/${encodeURIComponent(idPJe)}/timeline?buscarMovimentos=false&buscarDocumentos=true`,
-          { headers: { Accept: "application/json" }, credentials: "include" });
+          { headers: cabecalhos(), credentials: "include" });
         if (!r.ok) throw new Error(`o PJe respondeu ${r.status} (timeline)`);
         return r.json();
       },
       async pdfOrdem(idOrdem) {
         const r = await f(`${base}${API}/ordens/${encodeURIComponent(idOrdem)}/relatorio-detalhamento-sisbajud`,
-          { headers: { Accept: "application/pdf" }, credentials: "include" });
+          { headers: Object.assign(cabecalhos(), { Accept: "application/pdf" }), credentials: "include" });
         if (!r.ok) throw new Error(`o SAB respondeu ${r.status} ao relatório da ordem`);
         const u8 = new Uint8Array(await r.arrayBuffer());
         if (u8.length < 5 || String.fromCharCode(...u8.subarray(0, 5)) !== "%PDF-") throw new Error("o SAB não devolveu um PDF");

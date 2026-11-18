@@ -7,6 +7,8 @@
  *      que a própria página recebe de sniper-api.pdpj.jus.br/v2/;
  *   2. espera o formulário (se pedir login, é você quem entra);
  *   3. informa o nº do processo e espera o SNIPER carregar as partes do polo passivo;
+ *   3b. (1.9.7) deixa marcadas em "Pessoa Pesquisada" SÓ as partes marcadas no CRATOS, e
+ *      confere opção por opção antes de seguir — divergiu, para sem iniciar nada;
  *   4. ajusta as fontes conforme as Preferências (todas, de fábrica);
  *   5. clica em "Iniciar investigação" — e mais nada;
  *   6. lê, das respostas da API, o resultado de cada fonte e fabrica o RELATÓRIO e a
@@ -157,6 +159,22 @@
         return;
       }
 
+      /* 3b. 1.9.7 (Rodrigo, 18/11) — só as partes marcadas no CRATOS. O SNIPER traz TODO o
+         polo passivo marcado; o CRATOS desmarca quem não foi marcado no painel. Parte
+         marcada que o SNIPER não lista (ex.: um terceiro) segue como "não listada", como
+         sempre. Nenhuma marcada na lista do SNIPER = nada a investigar: para sem iniciar. */
+      const querDocs = new Set((est.docsPainel || []).map((p) => digitos(p.doc)).filter((d) => d.length === 11 || d.length === 14));
+      const partesAlvo = partes.filter((p) => querDocs.has(p.doc));
+      if (!partesAlvo.length) {
+        await encerrarSemCertidao(est, "nenhuma das partes marcadas no CRATOS aparece no polo passivo que o SNIPER trouxe " +
+          "para este processo. Nada foi iniciado");
+        return;
+      }
+      avisar("deixando marcadas no SNIPER só as partes marcadas no CRATOS…");
+      cortina();
+      const selecao = await selecionarPessoas(new Set(partesAlvo.map((p) => p.doc)));
+      if (!selecao.ok) throw new Error(selecao.motivo + " Nada foi iniciado.");
+
       /* 4. fontes */
       const marcadas = await ajustarFontes(est.config.fontes || []);
 
@@ -183,7 +201,12 @@
       if (!id) throw new Error("o SNIPER criou a investigação, mas não informou o número. Confira no Histórico.");
       await salvar(est, { idInvestigacao: id });
       const enviadas = Array.isArray(enviado.sistemas) && enviado.sistemas.length ? enviado.sistemas.map(String) : marcadas;
-      const docsEnviados = Array.isArray(enviado.doc_partes) ? enviado.doc_partes.map(digitos) : partes.filter((p) => p.selecionada).map((p) => p.doc);
+      /* A certidão certifica QUEM O SNIPER RECEBEU (doc_partes), nunca quem se pretendia
+         mandar; sem doc_partes na resposta, vale a seleção conferida na tela (1.9.7). */
+      const docsEnviados = Array.isArray(enviado.doc_partes) ? enviado.doc_partes.map(digitos) : selecao.marcadas.slice();
+      const esperados = partesAlvo.map((p) => p.doc);
+      const divergencia = esperados.length !== docsEnviados.length ||
+        esperados.some((d) => docsEnviados.indexOf(d) < 0) || docsEnviados.some((d) => esperados.indexOf(d) < 0);
 
       avisar(`investigação nº ${id} criada. Lendo o resultado de cada fonte…`);
       const rotaFonte = (slug) => new RegExp(`/v2/investigacao/${id}/sistemas/${slug.replace(/[-]/g, "\\-")}/?(\\?|$)`, "i");
@@ -242,10 +265,13 @@
       const base = `${pasta(est)}/${est.numeroDigitos}_${doisPrimeiros((investigadas[0] || {}).nome) || "parte"}`;
       const nomeRelatorio = `${base} SNIPER relatorio.pdf`.replace(/\s+/g, " ");
       const nomeCertidao = `${base} SNIPER certidao.pdf`.replace(/\s+/g, " ");
+      /* 1.9.7: quem foi investigado vai ao diário (a certidão principal diz "em face de …") */
+      const partesDiario = investigadas.map((p) => ({ nome: p.nome, doc: p.doc }));
       await enviarPdf(est, "RELATÓRIO DE INVESTIGAÇÃO PATRIMONIAL — SNIPER (CNJ)", montarRelatorio(dados), nomeRelatorio, "relatorio",
         grafo && grafo.ok && grafo.grafos.length ? grafo : null, montarRelatorioBlocos(dados),
-        { processo: dados.numProcesso, investigacao: id, consultaEm: dados.consultaEm.toISOString() });
-      await enviarPdf(est, "CERTIDÃO — INVESTIGAÇÃO PATRIMONIAL (SNIPER/CNJ)", montarCertidao(dados, nomeRelatorio), nomeCertidao, "certidao");
+        { processo: dados.numProcesso, investigacao: id, consultaEm: dados.consultaEm.toISOString() }, partesDiario);
+      await enviarPdf(est, "CERTIDÃO — INVESTIGAÇÃO PATRIMONIAL (SNIPER/CNJ)", montarCertidao(dados, nomeRelatorio), nomeCertidao, "certidao",
+        null, null, null, partesDiario);
       await salvar(est, { ativo: false, fase: "concluido" });
       tirarCortina();
 
@@ -255,8 +281,12 @@
         txt += ` Atenção: ${naoListadas.map((p) => p.nome || formatarDoc(p.doc)).join(", ")} não ` +
           `aparece(m) no polo passivo que o SNIPER trouxe, e não foi(ram) investigado(s).`;
       }
+      if (divergencia) {
+        txt += " Atenção: o SNIPER registrou a investigação com partes diferentes das marcadas no CRATOS; " +
+          "a certidão diz quem o SNIPER de fato investigou. Confira.";
+      }
       txt += " Esta aba vai fechar sozinha.";
-      CratosFaixa.mostrar("sniper", txt, naoListadas.length || fontes.some((f) => f.situacao === "erro" || f.situacao === "andamento" || f.situacao === "sem_resposta") ? "#facc15" : "#4ade80");
+      CratosFaixa.mostrar("sniper", txt, naoListadas.length || divergencia || fontes.some((f) => f.situacao === "erro" || f.situacao === "andamento" || f.situacao === "sem_resposta") ? "#facc15" : "#4ade80");
       /* 1.7.2 (Rodrigo, 21/10): fecha o SNIPER depois do download. Só no SUCESSO — em
          falha a aba fica aberta para conferência (por isso o SNIPER não está no
          HOST_CONVENIO do background, que o painel fecha em qualquer desfecho). */
@@ -388,6 +418,79 @@
       if (cx.checked) marcadas.push(f.slug);
     }
     return marcadas;
+  }
+
+  /* ═══ PESSOA PESQUISADA (1.9.7, Rodrigo, 18/11) ═══
+     O campo é um mat-select MÚLTIPLO do Angular Material (estrutura lida no SNIPER em
+     18/11): <mat-form-field class="… process-person-option …"><mat-select role="combobox"
+     aria-controls="mat-select-N-panel">. Aberto, o painel é um div#mat-select-N-panel
+     role="listbox" no overlay (fora do campo), com:
+       · a 1ª opção, uma AÇÃO (classe option-select__action-all) — não é pessoa: ignorada;
+       · uma mat-option por pessoa, com aria-selected e o texto "NOME 000.000.000-00".
+     A opção é casada pelo DOCUMENTO, nunca pelo nome. Cada clique alterna a pessoa (o
+     painel múltiplo não fecha). Depois, CONFERE: alguma fora do lugar → mais uma volta; se
+     ainda assim divergir, devolve falha e ninguém clica em "Iniciar investigação".
+     Os cliques aqui NÃO passam pelo filtro de constrição do clicarSeguro: o que se clica
+     é o NOME de uma pessoa (uma empresa pode ter "bloqueio" no nome). A garantia é outra:
+     só se clica em mat-option DENTRO do painel ligado a este campo (aria-controls). */
+  function campoPessoas() {
+    const porClasse = document.querySelector("mat-form-field.process-person-option mat-select");
+    if (porClasse) return porClasse;
+    const campo = Array.from(document.querySelectorAll("mat-form-field"))
+      .find((f) => /pessoa\s+pesquisada/i.test(semAcento((f.querySelector("mat-label, label") || {}).textContent || "")));
+    return campo ? campo.querySelector("mat-select") : null;
+  }
+  function painelPessoas(gatilho) {
+    const id = gatilho && gatilho.getAttribute("aria-controls");
+    const p = id ? document.getElementById(id) : null;
+    return p && p.getAttribute("role") === "listbox" ? p : null;
+  }
+  const RX_DOC = /\d{3}\.\d{3}\.\d{3}-\d{2}|\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}/g;
+  function docDaOpcao(op) {
+    const t = String(op.textContent || "");
+    const fmt = t.match(RX_DOC);
+    if (fmt && fmt.length) return digitos(fmt[fmt.length - 1]);
+    const cru = t.match(/(?:^|\D)(\d{14}|\d{11})(?!\d)(?!.*\d)/);
+    return cru ? cru[1] : "";
+  }
+  const opcoesPessoa = (painel) => Array.from(painel.querySelectorAll("mat-option, [role=option]"))
+    .filter((o) => !o.classList.contains("option-select__action-all"));
+  const selecionada = (o) => o.getAttribute("aria-selected") === "true";
+
+  async function selecionarPessoas(querDocs) {
+    const gatilho = campoPessoas();
+    if (!gatilho) return { ok: false, motivo: "o campo \"Pessoa Pesquisada\" do SNIPER não apareceu." };
+    if (!painelPessoas(gatilho)) io.clicar(gatilho);
+    const painel = await aguardar(() => painelPessoas(gatilho), 5000);
+    if (!painel) return { ok: false, motivo: "a lista do campo \"Pessoa Pesquisada\" do SNIPER não abriu." };
+    let opcoes = [];
+    for (let volta = 0; volta < 2; volta++) {
+      opcoes = opcoesPessoa(painelPessoas(gatilho) || painel);
+      if (!opcoes.length) break;
+      let mexeu = false;
+      for (const o of opcoes) {
+        const quer = querDocs.has(docDaOpcao(o));
+        if (selecionada(o) !== quer) { io.clicar(o); mexeu = true; await io.esperar(150); }
+      }
+      if (!mexeu) break;
+      await io.esperar(300);
+    }
+    opcoes = opcoesPessoa(painelPessoas(gatilho) || painel);
+    const marcadas = opcoes.filter(selecionada).map(docDaOpcao);
+    const fora = opcoes.filter((o) => selecionada(o) !== querDocs.has(docDaOpcao(o)));
+    const faltam = Array.from(querDocs).filter((d) => marcadas.indexOf(d) < 0);
+    /* fecha a lista (Esc), como a pessoa faria */
+    try {
+      const alvoTecla = painelPessoas(gatilho) || gatilho;
+      for (const t of ["keydown", "keyup"]) alvoTecla.dispatchEvent(new KeyboardEvent(t, { key: "Escape", code: "Escape", keyCode: 27, bubbles: true }));
+    } catch (e) { /* nada */ }
+    await aguardar(() => !painelPessoas(gatilho), 2000);
+    if (!opcoes.length) return { ok: false, motivo: "a lista do campo \"Pessoa Pesquisada\" do SNIPER veio vazia." };
+    if (fora.length || faltam.length) {
+      return { ok: false, motivo: "não consegui deixar marcadas no SNIPER só as partes marcadas no CRATOS " +
+        `(${fora.length + faltam.length} pessoa(s) fora do lugar na lista "Pessoa Pesquisada").` };
+    }
+    return { ok: true, marcadas };
   }
 
   /* ═══ GRAFO DE VÍNCULOS (1.9.3) ═══
@@ -899,7 +1002,7 @@
       "foi redesenhado no relatório anexo, com a ficha de cada terceiro; vínculos não expandidos pelo SNIPER não constam.";
   }
 
-  async function enviarPdf(est, titulo, linhas, filename, detalhe, grafoSniper, blocos, metaBlocos) {
+  async function enviarPdf(est, titulo, linhas, filename, detalhe, grafoSniper, blocos, metaBlocos, partesDiario) {
     await browser.runtime.sendMessage({
       tipo: "fabricar_pdf",
       convenio: "SNIPER",
@@ -912,6 +1015,7 @@
       grafoSniper: grafoSniper || undefined,
       relatorioSniper: blocos || undefined,          // 1.9.3: o relatório desenhado
       relatorioSniperMeta: blocos ? metaBlocos : undefined,
+      partes: Array.isArray(partesDiario) ? partesDiario : undefined,   // 1.9.7
     }).catch(() => { /* Promise rejeita no FF mesmo baixando; presunção de sucesso */ });
   }
 

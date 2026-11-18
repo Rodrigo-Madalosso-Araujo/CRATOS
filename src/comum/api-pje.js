@@ -15,10 +15,29 @@ const ApiPje = {
 
   setBase(base) { this._base = base.replace(/\/+$/, ""); },
 
+  /* 1.9.7: o X-XSRF-TOKEN que o painel lê do cookie da página (o TRT19 recusa GET sem
+     ele). Só em memória; vai só para a base do PJe definida acima. */
+  _xsrf: "",
+  setXsrf(t) { this._xsrf = String(t || ""); },
+
+  _cabecalhos() {
+    if (globalThis.CratosPje) return globalThis.CratosPje.cabecalhosLeitura(this._xsrf);
+    const h = { Accept: "application/json" };
+    if (this._xsrf) { try { h["X-XSRF-TOKEN"] = decodeURIComponent(this._xsrf); } catch (e) { h["X-XSRF-TOKEN"] = this._xsrf; } }
+    return h;
+  },
+
+  /* 1.9.7: no TRT19 o fundo não consegue ler o PJe (o cookie de sessão não vai na
+     chamada feita pela extensão). Com um `leitor`, a leitura é pedida à ABA do PJe
+     (background: lerNaAbaPje). Sem leitor, o caminho antigo (serve no TRT18). */
+  _leitor: null,
+  setLeitor(fn) { this._leitor = typeof fn === "function" ? fn : null; },
+
   async _getJson(caminho) {
     if (!this._base) throw new Error(_semBase());
+    if (this._leitor) return this._leitor(caminho);
     const url = this._base + caminho;
-    const resp = await fetch(url, { headers: { Accept: "application/json" } });
+    const resp = await fetch(url, { headers: this._cabecalhos() });
     if (!resp.ok) {
       // Diferente da maisPJe, NÃO engolimos o erro: 403 e 404 precisam ser distinguíveis.
       const e = new Error(`CRATOS: ${resp.status} em ${caminho}`);
@@ -39,6 +58,20 @@ const ApiPje = {
   },
 
   /* ---- fluxo de alto nível: captura tudo que o CRATOS precisa ---- */
+
+  /* 1.9.7: a captura lida PELA PÁGINA (painel) chega aqui já em JSON bruto. */
+  montarProcesso(idProcesso, numeroProcesso, brutos) {
+    const brutoGerais = (brutos && brutos.gerais) || { _erro: true };
+    const brutoPartes = brutos && brutos.partes;
+    return {
+      id: idProcesso,
+      numero: numeroProcesso || normalizarNumero(brutoGerais),
+      capturadoEm: new Date().toISOString(),
+      partes: normalizarPartes(brutoPartes),
+      _brutoGerais: brutoGerais,
+      _brutoPartes: brutoPartes,
+    };
+  },
 
   async capturarProcesso(idProcesso, numeroProcesso) {
     const [brutoGerais, brutoPartes] = await Promise.all([
@@ -176,28 +209,48 @@ function normalizarNumero(brutoGerais) {
   return brutoGerais.numero || brutoGerais.numeroProcesso || "";
 }
 
-/* Espera-se algo como { poloAtivo: [...], poloPassivo: [...], outros: [...] }
-   ou uma lista plana com um campo indicando o polo. Tratamos os dois casos. */
-/* Formato real do TRT18: { ATIVO: [...], PASSIVO: [...], (TERCEIRO?: [...]) }.
-   Cada item já é a parte; advogados vêm aninhados em `representantes[]` e são
-   ignorados de propósito — o CRATOS consulta as PARTES, não os procuradores. */
+/* Formato real (TRT18 e TRT19, 18/11/2026): { ATIVO: [...], PASSIVO: [...], TERCEIROS: [...] }.
+   Cada item já é a parte e traz o PRÓPRIO polo ("ativo", "passivo", "outros"); advogados
+   vêm aninhados em `representantes[]` e são ignorados de propósito — o CRATOS consulta as
+   PARTES, não os procuradores.
+
+   1.9.7 — até a 1.9.6 só se conheciam ATIVO, PASSIVO, TERCEIRO e OUTROS, e qualquer outra
+   chave era PULADA em silêncio: os 35 terceiros de um processo do TRT19 sumiam do painel.
+   Agora, nesta ordem: (1) a chave do grupo, se conhecida; (2) o `polo` da própria parte;
+   (3) "indefinido" — a parte ENTRA, com o polo marcado como não identificado, e o painel
+   avisa. Parte nenhuma some. Só se pula o que não é lista de partes. */
+const _POLOS_GRUPO = {
+  ATIVO: "ativo", POLOATIVO: "ativo",
+  PASSIVO: "passivo", POLOPASSIVO: "passivo",
+  TERCEIRO: "terceiro", TERCEIROS: "terceiro", OUTROS: "terceiro", OUTRO: "terceiro",
+};
+const _POLOS_PARTE = { ativo: "ativo", a: "ativo", passivo: "passivo", p: "passivo",
+  terceiro: "terceiro", terceiros: "terceiro", outros: "terceiro", outro: "terceiro", t: "terceiro" };
+
+function _poloDaParte(it) {
+  const v = it && typeof it.polo === "string" ? it.polo.trim().toLowerCase() : "";
+  return _POLOS_PARTE[v] || null;
+}
+
+function _ehListaDePartes(itens) {
+  return Array.isArray(itens) && itens.some((x) => x && typeof x === "object" && ("nome" in x || "documento" in x || "idPessoa" in x));
+}
+
 function normalizarPartes(bruto) {
   if (!bruto) return [];
-
-  const mapaPolos = {
-    ATIVO: "ativo",
-    PASSIVO: "passivo",
-    TERCEIRO: "terceiro",
-    OUTROS: "terceiro",
-  };
-
   const partes = [];
-  for (const [chave, itens] of Object.entries(bruto)) {
-    const polo = mapaPolos[chave.toUpperCase()];
-    if (!polo || !Array.isArray(itens)) continue; // ignora campos que não são polo
+  const pegar = (itens, poloGrupo) => {
     for (const it of itens) {
-      partes.push(normalizarPessoa(it, polo));
+      if (!it || typeof it !== "object") continue;
+      partes.push(normalizarPessoa(it, poloGrupo || _poloDaParte(it) || "indefinido"));
     }
+  };
+  if (Array.isArray(bruto)) { pegar(bruto, null); return partes; }   // lista plana: o polo vem de cada parte
+  for (const [chave, itens] of Object.entries(bruto)) {
+    if (!Array.isArray(itens)) continue;                           // não é polo (ex.: um total)
+    const poloGrupo = _POLOS_GRUPO[chave.toUpperCase().replace(/[^A-Z]/g, "")] || null;
+    if (!poloGrupo && !_ehListaDePartes(itens)) continue;          // lista de outra coisa
+    pegar(itens, poloGrupo);
   }
   return partes;
 }

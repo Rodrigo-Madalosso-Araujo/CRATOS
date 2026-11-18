@@ -271,7 +271,20 @@
     corpo.innerHTML = `<div class="cx-vazio">Capturando dados do processo…</div>`;
 
     const base = location.origin; // ex.: https://pje.trt18.jus.br
-    const r = await browser.runtime.sendMessage({ tipo: "capturar", base, idProcesso: id, numeroProcesso: numero });
+    /* 1.9.7: a LEITURA sai daqui, da página (com o cookie de sessão — o TRT19 não aceita
+       a chamada feita pelo fundo). O fundo recebe o JSON bruto e normaliza as partes
+       como sempre. O X-XSRF-TOKEN vai junto para as leituras que o fundo pede à aba. */
+    let brutos;
+    try {
+      const gerais = await lerJsonNaPagina(`/pje-comum-api/api/processos/id/${id}`).catch((e) => ({ _erro: e.status || true }));
+      const partes = await lerJsonNaPagina(`/pje-comum-api/api/processos/id/${id}/partes`);
+      brutos = { gerais, partes };
+    } catch (e) {
+      CratosHTML.definir(corpo, html`<div class="cx-erro">Falha na captura: ${String(e.message || e)}</div>`);
+      return;
+    }
+    const r = await browser.runtime.sendMessage({ tipo: "capturar", base, idProcesso: id, numeroProcesso: numero,
+      xsrfToken: CratosPje.xsrfDaPagina(), brutos });
 
     if (!r || !r.ok) {
       CratosHTML.definir(corpo, html`<div class="cx-erro">Falha na captura: ${r?.erro || "erro desconhecido"}</div>`);
@@ -406,22 +419,34 @@
        EXECUTADO (polo passivo). Marcar o exequente por engano mandaria o credor
        para as pesquisas. Passivo (e polo desconhecido) nascem marcados. */
     /* 1.5.5: polo e documento vêm do PJe e entravam crus no HTML. */
+    /* 1.9.7: os TERCEIROS passaram a aparecer (até a 1.9.6 sumiam — ver api-pje.js). Eles e
+       a parte de polo não identificado nascem DESMARCADOS: um processo do TRT19 tem 35
+       terceiros interessados, e marcá-los de saída mandaria todos para os convênios. Nasce
+       marcado só o passivo (e a parte sem polo nenhum, como sempre foi). */
+    const nasceMarcada = (p) => !/ativ|terceir|indefinido/i.test(String(p.polo || ""));
+    const semPolo = partes.filter((p) => p.polo === "indefinido").length;
+    const avisoPolo = semPolo ? html`
+      <div class="cx-aviso-polo" style="color:#facc15;margin-bottom:8px;font-size:12px">
+        ⚠ ${String(semPolo)} parte(s) com polo não identificado pelo CRATOS (o PJe deste tribunal usa um formato
+        que eu não conheço). Elas aparecem abaixo, desmarcadas: confira o polo no PJe antes de marcar.
+      </div>` : "";
     const linhas = partes.map((p, i) => html`
       <div class="cx-parte">
         <label style="display:flex;gap:8px;flex:1;cursor:pointer">
-          <input type="checkbox" class="cx-sel-parte" data-idx="${i}"${/ativ/i.test(p.polo || "") ? "" : " checked"}>
+          <input type="checkbox" class="cx-sel-parte" data-idx="${i}"${nasceMarcada(p) ? " checked" : ""}>
           <div style="flex:1">
             <div class="cx-nome">${p.nome || "(sem nome)"}</div>
             <div class="cx-doc">${formatarDoc(p.cpfcnpj)}</div>
           </div>
         </label>
-        <div class="cx-polo">${p.polo || ""}</div>
+        <div class="cx-polo">${p.polo === "indefinido" ? "polo não identificado" : (p.polo || "")}</div>
       </div>`);
 
     CratosHTML.definir(corpo, html`
       <div style="color:#9a9a9a;margin-bottom:8px;font-size:12px">
         Processo ${processoAtual.numero || String(processoAtual.id)}
       </div>
+      ${avisoPolo}
       ${linhas}
       <div style="display:flex;gap:8px;margin-top:14px">
         <button class="cx-acao" id="cx-modo-inclusao" style="flex:1;font-size:13px">
@@ -1042,7 +1067,7 @@
         const resp = g.itens.filter((it) => SAB.ordemJuntavel(it.ordem));
         linha.aguardando = g.itens.filter((it) => !SAB.ordemJuntavel(it.ordem)).map((it) => String(it.ordem.numeroProtocolo));
         if (!resp.length) continue;
-        const r0 = await fetch(`${location.origin}${API}/processos/id/${g.idPJe}/documentos/minuta/A/metadados`, { headers: { Accept: "application/json" } });
+        const r0 = await CratosPje.fetchPagina(`${location.origin}${API}/processos/id/${g.idPJe}/documentos/minuta/A/metadados`, { headers: CratosPje.cabecalhosLeitura(CratosPje.xsrfDaPagina()) });
         if (r0.status !== 204) throw new Error("há documento em rascunho no processo: pulado (conclua ou descarte o rascunho e rode de novo)");
         const indice = await indiceDosAutos(cli, g.idPJe);
         const porDet = new Map();
@@ -2004,7 +2029,32 @@
    * (ex.: lançar movimento) são delegadas ao content script, que roda com a origem
    * legítima https://pje.trt18.jus.br. O background pede via runtime.sendMessage.
    */
+  /* 1.9.7 — LEITURA PELA PÁGINA. Só GET, só caminho do próprio PJe (/pje-comum-api/ ou
+     /sab-api/), nunca endereço absoluto: o fundo não consegue mandar esta aba ler outro
+     site. Erro HTTP vira exceção com o status (o 400/401/403 não pode virar "vazio"). */
+  async function lerJsonNaPagina(caminho) {
+    const c = String(caminho || "");
+    if (!/^\/(pje-comum-api|sab-api)\//.test(c)) throw new Error("caminho de leitura recusado: " + c.slice(0, 60));
+    const r = await CratosPje.fetchPagina(location.origin + c,
+      { headers: CratosPje.cabecalhosLeitura(CratosPje.xsrfDaPagina()), credentials: "include" });
+    if (!r.ok) {
+      const e = new Error(`CRATOS: ${r.status} em ${c.split("?")[0]}`);
+      e.status = r.status;
+      throw e;
+    }
+    return r.json();
+  }
+
   browser.runtime.onMessage.addListener((msg) => {
+    /* 1.9.7: o fundo pede uma leitura no PJe (cálculo, SAB); a resposta volta pelo
+       storage, como a do movimento (o retorno direto da mensagem é frágil no MV2). */
+    if (msg && msg.tipo === "pje_ler" && typeof msg.id === "string" && /^[a-z0-9_-]{6,40}$/i.test(msg.id)) {
+      const chave = "pje_leitura:" + msg.id;
+      return lerJsonNaPagina(msg.caminho)
+        .then((corpo) => Store.set(chave, { ok: true, status: 200, corpo, em: Date.now() }))
+        .catch((e) => Store.set(chave, { ok: false, status: e.status || null, erro: String(e.message || e), em: Date.now() }))
+        .then(() => ({ ok: true }));
+    }
     if (msg && msg.tipo === "pje_lancar_movimento") {
       return lancarMovimentoNaPagina(msg.idProcesso, msg.idMovimento)
         .then(async (r) => { await Store.set("sab_movimento_resultado", { ok: true, em: Date.now() }); return r; })
@@ -2089,8 +2139,8 @@
   }
 
   async function getPje(caminho) {
-    const r = await fetch(caminho.startsWith("http") ? caminho : location.origin + caminho,
-      { headers: { Accept: "application/json" } });
+    const r = await CratosPje.fetchPagina(caminho.startsWith("http") ? caminho : location.origin + caminho,
+      { headers: CratosPje.cabecalhosLeitura(xsrfDoCookie()) });     // 1.9.7
     if (!r.ok) throw new Error(`${r.status} ao ler ${caminho}`);
     return r.json();
   }
@@ -2118,8 +2168,8 @@
   async function juntarCertidao(idProcesso, certidao, numProcesso) {
     /* 1) Não atropelar rascunho de outra pessoa (ou meu, de uma tentativa que
           ficou pela metade). 204 = campo livre. */
-    const r0 = await fetch(`${location.origin}${API}/processos/id/${idProcesso}/documentos/minuta/A/metadados`,
-      { headers: { Accept: "application/json" } });
+    const r0 = await CratosPje.fetchPagina(`${location.origin}${API}/processos/id/${idProcesso}/documentos/minuta/A/metadados`,
+      { headers: CratosPje.cabecalhosLeitura(CratosPje.xsrfDaPagina()) });
     if (r0.status !== 204) {
       throw new Error("já existe um documento em rascunho neste processo. " +
         "Conclua ou descarte esse rascunho antes — não vou escrever por cima dele.");
@@ -2445,7 +2495,7 @@
   }
 
   async function postPje(caminho, corpo, metodo) {
-    const r = await fetch(caminho.startsWith("http") ? caminho : location.origin + caminho, {
+    const r = await CratosPje.fetchPagina(caminho.startsWith("http") ? caminho : location.origin + caminho, {
       method: metodo || "POST",
       headers: {
         "Content-Type": "application/json",
@@ -2473,7 +2523,7 @@
       processos: [Number(idProcesso)],
     };
     console.log("CRATOS/painel: POST movimento — corpo:", JSON.stringify(corpoReq));
-    const resp = await fetch(url, {
+    const resp = await CratosPje.fetchPagina(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

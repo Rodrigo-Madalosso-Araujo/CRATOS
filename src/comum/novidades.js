@@ -16,6 +16,12 @@
 
   /* da mais nova para a mais velha */
   const VERSOES = [
+    { versao: "1.9.7", data: "18/11/2026", itens: [
+      "O CRATOS passa a funcionar no PJe de todos os TRTs, e não só no da 18ª Região. O SAB continua aparecendo só nos tribunais em que ele existe.",
+      "Certidão de convênios: passa a dizer contra quem a diligência foi feita, com nome e CPF/CNPJ — uma vez na abertura, quando as partes são as mesmas em todos os convênios, ou em cada linha, quando são diferentes.",
+      "SNIPER: investiga só as partes marcadas no CRATOS. Antes, ia todo o polo passivo que o SNIPER trazia.",
+      "Painel: os terceiros interessados do processo voltam a aparecer na lista de partes (às vezes sumiam). Eles vêm desmarcados.",
+    ] },
     { versao: "1.9.6", data: "13/11/2026", itens: [
       "Juntada: o tipo de documento passa a ser procurado também no catálogo completo do PJe — antes, processo que ainda não tinha nenhum \"Sisbajud (transferência)\" recusava a juntada.",
       "SAB: a \"possível duplicidade\" agora compara data E hora (um documento juntado de manhã não é mais confundido com a ordem da tarde do mesmo dia).",

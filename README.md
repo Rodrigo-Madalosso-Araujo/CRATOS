@@ -5,7 +5,7 @@ Extensão Firefox (Manifest V2) que captura os dados do processo no PJe e
 **prepara** a execução de convênios (consultas e registro) para o processo em
 tela, no âmbito do TRT da 18ª Região.
 
-> Versão: **1.9.6** · Compatibilidade: Firefox 140+ (ESR 140 ou superior) · Este repositório é
+> Versão: **1.9.7** · Compatibilidade: Firefox 140+ (ESR 140 ou superior) · Este repositório é
 > disponibilizado para fins de **homologação** pelo Tribunal.
 > Última versão **homologada** pela STI: **1.6.5** (release `v1.6.5`). As versões 1.7 a 1.9 estão
 > descritas abaixo e no cartão "Novidades" da própria extensão.
@@ -121,6 +121,15 @@ o CRATOS gera certidão desse fato em vez de terminar calado.
 - **Convênios em uso (desde a 1.9.6).** Primeiro bloco das Preferências: convênio
   desligado some da fila, dos botões de coleta, do lote, da disponibilidade e dos
   Primeiros passos. O SAB só aparece nos TRTs que o usam (3, 10 e 18).
+- **Todos os TRTs (desde a 1.9.7).** O CRATOS funciona no PJe de qualquer TRT
+  (`pje.trt1.jus.br` a `pje.trt24.jus.br`); o SAB e a verificação de disponibilidade
+  usam o PJe da aba em que a pessoa está. Uso nos demais tribunais autorizado pelo
+  CSJT, por requisição direta entre as presidências.
+- **"Em face de" na certidão de convênios (desde a 1.9.7).** A certidão consolidada
+  diz contra quem cada convênio foi feito (nome e CPF/CNPJ): uma vez na abertura,
+  quando as partes são as mesmas, ou em cada linha, quando diferem.
+- **SNIPER só com as partes marcadas (desde a 1.9.7).** O CRATOS deixa marcadas no
+  campo "Pessoa Pesquisada" só as partes marcadas no painel e confere antes de iniciar.
 - A extensão **não manuseia senhas, tokens ou certificados**: o login (inclusive
   certificado digital e token por e-mail) é sempre feito pelo usuário.
 - Todo HTML montado com dado externo passa por `CratosHTML` (escape
@@ -131,7 +140,7 @@ o CRATOS gera certidão desse fato em vez de terminar calado.
 
   | Host (só `https://`) | Para quê |
   |---|---|
-  | `*.trt18.jus.br` | PJe e SAB (captura do processo, movimento, juntada) |
+  | `pje.trt1.jus.br` … `pje.trt24.jus.br` (os 24, um por um) | PJe e SAB do tribunal de quem usa (captura do processo, movimento, juntada) |
   | `*.receita.fazenda.gov.br` | eCAC / INFOJUD e caixa postal |
   | `renajud.pdpj.jus.br` | RENAJUD |
   | `indisponibilidade.onr.org.br` | CNIB |

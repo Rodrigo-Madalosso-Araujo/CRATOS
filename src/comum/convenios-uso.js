@@ -42,6 +42,20 @@
     const n = parseInt(m[1], 10);
     return n >= 1 && n <= 24 ? n : null;
   }
+  /* 1.9.7 (nacionalização): a ORIGEM do PJe de um TRT, a partir de um endereço qualquer
+     daquele PJe — "https://pje.trt19.jus.br/pjekz/processo/1/detalhe" →
+     "https://pje.trt19.jus.br". Só os 24 TRTs, só https, sem porta nem usuário; qualquer
+     outra coisa → null. É o que substitui o "pje.trt18.jus.br" fixo no código: quem abre
+     o SAB ou faz a verificação de controle usa o PJe da aba em que a pessoa está. */
+  function basePje(endereco) {
+    let u;
+    try { u = new URL(String(endereco || "")); } catch (e) { return null; }
+    if (u.protocol !== "https:" || u.port || u.username || u.password) return null;
+    const m = u.hostname.toLowerCase().match(/^pje\.trt(\d{1,2})\.jus\.br$/);
+    if (!m || String(parseInt(m[1], 10)) !== m[1]) return null;
+    const n = parseInt(m[1], 10);
+    return n >= 1 && n <= 24 ? "https://pje.trt" + n + ".jus.br" : null;
+  }
   /* true / false / null (não sei: tribunal desconhecido). */
   function sabExiste(base) {
     const n = trtDoHost(base);
@@ -63,7 +77,7 @@
     return CONVENIOS.filter((c) => ligado(config, c.nome, base)).map((c) => c.id);
   }
 
-  const api = { SAB_TRTS, CONVENIOS, trtDoHost, sabExiste, existeNoTribunal, ligado, ligados };
+  const api = { SAB_TRTS, CONVENIOS, trtDoHost, basePje, sabExiste, existeNoTribunal, ligado, ligados };
   globalThis.CratosConveniosUso = api;
 
   if (typeof Registro !== "undefined") {

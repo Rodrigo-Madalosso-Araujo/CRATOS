@@ -23,7 +23,7 @@ browser.runtime.onMessage.addListener((msg, sender) => {
   // (evita race condition em que este listener async "vencia" com undefined).
   switch (msg?.tipo) {
     case "capturar":
-      return capturar(msg.base, msg.idProcesso, msg.numeroProcesso);
+      return capturar(msg.base, msg.idProcesso, msg.numeroProcesso, msg.xsrfToken, msg.brutos);
     case "catalogo":
       return Promise.resolve({ modulos: Registro.catalogo() });
     case "iniciarExecucao":
@@ -49,7 +49,8 @@ browser.runtime.onMessage.addListener((msg, sender) => {
     case "instalar_atualizacao":
       return instalarAtualizacao(msg);
     case "sab_abrir_ordem":
-      return abrirOrdemSab(msg);
+      /* 1.9.7: o PJe é o da aba que pediu (o navegador informa), nunca o que vier na mensagem */
+      return abrirOrdemSab(Object.assign({}, msg, { base: sender && sender.tab ? sender.tab.url : null }));
     case "sab_certidao":
       return gerarCertidaoSab(msg);
     case "sab_fechar_aba":
@@ -82,7 +83,8 @@ browser.runtime.onMessage.addListener((msg, sender) => {
       /* 1.9.0: a aba do PJe onde o processo está — fechou, apaga os dados dele */
       return { ok: Limpeza.registrar(sender && sender.tab ? sender.tab.id : null, msg.numProcesso) };
     case "medir_disponibilidade":
-      return ModuloDisponibilidade.medir(msg.convenioId);
+      /* 1.9.7: a verificação de controle bate no PJe da aba que pediu (o navegador informa) */
+      return ModuloDisponibilidade.medir(msg.convenioId, _basePjeDe(sender && sender.tab ? sender.tab.url : null));
     case "certidao_indisponibilidade":
       return ModuloDisponibilidade.certidao(msg, fabricarCertidaoTexto);
     case "orq_fechar_aba":
@@ -118,11 +120,39 @@ browser.runtime.onMessage.addListener((msg, sender) => {
   }
 });
 
-async function capturar(base, idProcesso, numeroProcesso) {
+/* 1.9.7 — LEITURA NO PJe PELA ABA. O fundo pede à aba do PJe (painel.js, "pje_ler");
+   ela lê com o cookie de sessão e grava a resposta em "pje_leitura:<id>", que o fundo
+   recolhe e apaga. Mesmo caminho do lançamento de movimento. Sem resposta em 20 s (aba
+   fechada, navegou), a leitura FALHA com mensagem clara — nunca vira "vazio". */
+async function lerNaAbaPje(tabId, caminho) {
+  if (tabId == null) throw new Error("a aba do PJe não está mais aberta — reabra o processo e execute de novo.");
+  let c = String(caminho || "");
+  try { if (/^https?:\/\//i.test(c)) { const u = new URL(c); c = u.pathname + u.search; } } catch (e) { /* segue */ }
+  const id = "l" + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+  const chave = "pje_leitura:" + id;
+  browser.tabs.sendMessage(tabId, { tipo: "pje_ler", id, caminho: c }).catch(() => { /* resposta vem pelo storage */ });
+  const limite = Date.now() + 20000;
+  let r = null;
+  while (Date.now() < limite) {
+    await new Promise((res) => setTimeout(res, 250));
+    try { r = await Store.get(chave); } catch (e) { r = null; }
+    if (r) break;
+  }
+  try { await Store.set(chave, null); } catch (e) { /* nada */ }
+  if (!r) throw new Error("a aba do PJe não respondeu à leitura (" + c.split("?")[0] + "). Deixe o processo aberto no PJe e execute de novo.");
+  if (!r.ok) { const e = new Error(r.erro || `CRATOS: ${r.status} em ${c.split("?")[0]}`); e.status = r.status; throw e; }
+  return r.corpo;
+}
+
+async function capturar(base, idProcesso, numeroProcesso, xsrfToken, brutos) {
   try {
     ApiPje.setBase(base);
+    ApiPje.setXsrf(xsrfToken);       // 1.9.7: o TRT19 recusa leitura sem o X-XSRF-TOKEN
     await Store.set(CHAVES.trt, base);
-    const processo = await ApiPje.capturarProcesso(idProcesso, numeroProcesso);
+    /* 1.9.7: o painel já leu na página (com o cookie de sessão); aqui só se normaliza */
+    const processo = brutos && typeof brutos === "object" && brutos.partes
+      ? ApiPje.montarProcesso(idProcesso, numeroProcesso, brutos)
+      : await ApiPje.capturarProcesso(idProcesso, numeroProcesso);
     await Store.set(CHAVES.processo, processo);
     return { ok: true, processo };
   } catch (e) {
@@ -415,13 +445,31 @@ async function fecharAbaConvenio(convenioId) {
   }
 }
 
+/* 1.9.7 (nacionalização) — o PJe de onde a pessoa trabalha. `endereco` é o da aba (ou o
+   ctx.base do módulo); se não servir, vale o PJe guardado na última captura. Nunca há um
+   tribunal "de reserva": sem PJe identificado, quem pediu recebe erro claro. */
+function _basePjeDe(endereco) {
+  const U = globalThis.CratosConveniosUso;
+  return U && typeof U.basePje === "function" ? U.basePje(endereco) : null;
+}
+async function _basePjeOuGuardada(endereco) {
+  const b = _basePjeDe(endereco);
+  if (b) return b;
+  let guardada = null;
+  try { guardada = await Store.get(CHAVES.trt); } catch (e) { /* nada */ }
+  const g = _basePjeDe(guardada);
+  if (g) return g;
+  throw new Error("não identifiquei o PJe do seu tribunal nesta aba. Abra o processo no PJe e execute de novo.");
+}
+
 /*
  * Abre a aba do SAB na tela de minuta nova e semeia o estado pro content script.
- * msg: { idSab, numProcesso, calc }
+ * msg: { idSab, numProcesso, calc, base }
  */
 async function abrirOrdemSab(msg) {
   const { idSab, numProcesso, calc } = msg;
-  const url = `https://pje.trt18.jus.br/sab/determinacoes/nova/processo/${idSab}`;
+  const base = await _basePjeOuGuardada(msg.base);
+  const url = `${base}/sab/determinacoes/nova/processo/${idSab}`;
 
   await Store.set("sab_estado", {
     ativo: true,
@@ -433,10 +481,8 @@ async function abrirOrdemSab(msg) {
     abertoEm: new Date().toISOString(),
   });
 
-  // Reaproveita aba do SAB se já aberta, senão cria
-  const abasSab = await browser.tabs.query({
-    url: "https://pje.trt18.jus.br/sab/*"
-  });
+  // Reaproveita aba do SAB (deste tribunal) se já aberta, senão cria
+  const abasSab = await browser.tabs.query({ url: `${base}/sab/*` });
   if (abasSab.length) {
     await browser.tabs.update(abasSab[0].id, { url, active: true });
   } else {
@@ -533,11 +579,12 @@ async function _aguardarMarcacao(ms) {
 /*
  * Abre a determinação JÁ EXISTENTE (baixa) em /sab/determinacoes/{id} e semeia o
  * estado de baixa para o content script conduzir a interrupção automática.
- * (Host fixo trt18 — mesmo débito de nacionalização do abrirOrdemSab.)
+ * 1.9.7: o host é o do PJe do processo (msg.base), como no abrirOrdemSab.
  */
 async function abrirDeterminacaoSab(msg) {
   const { idDeterminacao, numProcesso, operacao, justificativa } = msg;
-  const url = `https://pje.trt18.jus.br/sab/determinacoes/${idDeterminacao}`;
+  const base = await _basePjeOuGuardada(msg.base);
+  const url = `${base}/sab/determinacoes/${idDeterminacao}`;
 
   await Store.set("sab_estado", {
     ativo: true,
@@ -548,7 +595,7 @@ async function abrirDeterminacaoSab(msg) {
     abertoEm: new Date().toISOString(),
   });
 
-  const abasSab = await browser.tabs.query({ url: "https://pje.trt18.jus.br/sab/*" });
+  const abasSab = await browser.tabs.query({ url: `${base}/sab/*` });
   if (abasSab.length) {
     await browser.tabs.update(abasSab[0].id, { url, active: true });
   } else {
@@ -666,6 +713,39 @@ async function abrirCensec() {
  * Chaveado pelo NÚMERO do processo (20 dígitos), que é o que existe em todos os
  * pontos de download — o id interno do PJe nem sempre está à mão ali.
  * ═══════════════════════════════════════════════════════════════════════════ */
+/* 1.9.7 — partes que vão para a certidão: só nome e documento (11 ou 14 dígitos, ou
+   vazio), sem repetir o mesmo documento, no máximo 200, nome com até 200 caracteres. */
+function _partesLimpas(partes) {
+  const saida = [];
+  const vistos = new Set();
+  for (const p of Array.isArray(partes) ? partes : []) {
+    if (!p || typeof p !== "object") continue;
+    const nome = String(p.nome || "").replace(/\s+/g, " ").trim().slice(0, 200);
+    let doc = String(p.doc || p.cpfcnpj || "").replace(/\D/g, "");
+    if (doc.length !== 11 && doc.length !== 14) doc = "";
+    if (!nome && !doc) continue;
+    const chave = doc || "nome:" + nome.toUpperCase();
+    if (vistos.has(chave)) continue;
+    vistos.add(chave);
+    saida.push({ nome, doc });
+    if (saida.length >= 200) break;
+  }
+  return saida;
+}
+
+/* O mesmo corte que cada módulo faz nas partes marcadas (modulos/*.js). Mantido aqui,
+   num lugar só, porque é a certidão que depende dele: o RENAJUD e o CNIB só agem sobre
+   o polo passivo; o PREVJUD só consulta CPF; os demais, quem tem CPF/CNPJ. */
+function partesDoDespacho(convenioId, partes) {
+  const id = String(convenioId || "").toUpperCase();
+  const doc = (p) => String((p && p.cpfcnpj) || "").replace(/\D/g, "");
+  const comDoc = (p) => doc(p).length === 11 || doc(p).length === 14;
+  let lista = (Array.isArray(partes) ? partes : []).filter(comDoc);
+  if (id === "RENAJUD" || id === "CNIB") lista = lista.filter((p) => p.polo === "passivo");
+  if (id === "PREVJUD") lista = lista.filter((p) => doc(p).length === 11);
+  return _partesLimpas(lista.map((p) => ({ nome: p.nome, doc: doc(p) })));
+}
+
 const Diario = {
   _chave(numProcesso) {
     return "diario:" + String(numProcesso || "").replace(/\D/g, "");
@@ -686,13 +766,50 @@ const Diario = {
     return proximo;
   },
 
+  /* 1.9.7 — quem foi mandado a cada convênio (ver orquestraExecutar). Um por convênio:
+     o despacho novo (inclusive o do Refazer) substitui o anterior. */
+  JANELA_DESPACHO_MS: 6 * 60 * 60 * 1000,
+  registrarDespacho(numProcesso, convenio, operacao, partes) {
+    const proximo = this._fila.then(async () => {
+      const digitos = String(numProcesso || "").replace(/\D/g, "");
+      const conv = String(convenio || "").toUpperCase();
+      if (digitos.length !== 20 || !conv) return null;
+      const k = this._chave(digitos);
+      const atual = (await Store.get(k)) || { numProcesso: digitos, itens: [] };
+      atual.despachos = Object.assign({}, atual.despachos);
+      atual.despachos[conv] = { em: new Date().toISOString(), operacao: operacao || null, partes: _partesLimpas(partes) };
+      await Store.set(k, atual);
+      return atual;
+    });
+    this._fila = proximo.catch(() => {});
+    return proximo;
+  },
+
+  /* As partes de um item novo: as que vierem no próprio registro (o SNIPER informa quem
+     o SNIPER de fato recebeu) ou, na falta, as do despacho do convênio — só se o despacho
+     for RECENTE. Arquivo que chega horas depois (ex.: a coleta do INFOJUD na caixa
+     postal) pode ser de outro pedido: fica sem partes, e a certidão sai como antes da
+     1.9.7. Nunca se atribui parte por palpite. */
+  _partesDoItem(atual, entrada) {
+    if (Array.isArray(entrada.partes)) return _partesLimpas(entrada.partes);
+    const d = atual.despachos && atual.despachos[String(entrada.convenio || "").toUpperCase()];
+    if (!d || !Array.isArray(d.partes) || !d.partes.length) return null;
+    const idade = Date.now() - Date.parse(d.em);
+    if (!(idade >= 0 && idade <= this.JANELA_DESPACHO_MS)) return null;
+    return d.partes.map((p) => Object.assign({}, p));
+  },
+
   async _registrar(numProcesso, entrada) {
     try {
       const digitos = String(numProcesso || "").replace(/\D/g, "");
       if (digitos.length !== 20) return null;            // sem processo, sem diário
       const k = this._chave(digitos);
       const atual = (await Store.get(k)) || { numProcesso: digitos, itens: [] };
-      atual.itens.push(Object.assign({ em: new Date().toISOString() }, entrada));
+      const item = Object.assign({ em: new Date().toISOString() }, entrada);
+      delete item.partes;
+      const partes = this._partesDoItem(atual, entrada || {});
+      if (partes && partes.length) item.partes = partes;
+      atual.itens.push(item);
       atual.atualizadoEm = new Date().toISOString();
       await Store.set(k, atual);
       return atual;
@@ -848,6 +965,58 @@ const _FAMILIAS = [
   },
 ];
 
+/* ═══ 1.9.7 — EM FACE DE QUEM (Rodrigo, 18/11) ═══
+ * A certidão principal passa a dizer contra quem cada convênio foi feito. As partes vêm
+ * do diário (Diario._partesDoItem). Duas formas, escolha do Rodrigo:
+ *   · todos os convênios da certidão com as MESMAS partes → uma vez, na abertura
+ *     ("foram realizados, em face de A (CPF …) e B (CNPJ …), os seguintes convênios:");
+ *   · partes diferentes → em cada linha ("1 - RENAJUD, em face de A (CPF …);").
+ * Convênio sem partes registradas (item de antes da 1.9.7, ou arquivo que chegou fora da
+ * janela do despacho) sai como sempre saiu: só o nome. Nada é inventado. */
+function _docFormatado(doc) {
+  const d = String(doc || "").replace(/\D/g, "");
+  if (d.length === 11) return "CPF " + d.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, "$1.$2.$3-$4");
+  if (d.length === 14) return "CNPJ " + d.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5");
+  return "";
+}
+function _parteNaCertidao(p) {
+  const doc = _docFormatado(p.doc);
+  return _escHtml(p.nome || "(sem nome)") + (doc ? ` (${doc})` : "");
+}
+/* "A", "A e B", "A, B e C" */
+function _emFaceDe(partes) {
+  const t = partes.map(_parteNaCertidao);
+  if (!t.length) return "";
+  return "em face de " + (t.length === 1 ? t[0] : t.slice(0, -1).join(", ") + " e " + t[t.length - 1]);
+}
+/* Partes de um convênio numa família: a união das partes dos itens dele, na ordem em
+   que apareceram. `null` = nenhum item do convênio tem partes registradas. */
+function _partesDoConvenio(meus, nome) {
+  const saida = [];
+  const vistos = new Set();
+  let algum = false;
+  for (const it of meus) {
+    if (String(it.convenio || "?").toUpperCase() !== nome || !Array.isArray(it.partes)) continue;
+    algum = true;
+    for (const p of it.partes) {
+      const k = p.doc || "nome:" + String(p.nome || "").toUpperCase();
+      if (vistos.has(k)) continue;
+      vistos.add(k);
+      saida.push(p);
+    }
+  }
+  return algum && saida.length ? saida : null;
+}
+const _assinaturaPartes = (ps) => ps ? ps.map((p) => p.doc || "nome:" + String(p.nome || "").toUpperCase()).sort().join("|") : "";
+/* Se todos os convênios da lista têm as MESMAS partes, devolve essas partes; senão null. */
+function _partesComuns(meus, nomes) {
+  if (!nomes.length) return null;
+  const porConv = nomes.map((n) => _partesDoConvenio(meus, n));
+  if (porConv.some((x) => !x)) return null;
+  const a = _assinaturaPartes(porConv[0]);
+  return porConv.every((x) => _assinaturaPartes(x) === a) ? porConv[0] : null;
+}
+
 /* Devolve UMA certidão por família presente no diário. Sessão só de inclusão dá
    uma; sessão só de baixa dá uma; a sessão mista (rara, porque os dois atos
    vivem em momentos diferentes do processo) dá duas. Nunca devolve documento em
@@ -894,8 +1063,17 @@ function montarCertidoes(diario) {
        escreve uma relação. */
     /* `linhasRelacao`, não `itens`: `itens` já é o diário, no escopo de fora —
        reusar o nome dava TDZ e derrubava a função inteira. */
-    const relacao = (lista) => lista.map((t, i) =>
-      `${i + 1} - ${_escHtml(t)}${i === lista.length - 1 ? "." : ";"}`);
+    /* 1.9.7: com `porLinha`, cada linha leva as partes do seu convênio (quando houver). */
+    const relacao = (lista, porLinha) => lista.map((t, i) => {
+      const ps = porLinha ? _partesDoConvenio(meus, t) : null;
+      return `${i + 1} - ${_escHtml(t)}${ps ? ", " + _emFaceDe(ps) : ""}${i === lista.length - 1 ? "." : ";"}`;
+    });
+    /* 1.9.7: partes iguais em todos → vão na abertura; diferentes → em cada linha. Só nas
+       duas famílias de relação (realizados e cancelamento). */
+    const temPartes = (fam.tipo === "realizados" || fam.tipo === "baixa") && nomes.some((n) => _partesDoConvenio(meus, n));
+    const comuns = temPartes ? _partesComuns(meus, nomes) : null;
+    const porLinha = temPartes && !comuns;
+    const naAbertura = comuns ? _emFaceDe(comuns) : "";
 
     /* 1.6.2 — NADA A CANCELAR. Na baixa, convênio que pesquisou e não achou restrição
        ativa (CNIB "não localizado"/"já cancelada", RENAJUD "Nenhuma restrição
@@ -908,16 +1086,24 @@ function montarCertidoes(diario) {
         String(it.convenio || "?").toUpperCase() === nome && it.detalhe !== "nada_a_cancelar");
       const cancelados = nomes.filter(cancelou);
       const nada = nomes.filter((n) => !cancelou(n));
-      const fraseNada = "não foram localizadas restrições ativas a cancelar nos seguintes convênios:";
+      const fraseNada = naAbertura
+        ? `não foram localizadas restrições ativas a cancelar, ${naAbertura}, nos seguintes convênios:`
+        : "não foram localizadas restrições ativas a cancelar nos seguintes convênios:";
+      const aberturaBaixa = naAbertura
+        ? fam.abertura.replace(/cancelamento das restrições nos seguintes convênios:$/,
+          `cancelamento das restrições, ${naAbertura}, nos seguintes convênios:`)
+        : fam.abertura;
       if (!nada.length) {
-        corpo = p(fam.abertura) + relacao(cancelados).map(p).join("") + p(fam.fecho);
+        corpo = p(aberturaBaixa) + relacao(cancelados, porLinha).map(p).join("") + p(fam.fecho);
       } else if (!cancelados.length) {
         corpo = p("CERTIFICO E DOU FÉ, para conhecimento do MM. Juiz, que " + fraseNada) +
-          relacao(nada).map(p).join("") +
+          relacao(nada, porLinha).map(p).join("") +
           p("CERTIFICO, por fim, que as certidões das pesquisas estão anexadas a presente certidão.");
       } else {
-        corpo = p(fam.abertura) + relacao(cancelados).map(p).join("") +
-          p("CERTIFICO, ainda, que " + fraseNada) + relacao(nada).map(p).join("") +
+        corpo = p(aberturaBaixa) + relacao(cancelados, porLinha).map(p).join("") +
+          /* as partes comuns já foram ditas na abertura: não se repetem no "ainda" */
+          p("CERTIFICO, ainda, que não foram localizadas restrições ativas a cancelar nos seguintes convênios:") +
+          relacao(nada, porLinha).map(p).join("") +
           p("CERTIFICO, por fim, que os comprovantes dos cancelamentos e as certidões das pesquisas " +
             "estão anexados a presente certidão.");
       }
@@ -934,7 +1120,10 @@ function montarCertidoes(diario) {
     } else if (fam.semRelacao) {
       corpo = p(fam.abertura) + (fam.fecho ? p(fam.fecho) : "");
     } else {
-      corpo = p(fam.abertura) + relacao(nomes).map(p).join("") + p(fam.fecho);
+      const abertura = naAbertura && fam.tipo === "realizados"
+        ? fam.abertura.replace(/foram realizados os seguintes convênios:$/, `foram realizados, ${naAbertura}, os seguintes convênios:`)
+        : fam.abertura;
+      corpo = p(abertura) + relacao(nomes, porLinha).map(p).join("") + p(fam.fecho);
     }
 
     saida.push({
@@ -1086,6 +1275,7 @@ function baixarERegistrar(url, filename, registro, base64) {
       arquivo: nomeFinal,
       ...(registro.grupo != null ? { grupo: String(registro.grupo) } : {}),
       ...(registro.rotuloGrupo ? { rotuloGrupo: String(registro.rotuloGrupo).slice(0, 60) } : {}),
+      ...(Array.isArray(registro.partes) ? { partes: registro.partes } : {}),   // 1.9.7
     });
     emitirPulsoConclusao(registro, nomeFinal);
   }
@@ -1189,6 +1379,24 @@ async function orquestraExecutar(msg, sender) {
   // Guarda o tabId de quem disparou (a aba do PJe) — usado para delegar POSTs
   // que precisam sair da origem da página (ex.: lançar movimento).
   if (sender && sender.tab) ctx.tabId = sender.tab.id;
+  /* 1.9.7: as leituras do fundo no PJe (cálculo, SAB) levam o X-XSRF-TOKEN do painel —
+     e, sobretudo, são feitas PELA ABA do PJe (lerNaAbaPje): no TRT19 a chamada do fundo
+     sai sem o cookie de sessão e o PJe recusa (400 SJT-004). */
+  if (ctx && ctx.xsrfToken) ApiPje.setXsrf(ctx.xsrfToken);
+  if (ctx && ctx.tabId != null) {
+    const aba = ctx.tabId;
+    ApiPje.setLeitor((caminho) => lerNaAbaPje(aba, caminho));
+  }
+  /* 1.9.7 — PARTES NA CERTIDÃO PRINCIPAL (Rodrigo, 18/11). Cada despacho de convênio
+     guarda no diário do processo QUEM foi mandado para ele (nome e CPF/CNPJ), já com o
+     mesmo corte que o módulo faz (RENAJUD/CNIB: só o passivo; PREVJUD: só CPF; os demais:
+     quem tem documento). Os arquivos que esse convênio registrar depois levam essas partes,
+     e a certidão consolidada diz "em face de …". Falha aqui nunca impede o convênio. */
+  try {
+    if (ctx && ctx.numeroProcesso) {
+      await Diario.registrarDespacho(ctx.numeroProcesso, convenioId, operacao, partesDoDespacho(convenioId, ctx.partes));
+    }
+  } catch (e) { console.warn("CRATOS/diário: despacho sem partes:", e && e.message); }
   switch (convenioId) {
     case "SAB":
       return ModuloSAB.executar(ctx, operacao);
@@ -1803,6 +2011,7 @@ browser.runtime.onMessage.addListener((msg) => {
         numProcesso: msg.numProcesso, convenio: msg.convenio || "?",
         operacao: msg.operacao || null, detalhe: msg.detalhe || null,
         grupo: msg.grupo, rotuloGrupo: msg.rotuloGrupo,
+        ...(Array.isArray(msg.partes) ? { partes: msg.partes } : {}),          // 1.9.7 (SNIPER)
       }, _bytesParaBase64(bytes));
       return Promise.resolve({ ok: true, filename: msg.filename, presumido: true });
     } catch (e) {

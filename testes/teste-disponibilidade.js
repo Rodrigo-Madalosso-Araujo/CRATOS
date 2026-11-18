@@ -28,6 +28,7 @@ const tick = (ms) => new Promise((r) => setTimeout(r, ms || 30));
 async function ate(cond, ms) { const t0 = Date.now(); while (Date.now() - t0 < (ms || 3000)) { try { if (cond()) return true; } catch (e) { /* nada */ } await tick(10); } return false; }
 const NUM = "0000001-23.2025.5.18.0008";
 const T0 = Date.parse("2026-10-22T14:00:00-03:00");
+const BASE_PJE = "https://pje.trt18.jus.br";
 
 if (!fs.existsSync(path.join(SRC, "modulos", "disponibilidade.js"))) {
   console.log(`\n=== ${NOME} ===\n  FALHA  a versão em ${SRC} não tem a verificação de disponibilidade (modulos/disponibilidade.js).\n\n0 passaram — a suíte inteira reprova nesta versão.\n`);
@@ -41,6 +42,8 @@ function modulo(roteiro) {
   vm.runInContext(fs.readFileSync(path.join(SRC, "modulos", "disponibilidade.js"), "utf8") +
     "\nglobalThis.__M = ModuloDisponibilidade; globalThis.__A = DISPONIBILIDADE_ALVOS; globalThis.__C = DISPONIBILIDADE_CONTROLE;", ctx);
   const M = ctx.__M;
+  /* 1.9.7: o controle passou a ser o PJe da aba (função da base); antes, uma constante. */
+  const C = typeof ctx.__C === "function" ? ctx.__C(BASE_PJE) : ctx.__C;
   const chamadas = [], esperas = [];
   let agora = T0;
   M.io = {
@@ -49,12 +52,12 @@ function modulo(roteiro) {
     fetch: async (url, o) => {
       chamadas.push({ url, o });
       agora += 400;
-      const passo = (roteiro[url.startsWith(ctx.__C) ? "pje" : "alvo"] || []).shift();
+      const passo = (roteiro[url.startsWith(C) ? "pje" : "alvo"] || []).shift();
       if (passo instanceof Error) throw passo;
       return passo;
     },
   };
-  return { M, chamadas, esperas, A: ctx.__A, C: ctx.__C };
+  return { M, chamadas, esperas, A: ctx.__A, C };
 }
 const resp = (status, statusText, type) => ({ status, statusText: statusText || "", type: type || "basic" });
 const erroRede = () => new TypeError("NetworkError when attempting to fetch resource.");
@@ -64,7 +67,7 @@ const abortado = () => { const e = new Error("aborted"); e.name = "AbortError"; 
   /* ── 1. medição ────────────────────────────────────────────────────────── */
   {
     const t = modulo({ alvo: [resp(503, "Service Unavailable"), resp(502, "Bad Gateway"), erroRede()], pje: [resp(200, "OK")] });
-    const m = await t.M.medir("RENAJUD");
+    const m = await t.M.medir("RENAJUD", BASE_PJE);
     checar(m.ok && m.conclusao === "indisponivel" && m.tentativas.length === 3 && m.tentativas.every((x) => x.falhou) && m.controle && m.controle.ok,
       "503, 502 e sem conexão nas 3 tentativas + PJe respondendo = INDISPONÍVEL");
     checar(t.esperas.join(",") === "10000,10000" && t.chamadas.length === 4 && t.chamadas[3].url === t.C, "3 tentativas com 10 s de intervalo, depois o PJe (controle)");
@@ -75,28 +78,28 @@ const abortado = () => { const e = new Error("aborted"); e.name = "AbortError"; 
   }
   {
     const t = modulo({ alvo: [resp(503), resp(200, "OK")] });
-    const m = await t.M.medir("CNIB");
+    const m = await t.M.medir("CNIB", BASE_PJE);
     checar(m.conclusao === "respondeu" && m.tentativas.length === 2 && !m.controle, "respondeu na 2ª tentativa: para de insistir e não certifica");
   }
   for (const [st, nome] of [[500, "500"], [401, "401"], [403, "403"], [404, "404"]]) {
     const t = modulo({ alvo: [resp(st)] });
-    const m = await t.M.medir("SNIPER");
+    const m = await t.M.medir("SNIPER", BASE_PJE);
     checar(m.conclusao === "respondeu" && m.tentativas.length === 1, `⛔ HTTP ${nome} = o sistema RESPONDEU (fica na faixa, nunca certidão de indisponibilidade)`);
   }
   {
     const t = modulo({ alvo: [resp(0, "", "opaqueredirect")] });
-    const m = await t.M.medir("PREVJUD");
+    const m = await t.M.medir("PREVJUD", BASE_PJE);
     checar(m.conclusao === "respondeu" && /redirecionou/.test(m.tentativas[0].mensagem), "redirecionamento para o login = respondeu");
   }
   {
     const t = modulo({ alvo: [abortado(), abortado(), abortado()], pje: [erroRede()] });
-    const m = await t.M.medir("CCS");
+    const m = await t.M.medir("CCS", BASE_PJE);
     checar(m.conclusao === "controle_falhou" && /sem resposta em 15 segundos/.test(m.tentativas[0].mensagem),
       "⛔ convênio E PJe fora do ar: pode ser a rede da unidade — NÃO certifica");
   }
   {
     const t = modulo({});
-    checar((await t.M.medir("SAB")).ok === false, "convênio sem verificação: recusa com motivo");
+    checar((await t.M.medir("SAB", BASE_PJE)).ok === false, "convênio sem verificação: recusa com motivo");
     const man = JSON.parse(fs.readFileSync(path.join(SRC, "manifest.json"), "utf8"));
     const casa = (url) => man.permissions.some((p) => {
       if (!/^https:\/\//.test(p)) return false;
@@ -112,7 +115,7 @@ const abortado = () => { const e = new Error("aborted"); e.name = "AbortError"; 
   /* ── 2. certidão ───────────────────────────────────────────────────────── */
   {
     const t = modulo({ alvo: [resp(503, "Service Unavailable"), resp(503, "Service Unavailable"), resp(504, "Gateway Timeout")], pje: [resp(200)] });
-    const m = await t.M.medir("SERASAJUD");
+    const m = await t.M.medir("SERASAJUD", BASE_PJE);
     let fab = null;
     const r = await t.M.certidao({ idMedicao: m.id, numProcesso: NUM, origem: "fila" }, (o) => { fab = o; return { ok: true, filename: o.filename }; });
     const txt = (fab && fab.linhas || []).join("\n");
@@ -130,7 +133,7 @@ const abortado = () => { const e = new Error("aborted"); e.name = "AbortError"; 
   }
   {
     const t = modulo({ alvo: [resp(200)] });
-    const m = await t.M.medir("CENSEC");
+    const m = await t.M.medir("CENSEC", BASE_PJE);
     let chamou = false;
     const r = await t.M.certidao({ idMedicao: m.id, numProcesso: NUM }, () => { chamou = true; return { ok: true }; });
     checar(r.ok === false && !chamou, "⛔ sem medição \"indisponível\" (o sistema respondeu), NÃO gera certidão");
@@ -143,7 +146,7 @@ const abortado = () => { const e = new Error("aborted"); e.name = "AbortError"; 
   {
     const bg = fs.readFileSync(path.join(SRC, "background.js"), "utf8");
     const man = JSON.parse(fs.readFileSync(path.join(SRC, "manifest.json"), "utf8"));
-    checar(/case "medir_disponibilidade":\s*return ModuloDisponibilidade\.medir\(msg\.convenioId\)/.test(bg) &&
+    checar(/case "medir_disponibilidade":(?:\s*\/\*[^*]*\*\/)?\s*return ModuloDisponibilidade\.medir\(msg\.convenioId[,)]/.test(bg) &&
       /case "certidao_indisponibilidade":\s*return ModuloDisponibilidade\.certidao\(msg, fabricarCertidaoTexto\)/.test(bg) &&
       man.background.scripts.includes("modulos/disponibilidade.js"), "fundo: rotas de medição e certidão; módulo no manifest");
     checar(/tipo: "indisponibilidade",\s*titulo: "Sistemas indisponíveis",\s*operacoes: \["indisponibilidade"\]/.test(bg) &&

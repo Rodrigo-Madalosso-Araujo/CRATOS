@@ -52,7 +52,8 @@ function montar(o) {
   const mem = {};
   const estado = Object.assign({
     ativo: true, numProcesso: F.PROC_FMT, numeroDigitos: F.PROC,
-    docsPainel: [{ nome: F.NOME_PJ, doc: F.CNPJ }],
+    /* 1.9.7: as partes marcadas no painel são as que o SNIPER investiga — por padrão, as duas */
+    docsPainel: [{ nome: F.NOME_PJ, doc: F.CNPJ }, { nome: F.NOME_PF, doc: F.CPF }],
     config: { fontes: F.FONTES_TELA.map(([s]) => s), pasta: "CRATOS" },
     fase: "iniciado", abertoEm: new Date(AGORA).toISOString(),
   }, op.estado || {});
@@ -141,8 +142,55 @@ function montar(o) {
     }
     for (const u of Object.keys(G.REL)) emitir("GET", `${API}/grafo/node/${u}/relationships?depth=1&inbound=true&outbound=true`, 200, G.REL[u]);
   };
+  /* 1.9.7 — o campo "Pessoa Pesquisada" (mat-select múltiplo, estrutura lida em 18/11).
+     Abre um painel role=listbox no overlay com a ação "Desmarcar todas" e uma opção por
+     pessoa (todas marcadas, como o SNIPER traz). Cada clique alterna a pessoa; Esc fecha.
+     op.opcaoTeimosa: documento cuja opção não desmarca (para a conferência). */
+  const docFmt = (d) => d.length === 14 ? d.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5")
+    : d.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, "$1.$2.$3-$4");
+  r.selecaoPessoas = null;   // null = ninguém mexeu (seleção padrão do SNIPER: todos)
+  const pessoasDaTela = () => (op.partes || F.PARTES).filter((p) => String(p.documento || "").length);
+  const abrirPainelPessoas = () => {
+    if (w.document.getElementById("mat-select-1-panel")) return;
+    if (!r.selecaoPessoas) r.selecaoPessoas = new Set(pessoasDaTela().filter((p) => p.selecionada !== false).map((p) => p.documento));
+    const ov = w.document.createElement("div");
+    ov.className = "cdk-overlay-container";
+    const painel = w.document.createElement("div");
+    painel.id = "mat-select-1-panel";
+    painel.setAttribute("role", "listbox");
+    painel.setAttribute("aria-multiselectable", "true");
+    const todas = w.document.createElement("mat-option");
+    todas.className = "mat-mdc-option option-select__action-all mat-mdc-option-multiple";
+    todas.setAttribute("role", "option"); todas.setAttribute("aria-selected", "false");
+    todas.innerHTML = '<mat-pseudo-checkbox class="mat-pseudo-checkbox"></mat-pseudo-checkbox><span class="mdc-list-item__primary-text">Desmarcar todas</span>';
+    painel.appendChild(todas);
+    pessoasDaTela().forEach((p, i) => {
+      const o = w.document.createElement("mat-option");
+      o.id = "mat-option-" + (i + 1);
+      o.className = "mat-mdc-option mat-mdc-option-multiple";
+      o.setAttribute("role", "option");
+      o.setAttribute("aria-selected", String(r.selecaoPessoas.has(p.documento)));
+      o.dataset.doc = p.documento;
+      o.innerHTML = `<mat-pseudo-checkbox class="mat-pseudo-checkbox"></mat-pseudo-checkbox><span class="mdc-list-item__primary-text">${p.nome} ${docFmt(p.documento)}</span>`;
+      painel.appendChild(o);
+    });
+    ov.appendChild(painel);
+    w.document.body.appendChild(ov);
+    painel.addEventListener("keydown", (ev) => { if (ev.key === "Escape") ov.remove(); });
+  };
+  w.document.addEventListener("keydown", (ev) => {
+    if (ev.key === "Escape") { const pn = w.document.getElementById("mat-select-1-panel"); if (pn) pn.parentNode.remove(); }
+  }, true);
   api.io.clicar = (el) => {
     r.cliques.push(String(el.textContent || el.id || "").replace(/\s+/g, " ").trim() || el.id);
+    if (el.id === "mat-select-1") { r.abriuPessoas = (r.abriuPessoas || 0) + 1; abrirPainelPessoas(); return; }
+    if (el.tagName === "MAT-OPTION" && el.dataset && el.dataset.doc) {
+      const d = el.dataset.doc;
+      if (op.opcaoTeimosa === d) return;
+      if (r.selecaoPessoas.has(d)) r.selecaoPessoas.delete(d); else r.selecaoPessoas.add(d);
+      el.setAttribute("aria-selected", String(r.selecaoPessoas.has(d)));
+      return;
+    }
     if (el.type === "checkbox") { el.checked = !el.checked; return; }
     if (el.tagName === "A") {
       const idParte = (String(el.getAttribute("href")).match(/\/parte\/(\d+)/) || [])[1];
@@ -183,7 +231,8 @@ function montar(o) {
       const sistemas = Array.from(w.document.querySelectorAll('input[type="checkbox"]'))
         .filter((c) => c.checked && c.id !== "mat-mdc-checkbox-0-input")
         .map((c) => F.FONTES_TELA[Number(c.id.match(/checkbox-(\d+)/)[1]) - 1][0]);
-      const corpoPost = { numero_processo: op.processoDoPost || F.PROC, sistemas, doc_partes: (op.partes || F.PARTES).map((p) => p.documento) };
+      const corpoPost = { numero_processo: op.processoDoPost || F.PROC, sistemas, doc_partes: op.docPartesPost || (r.selecaoPessoas ? (op.partes || F.PARTES).map((p) => p.documento).filter((d) => r.selecaoPessoas.has(d))
+        : (op.partes || F.PARTES).map((p) => p.documento)) };
       if (op.postRecusado) { emitir("POST", `${API}/investigacao/`, 403, { detail: "Usuário sem permissão" }, corpoPost); return; }
       emitir("POST", `${API}/investigacao/`, 201, { url_investigacao: `/i#/investigacao/${F.ID}` }, corpoPost);
       emitir("GET", `${API}/investigacao/${F.ID}/`, 200, { id: Number(F.ID), numero_processo: F.PROC_FMT.slice(0, 20), sistemas: [], partes: [], created_at: "2026-10-21T14:59:30.000" });
@@ -428,7 +477,9 @@ const texto = (m) => (m && m.linhas ? m.linhas.join("\n") : "");
       "⛔ fonte que não respondeu NÃO vira \"nenhum registro\"");
   }
   {
-    const t = montar({ estado: { docsPainel: [{ nome: "TERCEIRO FICTICIO", doc: "98765432100" }] } });
+    /* 1.9.7: com a seleção pelo CRATOS, a parte fora do polo passivo vai JUNTO de uma que está nele
+       (só ela, nenhuma das marcadas na lista do SNIPER = nada a investigar: ver o bloco 9) */
+    const t = montar({ estado: { docsPainel: [{ nome: F.NOME_PJ, doc: F.CNPJ }, { nome: "TERCEIRO FICTICIO", doc: "98765432100" }] } });
     await ate(() => pdfs(t).length >= 2, 6000);
     const c = texto(pdfs(t).find((m) => m.detalhe === "certidao"));
     checar(/não constavam do polo passivo apresentado pelo SNIPER[\s\S]*TERCEIRO FICTICIO - CPF\/CNPJ 987\.654\.321-00/.test(c),
@@ -584,6 +635,53 @@ const texto = (m) => (m && m.linhas ? m.linhas.join("\n") : "");
     const rel = pdfs(t).find((m) => m.detalhe === "relatorio") || {};
     checar(!t.abasProcessos && t.abasGrafo === 1 && rel.grafoSniper && rel.grafoSniper.grafos.length === 2,
       "só os processos desligados: o grafo segue normal (as chaves são independentes)");
+  }
+
+  /* ── 9. (1.9.7, Rodrigo, 18/11) "Pessoa Pesquisada": só as partes marcadas no CRATOS ── */
+  {
+    const t = montar({ estado: { docsPainel: [{ nome: F.NOME_PJ, doc: F.CNPJ }] } });
+    await ate(() => pdfs(t).length >= 2, 9000);
+    const post = t.msgs.length >= 0 && t.posts;
+    checar(t.abriuPessoas >= 1 && t.selecaoPessoas && t.selecaoPessoas.size === 1 && t.selecaoPessoas.has(F.CNPJ),
+      "⛔ SNIPER traz as 2 partes marcadas; o CRATOS deixa marcada SÓ a parte marcada no painel");
+    checar(!t.cliques.some((c) => /Desmarcar todas/.test(c)), "a opção-ação \"Desmarcar todas\" não é pessoa: o CRATOS nunca clica nela");
+    checar(post === 1 && !t.d.getElementById("mat-select-1-panel"), "a lista é fechada antes de iniciar; uma investigação só");
+    const c = texto(pdfs(t).find((m) => m.detalhe === "certidao"));
+    checar(c.indexOf(F.NOME_PJ) >= 0 && c.indexOf(F.NOME_PF) < 0, "certidão do SNIPER: só a parte investigada (a desmarcada não aparece)");
+    checar(pdfs(t).every((m) => Array.isArray(m.partes) && m.partes.length === 1 && m.partes[0].doc === F.CNPJ && m.partes[0].nome === F.NOME_PJ),
+      "relatório e certidão levam ao diário quem foi investigado (para a certidão principal dizer \"em face de\")");
+    checar(!t.faixas.some((f) => /partes diferentes das marcadas/.test(f.t)), "sem divergência, sem aviso de divergência");
+  }
+  {
+    const t = montar({ estado: { docsPainel: [{ nome: "TERCEIRO FICTICIO", doc: "98765432100" }] } });
+    await ate(() => t.mem["cratos:orq_conv_feito"], 6000);
+    const p = t.mem["cratos:orq_conv_feito"] || {};
+    checar(p.ok === false && t.posts === 0 && !pdfs(t).length && /nenhuma das partes marcadas no CRATOS aparece/.test(p.motivo || ""),
+      "⛔ nenhuma parte marcada no CRATOS está na lista do SNIPER: para SEM iniciar a investigação e sem certidão");
+  }
+  {
+    const t = montar({ opcaoTeimosa: F.CPF, estado: { docsPainel: [{ nome: F.NOME_PJ, doc: F.CNPJ }] } });
+    await ate(() => t.paradas.length, 9000);
+    checar(t.paradas.length && /não consegui deixar marcadas no SNIPER só as partes marcadas no CRATOS/.test(t.paradas[0].t) &&
+      /Nada foi iniciado/.test(t.paradas[0].t) && t.posts === 0 && !pdfs(t).length,
+      "⛔ opção que não desmarca: a conferência pega, NÃO clica em Iniciar, sem certidão (falha técnica ≠ certidão)");
+  }
+  {
+    const t = montar({ docPartesPost: [F.CNPJ, F.CPF], estado: { docsPainel: [{ nome: F.NOME_PJ, doc: F.CNPJ }] } });
+    await ate(() => pdfs(t).length >= 2, 9000);
+    const c = texto(pdfs(t).find((m) => m.detalhe === "certidao"));
+    checar(c.indexOf(F.NOME_PJ) >= 0 && c.indexOf(F.NOME_PF) >= 0 && t.faixas.some((f) => /partes diferentes das marcadas no CRATOS/.test(f.t)),
+      "⛔ SNIPER registrou partes diferentes: a certidão diz quem o SNIPER DE FATO investigou, e a faixa avisa");
+  }
+  {
+    const vm = require("vm");
+    const ctx = { console: { log() {}, error() {}, warn() {} }, Store: { get: async () => ({}), set: async (k, v) => { ctx.gravado = v; } },
+      CHAVES: { config: "config" }, browser: { tabs: { query: async () => [], create: async () => ({}), update: async () => ({}) } } };
+    vm.createContext(ctx);
+    vm.runInContext(fs.readFileSync(path.join(SRC, "modulos", "sniper.js"), "utf8") + "\nglobalThis.__S = ModuloSNIPER;", ctx);
+    const r = await ctx.__S.executar({ numeroProcesso: F.PROC_FMT, partes: [{ nome: "SEM DOC", cpfcnpj: "", polo: "passivo" }] }, "consulta");
+    checar(r.ok === false && /Nenhuma das partes marcadas tem CPF\/CNPJ/.test(r.motivo || "") && !ctx.gravado,
+      "módulo: nenhuma parte marcada com CPF/CNPJ → recusa antes de abrir o SNIPER");
   }
 
   console.log(`\n=== ${NOME} ===`);
