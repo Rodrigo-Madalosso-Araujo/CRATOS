@@ -18,14 +18,16 @@ método que travou todo bug real desta lista.
 
 ## Situação
 
-### As que RODAM hoje (18/11/2026 — 1.9.7: nacionalização (24 TRTs), partes na certidão principal, SNIPER só com as partes marcadas): 52 suítes, 1523 asserções
+### As que RODAM hoje (18/11/2026 — 1.9.7: nacionalização (24 TRTs), partes na certidão principal, SNIPER só com as partes marcadas, X-XSRF-TOKEN nas leituras): 52 suítes, 1534 asserções
 
 >>> 1.9.7 (18/11): duas suítes novas, que reprovam a 1.9.6, e `teste-sniper.js` 100 → 105.
-    · nova `teste-nacionalizacao.js` (26): manifest com os 24 TRTs um por um (sem curinga amplo; demais permissões
+    · nova `teste-nacionalizacao.js` (37): manifest com os 24 TRTs um por um (sem curinga amplo; demais permissões
       iguais); `basePje` (só https://pje.trtN.jus.br, N de 1 a 24); partes no formato do TRT19 (ATIVO/PASSIVO/
       TERCEIROS, 35 terceiros entram; chave desconhecida usa o polo da parte; sem polo = "indefinido", entra);
       painel no TRT19 (terceiros e polo indefinido nascem desmarcados; aviso de polo); SAB abre no PJe do processo
-      (TRT19, TRT3, guardado TRT10; sem PJe = erro, nunca TRT18); disponibilidade com controle no PJe da aba.
+      (TRT19, TRT3, guardado TRT10; sem PJe = erro, nunca TRT18); disponibilidade com controle no PJe da aba;
+      X-XSRF-TOKEN em toda LEITURA do PJe (o TRT19 recusa GET sem ele: 400 "SJT-004") — captura, cálculo, SAB no
+      fundo e na página, juntada; sem token, o 400 é falha da captura; token nunca no storage.
     · nova `teste-certidao-partes.js` (18): "em face de" na abertura (partes iguais) ou por linha (diferentes),
       nas famílias realizados e cancelamento (com nada a cancelar); item antigo sem partes sai como antes; nome
       escapado; demais famílias e título intactos; diário (corte por convênio, janela de 6 h do despacho, partes

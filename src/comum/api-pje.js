@@ -15,10 +15,22 @@ const ApiPje = {
 
   setBase(base) { this._base = base.replace(/\/+$/, ""); },
 
+  /* 1.9.7: o X-XSRF-TOKEN que o painel lê do cookie da página (o TRT19 recusa GET sem
+     ele). Só em memória; vai só para a base do PJe definida acima. */
+  _xsrf: "",
+  setXsrf(t) { this._xsrf = String(t || ""); },
+
+  _cabecalhos() {
+    if (globalThis.CratosPje) return globalThis.CratosPje.cabecalhosLeitura(this._xsrf);
+    const h = { Accept: "application/json" };
+    if (this._xsrf) { try { h["X-XSRF-TOKEN"] = decodeURIComponent(this._xsrf); } catch (e) { h["X-XSRF-TOKEN"] = this._xsrf; } }
+    return h;
+  },
+
   async _getJson(caminho) {
     if (!this._base) throw new Error(_semBase());
     const url = this._base + caminho;
-    const resp = await fetch(url, { headers: { Accept: "application/json" } });
+    const resp = await fetch(url, { headers: this._cabecalhos() });
     if (!resp.ok) {
       // Diferente da maisPJe, NÃO engolimos o erro: 403 e 404 precisam ser distinguíveis.
       const e = new Error(`CRATOS: ${resp.status} em ${caminho}`);

@@ -17,6 +17,9 @@
  *  4. painel no TRT19: terceiros e polo indefinido nascem DESMARCADOS; aviso de polo.
  *  5. SAB: abre no PJe do processo (TRT19), nunca no TRT18; sem PJe → erro claro.
  *  6. disponibilidade: o controle é o PJe da aba de quem pediu; sem ele, não certifica.
+ *  7. X-XSRF-TOKEN nas LEITURAS (o TRT19 recusa GET sem ele: HTTP 400 "SJT-004 —
+ *     Token de autenticação não informado"; console do Rodrigo, 18/11): captura,
+ *     cálculo, SAB (fundo e página), juntada; o token só em memória, nunca no storage.
  *
  * Reprova a 1.9.6. Rodar: node teste-nacionalizacao.js
  * Versão antiga: CRATOS_SRC=<pasta do src> node teste-nacionalizacao.js
@@ -193,6 +196,76 @@ const ler = (rel) => fs.readFileSync(path.join(SRC, rel), "utf8");
     const bg = ler("background.js");
     checar(/case "medir_disponibilidade":[\s\S]{0,250}ModuloDisponibilidade\.medir\(msg\.convenioId, _basePjeDe\(sender && sender\.tab \? sender\.tab\.url : null\)\)/.test(bg),
       "rota medir_disponibilidade: passa o PJe da aba que pediu");
+  }
+
+  /* ── 7. X-XSRF-TOKEN nas leituras ─────────────────────────────────────────── */
+  {
+    /* um PJe como o do TRT19: GET sem X-XSRF-TOKEN → 400 SJT-004 */
+    const pjeTrt19 = (log) => async (url, o) => {
+      const h = (o && o.headers) || {};
+      log.push({ url: String(url), xsrf: h["X-XSRF-TOKEN"] });
+      if (!h["X-XSRF-TOKEN"]) {
+        return { ok: false, status: 400, json: async () => ({}), text: async () => '{"codigoErro":"SJT-004","mensagem":"Autenticação: Token de autenticação não informado."}' };
+      }
+      const corpo = /\/partes$/.test(url) ? { ATIVO: [{ nome: "AUTOR FICTICIO", polo: "ativo", documento: "12312312387" }],
+        PASSIVO: [{ nome: "EMPRESA FICTICIA LTDA", polo: "passivo", documento: "11222333000181", tipoPessoa: "J" }] }
+        : /calculos/.test(url) ? { resultado: [] } : { id: 1, numero: "0000001-23.2026.5.19.0001", resultado: [] };
+      return { ok: true, status: 200, json: async () => corpo, text: async () => JSON.stringify(corpo) };
+    };
+    const temCratosPje = /CratosPje/.test(ler("comum/storage.js"));
+    const ctx = { console: { log() {}, warn() {}, error() {} }, URL, document: { cookie: "MO=1; Xsrf-Token=abc%3Ddef" },
+      browser: { storage: { local: { get: async () => ({}), set: async () => {} }, onChanged: { addListener() {} } } } };
+    vm.createContext(ctx);
+    vm.runInContext(ler("comum/storage.js"), ctx);
+    vm.runInContext(ler("comum/api-pje.js") + "\nglobalThis.__Api = ApiPje;", ctx);
+    const log = [];
+    ctx.fetch = pjeTrt19(log);
+    const Api = ctx.__Api;
+    Api.setBase("https://pje.trt19.jus.br");
+    if (typeof Api.setXsrf === "function") Api.setXsrf("abc%3Ddef");
+    let proc = null, erro = null;
+    try { proc = await Api.capturarProcesso(1, "0000001-23.2026.5.19.0001"); } catch (e) { erro = e; }
+    checar(proc && proc.partes && proc.partes.length === 2 && log.length >= 2 && log.every((x) => x.xsrf === "abc=def"),
+      "⛔ captura (fundo): processo e partes levam o X-XSRF-TOKEN (decodificado) e o TRT19 responde");
+    if (typeof Api.setXsrf === "function") Api.setXsrf("");
+    log.length = 0;
+    let erro2 = null, proc2 = null;
+    try { proc2 = await Api.capturarProcesso(1, "x"); } catch (e) { erro2 = e; }
+    checar(!proc2 && erro2 && /400/.test(erro2.message), "sem token: o 400 aparece como falha da captura — nunca como \"processo sem partes\"");
+    log.length = 0;
+    if (typeof Api.setXsrf === "function") Api.setXsrf("abc%3Ddef");
+    await Api.obterValorCalculo(1);
+    checar(log.length === 1 && log[0].xsrf === "abc=def", "cálculo (SAB, CNIB, SerasaJUD): a leitura leva o X-XSRF-TOKEN");
+
+    const P = ctx.CratosPje;
+    checar(temCratosPje && P && P.xsrfDaPagina() === "abc%3Ddef" && P.cabecalhosLeitura("abc%3Ddef")["X-XSRF-TOKEN"] === "abc=def" &&
+      !("X-XSRF-TOKEN" in P.cabecalhosLeitura("")) && P.cabecalhosLeitura("")["Accept"] === "application/json",
+      "CratosPje: lê o cookie Xsrf-Token (qualquer caixa) e monta o cabeçalho; sem token, só o Accept");
+
+    vm.runInContext(ler("comum/sab-leitura.js"), ctx);
+    const L = ctx.CratosSabLeitura;
+    const log2 = [], log3 = [];
+    const cliFundo = L.cliente({ base: "https://pje.trt19.jus.br", xsrf: "tok%2B1", fetch: pjeTrt19(log2) });
+    await cliFundo.determinacao(5).catch(() => {});
+    await cliFundo.timeline(7).catch(() => {});
+    checar(log2.length === 2 && log2.every((x) => x.xsrf === "tok+1"), "⛔ SAB (fundo): as leituras levam o token que o painel mandou");
+    const cliPagina = L.cliente({ base: "https://pje.trt19.jus.br", fetch: pjeTrt19(log3) });
+    await cliPagina.determinacao(5).catch(() => {});
+    checar(log3.length === 1 && log3[0].xsrf === "abc=def", "SAB (página): sem token na chamada, lê o cookie da página");
+
+    const bg = ler("background.js"), painel = ler("conteudo/painel.js"), sabC = ler("conteudo/sab.js"), sabM = ler("modulos/sab.js");
+    checar(/tipo: "capturar"[\s\S]{0,200}xsrfToken: CratosPje\.xsrfDaPagina\(\)/.test(painel) &&
+      /return capturar\(msg\.base, msg\.idProcesso, msg\.numeroProcesso, msg\.xsrfToken\)/.test(bg) && /ApiPje\.setXsrf\(xsrfToken\)/.test(bg) &&
+      /if \(ctx && ctx\.xsrfToken\) ApiPje\.setXsrf\(ctx\.xsrfToken\)/.test(bg),
+      "painel → fundo: o token vai no pedido de captura e no ctx dos convênios");
+    checar((sabM.match(/ctx\.xsrfToken/g) || []).length === 2 && /cabecalhosLeitura\(xsrf\)/.test(sabM) && /cliente\(\{ base, xsrf/.test(sabM),
+      "módulo SAB (fundo): busca do idSab e da determinação ativa com o token");
+    checar((sabC.match(/sab-api\/api\/determinacoes\/\$\{idDeterminacao\}`,\s*\{ headers: CratosPje\.cabecalhosLeitura\(_xsrfDoCookie\(\)\) \}/g) || []).length === 3,
+      "SAB (página): as três leituras da determinação com o token");
+    checar((painel.match(/metadados`,?\s*\{ headers: CratosPje\.cabecalhosLeitura/g) || []).length === 2 &&
+      /async function getPje\(caminho\) \{[\s\S]{0,200}cabecalhosLeitura\(xsrfDoCookie\(\)\)/.test(painel),
+      "painel: juntada e lote (rascunho e leituras) com o token");
+    checar(!/Store\.set\([^)]*xsrf/i.test(bg + ler("comum/api-pje.js")), "⛔ o token não vai para o storage");
   }
 
   console.log(`\n=== ${NOME} ===`);

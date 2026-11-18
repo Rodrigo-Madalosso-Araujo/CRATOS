@@ -110,7 +110,7 @@
       if (!estAgora || !estAgora.ativo) { clearInterval(timer); return; }
       try {
         const resp = await fetch(`${base}/sab-api/api/determinacoes/${idDeterminacao}`,
-          { headers: { Accept: "application/json" } });
+          { headers: CratosPje.cabecalhosLeitura(_xsrfDoCookie()) });
         if (!resp.ok) return;
         const det = await resp.json();
         const situacao = String(det.situacao || "").toUpperCase();
@@ -176,7 +176,7 @@
     let situacaoInicial = "";
     try {
       const r = await fetch(`${base}/sab-api/api/determinacoes/${idDeterminacao}`,
-        { headers: { Accept: "application/json" } });
+        { headers: CratosPje.cabecalhosLeitura(_xsrfDoCookie()) });
       if (r.ok) situacaoInicial = String((await r.json()).situacao || "").toUpperCase();
     } catch (e) { /* segue */ }
 
@@ -225,7 +225,7 @@
       if (!estAgora || !estAgora.ativo) { clearInterval(timer); return; }
       try {
         const r = await fetch(`${base}/sab-api/api/determinacoes/${idDeterminacao}`,
-          { headers: { Accept: "application/json" } });
+          { headers: CratosPje.cabecalhosLeitura(_xsrfDoCookie()) });
         if (!r.ok) return;
         const det = await r.json();
         const s = String(det.situacao || "").toUpperCase();

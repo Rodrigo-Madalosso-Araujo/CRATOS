@@ -23,7 +23,7 @@ browser.runtime.onMessage.addListener((msg, sender) => {
   // (evita race condition em que este listener async "vencia" com undefined).
   switch (msg?.tipo) {
     case "capturar":
-      return capturar(msg.base, msg.idProcesso, msg.numeroProcesso);
+      return capturar(msg.base, msg.idProcesso, msg.numeroProcesso, msg.xsrfToken);
     case "catalogo":
       return Promise.resolve({ modulos: Registro.catalogo() });
     case "iniciarExecucao":
@@ -120,9 +120,10 @@ browser.runtime.onMessage.addListener((msg, sender) => {
   }
 });
 
-async function capturar(base, idProcesso, numeroProcesso) {
+async function capturar(base, idProcesso, numeroProcesso, xsrfToken) {
   try {
     ApiPje.setBase(base);
+    ApiPje.setXsrf(xsrfToken);       // 1.9.7: o TRT19 recusa leitura sem o X-XSRF-TOKEN
     await Store.set(CHAVES.trt, base);
     const processo = await ApiPje.capturarProcesso(idProcesso, numeroProcesso);
     await Store.set(CHAVES.processo, processo);
@@ -1351,6 +1352,8 @@ async function orquestraExecutar(msg, sender) {
   // Guarda o tabId de quem disparou (a aba do PJe) — usado para delegar POSTs
   // que precisam sair da origem da página (ex.: lançar movimento).
   if (sender && sender.tab) ctx.tabId = sender.tab.id;
+  /* 1.9.7: as leituras do fundo no PJe (cálculo, SAB) levam o X-XSRF-TOKEN do painel */
+  if (ctx && ctx.xsrfToken) ApiPje.setXsrf(ctx.xsrfToken);
   /* 1.9.7 — PARTES NA CERTIDÃO PRINCIPAL (Rodrigo, 18/11). Cada despacho de convênio
      guarda no diário do processo QUEM foi mandado para ele (nome e CPF/CNPJ), já com o
      mesmo corte que o módulo faz (RENAJUD/CNIB: só o passivo; PREVJUD: só CPF; os demais:

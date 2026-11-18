@@ -174,3 +174,29 @@ if (typeof globalThis.CratosMascara === "undefined") {
     },
   };
 }
+
+/* ═══ CratosPje — o cabeçalho das LEITURAS no PJe (1.9.7) ═════════════════════
+ * O PJe do TRT19 recusa GET sem o X-XSRF-TOKEN ("SJT-004 — Token de autenticação
+ * não informado", HTTP 400; console do Rodrigo, 18/11). O próprio PJe manda esse
+ * cabeçalho em toda chamada, com o valor do cookie Xsrf-Token. O TRT18 ainda aceita
+ * leitura só com o cookie — mas o CRATOS passa a fazer como o PJe, em todo lugar.
+ * Na página, o valor vem do cookie, lido na hora; no fundo (que não vê o cookie da
+ * página), vem do painel e fica só em memória. Nunca vai para o storage. */
+if (!globalThis.CratosPje) {
+  const xsrfDaPagina = () => {
+    try {
+      const c = String((typeof document !== "undefined" && document.cookie) || "").split(";")
+        .map((x) => x.trim()).find((x) => x.toLowerCase().startsWith("xsrf-token="));
+      return c ? c.split("=").slice(1).join("=") : "";
+    } catch (e) { return ""; }
+  };
+  const cabecalhosLeitura = (xsrfBruto) => {
+    const h = { Accept: "application/json" };
+    let v = "";
+    try { v = decodeURIComponent(String(xsrfBruto || "")); } catch (e) { v = String(xsrfBruto || ""); }
+    if (v) h["X-XSRF-TOKEN"] = v;
+    return h;
+  };
+  globalThis.CratosPje = Object.freeze({ xsrfDaPagina, cabecalhosLeitura });
+  if (typeof module !== "undefined" && module.exports) module.exports.CratosPje = globalThis.CratosPje;
+}
