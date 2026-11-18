@@ -27,8 +27,15 @@ const ApiPje = {
     return h;
   },
 
+  /* 1.9.7: no TRT19 o fundo não consegue ler o PJe (o cookie de sessão não vai na
+     chamada feita pela extensão). Com um `leitor`, a leitura é pedida à ABA do PJe
+     (background: lerNaAbaPje). Sem leitor, o caminho antigo (serve no TRT18). */
+  _leitor: null,
+  setLeitor(fn) { this._leitor = typeof fn === "function" ? fn : null; },
+
   async _getJson(caminho) {
     if (!this._base) throw new Error(_semBase());
+    if (this._leitor) return this._leitor(caminho);
     const url = this._base + caminho;
     const resp = await fetch(url, { headers: this._cabecalhos() });
     if (!resp.ok) {
@@ -51,6 +58,20 @@ const ApiPje = {
   },
 
   /* ---- fluxo de alto nível: captura tudo que o CRATOS precisa ---- */
+
+  /* 1.9.7: a captura lida PELA PÁGINA (painel) chega aqui já em JSON bruto. */
+  montarProcesso(idProcesso, numeroProcesso, brutos) {
+    const brutoGerais = (brutos && brutos.gerais) || { _erro: true };
+    const brutoPartes = brutos && brutos.partes;
+    return {
+      id: idProcesso,
+      numero: numeroProcesso || normalizarNumero(brutoGerais),
+      capturadoEm: new Date().toISOString(),
+      partes: normalizarPartes(brutoPartes),
+      _brutoGerais: brutoGerais,
+      _brutoPartes: brutoPartes,
+    };
+  },
 
   async capturarProcesso(idProcesso, numeroProcesso) {
     const [brutoGerais, brutoPartes] = await Promise.all([

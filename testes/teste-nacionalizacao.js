@@ -255,7 +255,7 @@ const ler = (rel) => fs.readFileSync(path.join(SRC, rel), "utf8");
 
     const bg = ler("background.js"), painel = ler("conteudo/painel.js"), sabC = ler("conteudo/sab.js"), sabM = ler("modulos/sab.js");
     checar(/tipo: "capturar"[\s\S]{0,200}xsrfToken: CratosPje\.xsrfDaPagina\(\)/.test(painel) &&
-      /return capturar\(msg\.base, msg\.idProcesso, msg\.numeroProcesso, msg\.xsrfToken\)/.test(bg) && /ApiPje\.setXsrf\(xsrfToken\)/.test(bg) &&
+      /return capturar\(msg\.base, msg\.idProcesso, msg\.numeroProcesso, msg\.xsrfToken[,)]/.test(bg) && /ApiPje\.setXsrf\(xsrfToken\)/.test(bg) &&
       /if \(ctx && ctx\.xsrfToken\) ApiPje\.setXsrf\(ctx\.xsrfToken\)/.test(bg),
       "painel → fundo: o token vai no pedido de captura e no ctx dos convênios");
     checar((sabM.match(/ctx\.xsrfToken/g) || []).length === 2 && /cabecalhosLeitura\(xsrf\)/.test(sabM) && /cliente\(\{ base, xsrf/.test(sabM),

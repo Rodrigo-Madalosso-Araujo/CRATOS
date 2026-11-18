@@ -36,9 +36,17 @@ const ModuloSAB = (() => {
   async function _buscarIdSab(base, numeroProcesso, xsrf) {
     const url = `${base}${SAB_API_PROCESSOS}` +
       `?pagina=1&tamanhoPagina=10&numeroProcesso=${encodeURIComponent(numeroProcesso)}`;
-    const resp = await fetch(url, { headers: globalThis.CratosPje.cabecalhosLeitura(xsrf) });   // 1.9.7
-    if (!resp.ok) throw new Error(`SAB API ${resp.status}`);
-    const dados = await resp.json();
+    /* 1.9.7: lido PELA ABA do PJe quando houver (ApiPje._leitor — o fundo não leva o
+       cookie de sessão em todo tribunal); sem aba, o caminho antigo. */
+    let dados;
+    if (ApiPje._leitor) {
+      try { dados = await ApiPje._leitor(url.slice(base.length)); }
+      catch (e) { throw new Error(`SAB API ${e.status || e.message}`); }
+    } else {
+      const resp = await fetch(url, { headers: globalThis.CratosPje.cabecalhosLeitura(xsrf) });   // 1.9.7
+      if (!resp.ok) throw new Error(`SAB API ${resp.status}`);
+      dados = await resp.json();
+    }
     if (!dados.resultado || !dados.resultado[0]) {
       throw new Error("Processo não encontrado no SAB — verifique se o movimento foi aceito.");
     }
@@ -75,7 +83,14 @@ const ModuloSAB = (() => {
        · duas ou mais → só com a escolha feita no painel (`idEscolhido`). */
   async function _buscarDeterminacaoAtiva(base, numeroProcesso, idEscolhido, xsrf) {
     const L = globalThis.CratosSabLeitura;
-    const cli = L.cliente({ base, xsrf: xsrf || "" });      // 1.9.7: X-XSRF-TOKEN do painel
+    /* 1.9.7: com a aba do PJe disponível, as leituras do SAB passam por ela */
+    const pelaAba = ApiPje._leitor ? async (url) => {
+      try {
+        const corpo = await ApiPje._leitor(String(url).slice(String(base).length));
+        return { ok: true, status: 200, json: async () => corpo };
+      } catch (e) { return { ok: false, status: e.status || 0, json: async () => ({}) }; }
+    } : undefined;
+    const cli = L.cliente({ base, xsrf: xsrf || "", fetch: pelaAba });      // 1.9.7: X-XSRF-TOKEN do painel
     let lista = null, ultimoErro = null;
     for (let i = 1; i <= 2 && !lista; i++) {
       try {

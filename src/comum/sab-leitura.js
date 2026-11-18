@@ -407,7 +407,9 @@
   function cliente(opcoes) {
     const o = opcoes || {};
     const base = o.base || (typeof location !== "undefined" ? location.origin : "");
-    const f = o.fetch || ((...a) => fetch(...a));
+    /* 1.9.7: na página, a chamada sai pela página (CratosPje.fetchPagina — com o cookie
+       de sessão); no fundo, quem chama passa `o.fetch` (a leitura pela aba do PJe). */
+    const f = o.fetch || ((...a) => (globalThis.CratosPje ? globalThis.CratosPje.fetchPagina(...a) : fetch(...a)));
     /* 1.9.7: X-XSRF-TOKEN, como o PJe faz (o TRT19 recusa leitura sem ele). No fundo, vem
        em `o.xsrf`; na página, do cookie, lido a cada chamada. */
     const cabecalhos = () => {

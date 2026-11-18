@@ -23,7 +23,7 @@ browser.runtime.onMessage.addListener((msg, sender) => {
   // (evita race condition em que este listener async "vencia" com undefined).
   switch (msg?.tipo) {
     case "capturar":
-      return capturar(msg.base, msg.idProcesso, msg.numeroProcesso, msg.xsrfToken);
+      return capturar(msg.base, msg.idProcesso, msg.numeroProcesso, msg.xsrfToken, msg.brutos);
     case "catalogo":
       return Promise.resolve({ modulos: Registro.catalogo() });
     case "iniciarExecucao":
@@ -120,12 +120,39 @@ browser.runtime.onMessage.addListener((msg, sender) => {
   }
 });
 
-async function capturar(base, idProcesso, numeroProcesso, xsrfToken) {
+/* 1.9.7 — LEITURA NO PJe PELA ABA. O fundo pede à aba do PJe (painel.js, "pje_ler");
+   ela lê com o cookie de sessão e grava a resposta em "pje_leitura:<id>", que o fundo
+   recolhe e apaga. Mesmo caminho do lançamento de movimento. Sem resposta em 20 s (aba
+   fechada, navegou), a leitura FALHA com mensagem clara — nunca vira "vazio". */
+async function lerNaAbaPje(tabId, caminho) {
+  if (tabId == null) throw new Error("a aba do PJe não está mais aberta — reabra o processo e execute de novo.");
+  let c = String(caminho || "");
+  try { if (/^https?:\/\//i.test(c)) { const u = new URL(c); c = u.pathname + u.search; } } catch (e) { /* segue */ }
+  const id = "l" + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+  const chave = "pje_leitura:" + id;
+  browser.tabs.sendMessage(tabId, { tipo: "pje_ler", id, caminho: c }).catch(() => { /* resposta vem pelo storage */ });
+  const limite = Date.now() + 20000;
+  let r = null;
+  while (Date.now() < limite) {
+    await new Promise((res) => setTimeout(res, 250));
+    try { r = await Store.get(chave); } catch (e) { r = null; }
+    if (r) break;
+  }
+  try { await Store.set(chave, null); } catch (e) { /* nada */ }
+  if (!r) throw new Error("a aba do PJe não respondeu à leitura (" + c.split("?")[0] + "). Deixe o processo aberto no PJe e execute de novo.");
+  if (!r.ok) { const e = new Error(r.erro || `CRATOS: ${r.status} em ${c.split("?")[0]}`); e.status = r.status; throw e; }
+  return r.corpo;
+}
+
+async function capturar(base, idProcesso, numeroProcesso, xsrfToken, brutos) {
   try {
     ApiPje.setBase(base);
     ApiPje.setXsrf(xsrfToken);       // 1.9.7: o TRT19 recusa leitura sem o X-XSRF-TOKEN
     await Store.set(CHAVES.trt, base);
-    const processo = await ApiPje.capturarProcesso(idProcesso, numeroProcesso);
+    /* 1.9.7: o painel já leu na página (com o cookie de sessão); aqui só se normaliza */
+    const processo = brutos && typeof brutos === "object" && brutos.partes
+      ? ApiPje.montarProcesso(idProcesso, numeroProcesso, brutos)
+      : await ApiPje.capturarProcesso(idProcesso, numeroProcesso);
     await Store.set(CHAVES.processo, processo);
     return { ok: true, processo };
   } catch (e) {
@@ -1352,8 +1379,14 @@ async function orquestraExecutar(msg, sender) {
   // Guarda o tabId de quem disparou (a aba do PJe) — usado para delegar POSTs
   // que precisam sair da origem da página (ex.: lançar movimento).
   if (sender && sender.tab) ctx.tabId = sender.tab.id;
-  /* 1.9.7: as leituras do fundo no PJe (cálculo, SAB) levam o X-XSRF-TOKEN do painel */
+  /* 1.9.7: as leituras do fundo no PJe (cálculo, SAB) levam o X-XSRF-TOKEN do painel —
+     e, sobretudo, são feitas PELA ABA do PJe (lerNaAbaPje): no TRT19 a chamada do fundo
+     sai sem o cookie de sessão e o PJe recusa (400 SJT-004). */
   if (ctx && ctx.xsrfToken) ApiPje.setXsrf(ctx.xsrfToken);
+  if (ctx && ctx.tabId != null) {
+    const aba = ctx.tabId;
+    ApiPje.setLeitor((caminho) => lerNaAbaPje(aba, caminho));
+  }
   /* 1.9.7 — PARTES NA CERTIDÃO PRINCIPAL (Rodrigo, 18/11). Cada despacho de convênio
      guarda no diário do processo QUEM foi mandado para ele (nome e CPF/CNPJ), já com o
      mesmo corte que o módulo faz (RENAJUD/CNIB: só o passivo; PREVJUD: só CPF; os demais:

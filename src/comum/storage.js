@@ -197,6 +197,35 @@ if (!globalThis.CratosPje) {
     if (v) h["X-XSRF-TOKEN"] = v;
     return h;
   };
-  globalThis.CratosPje = Object.freeze({ xsrfDaPagina, cabecalhosLeitura });
+  /* 1.9.7 (2ª correção, 18/11): a chamada ao PJe tem de SAIR DA PÁGINA. No TRT19 o
+     cookie de sessão (access_token) não vai em requisição feita pelo fundo da
+     extensão (a aba Rede mostrou: X-XSRF-TOKEN presente, Cookie ausente → 400
+     SJT-004). No content script, o `fetch` comum é o da extensão; o `content.fetch`
+     (Firefox) é o da página — igual ao teste no console, com cookie e origem do PJe.
+     A resposta volta embrulhada: o corpo é lido como TEXTO e convertido aqui (objeto
+     criado na página não atravessa direito para o script da extensão). */
+  const fetchPagina = async (url, opcoes) => {
+    let f = null, alvo = null;
+    /* só num content script, numa página https (nunca no fundo, moz-extension://) */
+    try {
+      if (typeof location !== "undefined" && location.protocol === "https:" &&
+          typeof content !== "undefined" && content && typeof content.fetch === "function") { f = content.fetch; alvo = content; }
+    } catch (e) { /* nada */ }
+    let o = opcoes;
+    if (f) {
+      try { if (opcoes && typeof cloneInto === "function") o = cloneInto(opcoes, alvo); } catch (e) { o = opcoes; }
+    }
+    if (!f) return fetch(url, opcoes);      // fora de página (fundo, testes): o fetch de sempre
+    const r = await f.call(alvo, String(url), o);
+    return {
+      ok: !!r.ok,
+      status: Number(r.status),
+      statusText: String(r.statusText || ""),
+      text: async () => String(await r.text()),
+      json: async () => JSON.parse(String(await r.text())),
+      arrayBuffer: async () => new Uint8Array(await r.arrayBuffer()).slice().buffer,
+    };
+  };
+  globalThis.CratosPje = Object.freeze({ xsrfDaPagina, cabecalhosLeitura, fetchPagina });
   if (typeof module !== "undefined" && module.exports) module.exports.CratosPje = globalThis.CratosPje;
 }
