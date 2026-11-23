@@ -515,6 +515,10 @@
           anos: <select class="cx-anos">${anosOptions(anos)}</select></label>
       </div>`;
     }
+    /* 1.9.8: data (AAAA-MM-DD; em branco permitido) — o período personalizado do CENSEC */
+    if (esp.tipo === "data") {
+      return html`<input type="date" value="${valor || ""}" data-chave="${chave}" data-tipo="data" style="background:#111;color:#e8e8e8;border:1px solid #444;padding:2px 4px">`;
+    }
     if (esp.tipo === "numero") {
       return html`<input type="number" min="${esp.min ?? ""}" max="${esp.max ?? ""}" value="${valor}" data-chave="${chave}" data-tipo="numero">`;
     }
@@ -600,6 +604,10 @@
       for (const el of divMod.querySelectorAll('[data-tipo="texto"]')) {
         if (el.closest(".grupo")) continue;
         config[nome][el.dataset.chave] = el.value;
+      }
+      for (const el of divMod.querySelectorAll('[data-tipo="data"]')) {
+        if (el.closest(".grupo")) continue;
+        config[nome][el.dataset.chave] = /^\d{4}-\d{2}-\d{2}$/.test(el.value) ? el.value : "";
       }
       for (const el of divMod.querySelectorAll('[data-tipo="numero"]')) {
         if (el.closest(".grupo")) continue;

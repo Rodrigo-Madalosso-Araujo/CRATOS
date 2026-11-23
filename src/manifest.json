@@ -125,7 +125,6 @@
         "comum/novidades.js",
         "comum/sab-leitura.js",
         "comum/convenios-uso.js",
-        "comum/periodo.js",
         "conteudo/painel.js"
       ],
       "css": [

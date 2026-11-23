@@ -67,12 +67,17 @@ const ModuloCENSEC = {
         return { ok: false, motivo: `Número do processo inesperado (${numero.length} dígitos; esperado 20).` };
       }
 
-      /* 1.9.8 — PERÍODO da consulta (Rodrigo, 23/11): o que foi escolhido no painel antes
-         de executar (ctx.censecPeriodo) ou, sem escolha, o padrão das Preferências. Vale
-         para a CEP e para a CANP, e a certidão diz qual foi. Período inválido = não abre. */
+      /* 1.9.8 — PERÍODO da consulta (Rodrigo, 23/11): SÓ nas Preferências (10, 5, 3, 2 ou
+         1 ano, ou Personalizado com as datas gravadas lá). Vale para a CEP e para a CANP,
+         e a certidão diz qual foi. Período inválido = o CENSEC não abre. */
       const P = globalThis.CratosPeriodo;
-      const periodo = P ? P.resolver(ctx.censecPeriodo || { valor: cfg.periodoPadrao || P.PADRAO }) : { erro: "módulo de período ausente" };
-      if (periodo.erro) return { ok: false, motivo: `CENSEC: ${periodo.erro}.` };
+      const escolha = { valor: cfg.periodoPadrao || (P && P.PADRAO) || "10a", inicio: cfg.periodoInicio, fim: cfg.periodoFim };
+      const periodo = P ? P.resolver(escolha) : { erro: "módulo de período ausente" };
+      if (periodo.erro) {
+        return { ok: false, motivo: escolha.valor === "personalizado"
+          ? `CENSEC: período personalizado inválido (${periodo.erro}) — ajuste nas Preferências do CENSEC.`
+          : `CENSEC: ${periodo.erro}.` };
+      }
 
       await Store.set("censec_estado", {
         ativo: true,
@@ -130,8 +135,8 @@ if (typeof Registro !== "undefined") {
             "nesse teto, o CRATOS divide o período ao meio e busca de novo (até 10 buscas por " +
             "parte). Se ainda assim não cobrir tudo, a certidão diz que é parcial e qual " +
             "período ficou coberto — nunca \"foram encontrados 300\".",
-          "<b>Período:</b> a consulta é sempre delimitada por datas (padrão abaixo; no painel " +
-            "dá para trocar, inclusive por um período personalizado). A certidão informa o período.",
+          "<b>Período:</b> a consulta é sempre delimitada por datas, escolhidas abaixo (10, 5, 3, 2 " +
+            "ou 1 ano até hoje, ou Personalizado). A certidão informa o período.",
           "<b>CANP (atos de São Paulo):</b> o próprio CENSEC manda consultar os atos paulistas " +
             "na CANP, no Signo. Com a opção ligada, o CRATOS consulta lá também e põe o resultado " +
             "num bloco da certidão. O login no Signo é seu (certificado digital; o CRATOS só " +
@@ -168,9 +173,20 @@ if (typeof Registro !== "undefined") {
           { valor: "3a", rotulo: "Últimos 3 anos" },
           { valor: "2a", rotulo: "Últimos 2 anos" },
           { valor: "1a", rotulo: "Último ano" },
+          { valor: "personalizado", rotulo: "Personalizado (datas abaixo)" },
         ],
         padrao: "10a",
-        rotulo: "Período padrão da consulta (no painel, dá para trocar ou escolher datas)",
+        rotulo: "Período da consulta (CEP e CANP)",
+      },
+      periodoInicio: {
+        tipo: "data",
+        padrao: "",
+        rotulo: "Personalizado — data inicial (só vale com \"Personalizado\" marcado; fica valendo até você mudar)",
+      },
+      periodoFim: {
+        tipo: "data",
+        padrao: "",
+        rotulo: "Personalizado — data final",
       },
       consultarCanp: {
         tipo: "toggle",

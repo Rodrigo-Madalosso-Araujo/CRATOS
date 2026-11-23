@@ -137,17 +137,38 @@ const PER = { inicio: "2016-11-24", fim: "2026-11-23" };
     const e1 = mem.censec_estado || {};
     const anos = (p) => p && p.inicio && Number(p.fim.slice(0, 4)) - Number(p.inicio.slice(0, 4));
     checar(e1.periodo && anos(e1.periodo) === 3 && e1.config.consultarCanp === true,
-      "⛔ sem escolha no painel: o padrão das Preferências (3 anos); CANP ligada de fábrica");
-    await c.__M.executar(Object.assign({}, ctx, { censecPeriodo: { valor: "personalizado", inicio: "2019-05-01", fim: "2019-06-30" } }), "consulta");
-    checar(((mem.censec_estado || {}).periodo || {}).inicio === "2019-05-01" && mem.censec_estado.periodo.fim === "2019-06-30", "escolha do painel manda (personalizado)");
-    const ruim = await c.__M.executar(Object.assign({}, ctx, { censecPeriodo: { valor: "personalizado", inicio: "2019-07-01", fim: "2019-06-30" } }), "consulta");
-    checar(ruim && ruim.ok === false && /período|data/i.test(ruim.motivo || ""), "período inválido: o CENSEC nem abre");
+      "⛔ o período vem das Preferências (3 anos); CANP ligada de fábrica");
+    mem.config = { censec: { periodoPadrao: "personalizado", periodoInicio: "2019-05-01", periodoFim: "2019-06-30" } };
+    await c.__M.executar(Object.assign({}, ctx, { censecPeriodo: { valor: "1a" } }), "consulta");
+    checar(((mem.censec_estado || {}).periodo || {}).inicio === "2019-05-01" && mem.censec_estado.periodo.fim === "2019-06-30",
+      "⛔ Personalizado: as datas gravadas nas Preferências (nada vem do painel — Rodrigo, 23/11)");
+    mem.config = { censec: { periodoPadrao: "personalizado", periodoInicio: "2019-07-01", periodoFim: "2019-06-30" } };
+    const ruim = await c.__M.executar(ctx, "consulta");
+    mem.config = { censec: { periodoPadrao: "personalizado", periodoInicio: "", periodoFim: "" } };
+    const vazio = await c.__M.executar(ctx, "consulta");
+    checar(ruim && ruim.ok === false && /período personalizado inválido .*ajuste nas Preferências do CENSEC/.test(ruim.motivo || "") &&
+      vazio && vazio.ok === false, "Personalizado inválido ou sem datas: o CENSEC não abre e diz para ajustar nas Preferências");
     const cfg = (regs[0] && regs[0].config) || {};
-    checar(cfg.periodoPadrao && cfg.periodoPadrao.padrao === "10a" && (cfg.periodoPadrao.opcoes || []).map((o) => o.valor).join() === "10a,5a,3a,2a,1a" &&
-      cfg.consultarCanp && cfg.consultarCanp.padrao.ativo === true, "Preferências: período padrão (10 anos de fábrica) e \"Consultar também a CANP\" (ligada)");
+    checar(cfg.periodoPadrao && cfg.periodoPadrao.padrao === "10a" && (cfg.periodoPadrao.opcoes || []).map((o) => o.valor).join() === "10a,5a,3a,2a,1a,personalizado" &&
+      cfg.periodoInicio && cfg.periodoInicio.tipo === "data" && cfg.periodoFim && cfg.periodoFim.tipo === "data" &&
+      cfg.consultarCanp && cfg.consultarCanp.padrao.ativo === true, "Preferências: período (10 anos de fábrica, com Personalizado e as duas datas) e \"Consultar também a CANP\" (ligada)");
     const painel = ler("conteudo/painel.js");
-    checar(/fila\.some\(\(c\) => c\.id === "CENSEC"\)\)[\s\S]{0,200}escolherPeriodoCensec\(\)/.test(painel) && /ctx\.censecPeriodo = per\.escolha/.test(painel),
-      "painel: antes de a fila andar, pergunta o período do CENSEC e o manda no ctx");
+    checar(!/escolherPeriodoCensec|censecPeriodo/.test(painel), "painel: não pergunta período nenhum (só nas Preferências)");
+    /* exportar/importar: as datas do Personalizado passam; data inválida é descartada */
+    const io = { console };
+    vm.createContext(io);
+    vm.runInContext(ler("comum/config-io.js"), io);
+    const IO = io.CratosConfigIO;
+    const cat = regs.map((r) => ({ nome: r.nome, rotulo: r.rotulo, config: r.config }));
+    const arq = (cfgC) => JSON.stringify({ formato: IO.FORMATO, versaoFormato: IO.VERSAO_FORMATO, versaoCratos: "1.9.8", geradoEm: "x", aviso: "x", configuracoes: { censec: cfgC } });
+    const ok1 = IO.ler(arq({ periodoPadrao: "personalizado", periodoInicio: "2019-05-01", periodoFim: "2019-06-30" }), cat);
+    const ok2 = IO.ler(arq({ periodoInicio: "2019-02-30", periodoFim: "<b>x</b>" }), cat);
+    checar(ok1.ok && ok1.aceitos.censec.periodoInicio === "2019-05-01" && ok1.aceitos.censec.periodoPadrao === "personalizado" &&
+      ok2.ok && !("periodoInicio" in (ok2.aceitos.censec || {})) && ok2.descartados.length === 2,
+      "exportar/importar: as datas do Personalizado entram; data inexistente ou com marcação é descartada");
+    const op = ler("opcoes/opcoes.js");
+    checar(/esp\.tipo === "data"[\s\S]{0,200}type="date"[\s\S]{0,120}data-tipo="data"/.test(op) && /\[data-tipo="data"\]/.test(op),
+      "Preferências: campo de data (desenhado e salvo)");
   }
 
   /* ── 3. CEP: busca com período, conferida ── */
@@ -208,7 +229,7 @@ const PER = { inicio: "2016-11-24", fim: "2026-11-23" };
     const C = t.w.__cratosCensec || {};
     const M = C.montarCertidao;
     const cert = (cep, canp, puxar) => (M ? M({ parte: PARTE, doc: "52998224725", periodo: PER, cep, canp, puxarPartes: !!puxar, hoje: "23/11/2026" }) : { linhas: [], titulo: "" });
-    const txt = (c) => c.linhas.join("\n");
+    const txt = (c) => c.linhas.map((l) => (l && typeof l === "object" ? l.t : l)).join("\n");
     const atos79 = gerarAtos(79);
     const c1 = cert({ atos: atos79, completo: true, buscas: 1, cobertos: [PER], naoCobertos: [], partesPorAto: {} }, { estado: "desligada" });
     checar(/abrangendo os atos praticados entre 24\/11\/2016 e 23\/11\/2026, e que foram encontrados 79 ato/.test(txt(c1)),
@@ -231,6 +252,8 @@ const PER = { inicio: "2016-11-24", fim: "2026-11-23" };
     const canpOk = cert({ atos: [], completo: true, buscas: 1, cobertos: [PER], naoCobertos: [] },
       { estado: "ok", parte: { ok: true, total: 2, atos: [{ dataAto: "2025-03-04", nomeTipoAto: "Procuração", livroComplemento: "1234", folhaComplemento: "56",
         nomeCartorio: "TABELIAO FICTICIO SP", municipio: "SÃO PAULO", uf: "SP", numeroCns: "12.345-6" }, { dataAto: "2024-01-02", nomeTipoAto: "Escritura" }] } });
+    const tituloCanp = canpOk.linhas.find((l) => l && typeof l === "object" && /^ATOS PRATICADOS NO ESTADO DE SÃO PAULO/.test(l.t));
+    checar(tituloCanp && tituloCanp.negrito === true && /\):$/.test(tituloCanp.t), "o título do bloco da CANP vai em negrito, até os dois pontos");
     checar(/ATOS PRATICADOS NO ESTADO DE SÃO PAULO — CANP/.test(txt(canpOk)) && /foram encontrados 2 ato/.test(txt(canpOk)) &&
       /04\/03\/2025 - Procuração - Livro 1234, Fl\. 56/.test(txt(canpOk)) && !canpOk.negativa,
       "⛔ CANP: bloco de São Paulo na mesma certidão; com atos lá, não é negativa");
@@ -265,6 +288,21 @@ const PER = { inicio: "2016-11-24", fim: "2026-11-23" };
 
   /* ── 8. ligações ── */
   {
+    /* negrito no PDF: a linha { t, negrito } sai em /F2 (Helvetica-Bold) e volta ao /F1 */
+    const bg = ler("background.js");
+    const ini = bg.indexOf("const _W_HELV");
+    let pdf = "";
+    if (ini >= 0) {
+      try {
+        const corpo = bg.slice(ini, bg.indexOf("\n}\n", bg.indexOf("function latin1Bytes(")) + 3);
+        const f = new Function(corpo + "\nreturn gerarPDFTexto;");
+        const g = f();
+        const out = g(["normal 1", { t: "TITULO EM NEGRITO:", negrito: true }, "normal 2"], "TESTE", null);
+        pdf = typeof out === "string" ? out : Buffer.from(out).toString("latin1");
+      } catch (e) { pdf = "ERRO " + e.message; }
+    }
+    checar(/\/F2 12 Tf\n1 0 0 1 50 \d+ Tm\n\(TITULO EM NEGRITO:\) Tj\n\/F1 12 Tf\n1 0 0 1 50 \d+ Tm\n\(normal 2\)/.test(pdf),
+      "⛔ PDF: a linha marcada sai em negrito (Helvetica-Bold) e a seguinte volta ao normal");
     const api = ler("conteudo/censec-api.js");
     checar(/filtroDoCorpo/.test(api) && /cpfCnpj: b\.cpfCnpj/.test(api) && !/captcha:/.test(api.split("filtroDoCorpo")[1].split("}")[0]),
       "grampo: repassa o filtro (documento e datas) que foi ao servidor — e não o token do captcha");

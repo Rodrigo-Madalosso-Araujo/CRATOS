@@ -137,7 +137,7 @@
     await gravar(est, { fase: "concluido", resultados });
     semCortina();
     const falhas = Object.values(resultados).filter((r) => !r.ok).length;
-    avisar(`CANP concluída: ${partes.length - falhas} de ${partes.length} parte(s). Voltando ao CENSEC para gerar as certidões.`,
+    avisar(`CANP concluída: ${partes.length - falhas} de ${partes.length} parte(s). Fechando o Signo e voltando ao CENSEC para gerar as certidões.`,
       falhas ? "#facc15" : "#4ade80");
     try { await browser.runtime.sendMessage({ tipo: "canp_voltar" }); } catch (e) { /* segue */ }
   }

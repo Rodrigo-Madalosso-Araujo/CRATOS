@@ -933,47 +933,6 @@
   }
 
   /* ── BAIXA: com duas ou mais determinações ativas, a pessoa escolhe UMA ─────────── */
-  /* 1.9.8 — o período da consulta ao CENSEC (CEP) e à CANP. */
-  async function escolherPeriodoCensec() {
-    const prog = corpo.querySelector("#cx-progresso");
-    const P = globalThis.CratosPeriodo;
-    let padrao = P ? P.PADRAO : "10a";
-    try { padrao = (((await Store.get(CHAVES.config)) || {}).censec || {}).periodoPadrao || padrao; } catch (e) { /* fica o de fábrica */ }
-    const opcoes = (P ? P.OPCOES : []).concat([{ valor: "personalizado", rotulo: "Personalizado (escolher as datas)" }]);
-    const hoje = P ? P.hojeYmd() : "";
-    return new Promise((resolve) => {
-      CratosHTML.definir(prog, html`<div style="color:#e8e8e8;margin-bottom:6px">Período da consulta ao <b>CENSEC</b> (e à CANP):</div>
-        ${opcoes.map((o) => html`<label style="display:flex;gap:6px;margin:3px 0;cursor:pointer;color:#e8e8e8">
-          <input type="radio" name="cx-censec-per" value="${o.valor}"${o.valor === padrao ? " checked" : ""}>
-          <span>${o.rotulo}</span></label>`)}
-        <div id="cx-censec-datas" style="display:none;margin:4px 0 0 22px;color:#e8e8e8">
-          de <input type="date" id="cx-censec-ini" max="${hoje}" style="background:#111;color:#e8e8e8;border:1px solid #444;padding:2px 4px">
-          a <input type="date" id="cx-censec-fim" max="${hoje}" value="${hoje}" style="background:#111;color:#e8e8e8;border:1px solid #444;padding:2px 4px">
-        </div>
-        <div id="cx-censec-erro" class="cx-erro" style="margin-top:4px"></div>
-        <div style="display:flex;gap:8px;margin-top:8px">
-          <button class="cx-acao" id="cx-censec-ok">Consultar com este período</button>
-          <button class="cx-acao" id="cx-censec-pular" style="background:#1a1a1a;border:1px solid #6b7280;color:#e8e8e8">Não consultar o CENSEC</button>
-        </div>`);
-      const datas = prog.querySelector("#cx-censec-datas");
-      const valorSel = () => (prog.querySelector('input[name="cx-censec-per"]:checked') || {}).value || padrao;
-      const ajustar = () => { datas.style.display = valorSel() === "personalizado" ? "block" : "none"; };
-      prog.querySelectorAll('input[name="cx-censec-per"]').forEach((r) => { r.onchange = ajustar; });
-      ajustar();
-      prog.querySelector("#cx-censec-ok").onclick = () => {
-        const escolha = { valor: valorSel() };
-        if (escolha.valor === "personalizado") {
-          escolha.inicio = prog.querySelector("#cx-censec-ini").value;
-          escolha.fim = prog.querySelector("#cx-censec-fim").value;
-        }
-        const r = P ? P.resolver(escolha) : { erro: "módulo de período ausente" };
-        if (r.erro) { prog.querySelector("#cx-censec-erro").textContent = "Período: " + r.erro + "."; return; }
-        resolve({ escolha });
-      };
-      prog.querySelector("#cx-censec-pular").onclick = () => resolve({ pular: true });
-    });
-  }
-
   async function escolherDeterminacaoBaixa() {
     const prog = corpo.querySelector("#cx-progresso");
     let ativas = [];
@@ -1354,18 +1313,6 @@
       const esc = await escolherDeterminacaoBaixa();
       if (esc.pular) fila.splice(fila.findIndex((c) => c.id === "SAB"), 1);
       else if (esc.id) ctx.sabIdDeterminacao = esc.id;
-      if (!fila.length) {
-        corpo.querySelector("#cx-progresso").innerHTML = `<span class="cx-erro">Nada a executar.</span>`;
-        return;
-      }
-    }
-
-    /* 1.9.8 — PERÍODO do CENSEC/CANP (Rodrigo, 23/11): escolhido aqui, antes de a fila
-       andar. Vem marcado o padrão das Preferências; "Personalizado" abre as duas datas. */
-    if (fila.some((c) => c.id === "CENSEC")) {
-      const per = await escolherPeriodoCensec();
-      if (per.pular) fila.splice(fila.findIndex((c) => c.id === "CENSEC"), 1);
-      else ctx.censecPeriodo = per.escolha;
       if (!fila.length) {
         corpo.querySelector("#cx-progresso").innerHTML = `<span class="cx-erro">Nada a executar.</span>`;
         return;
@@ -2701,7 +2648,7 @@
   /* Gancho de teste (mundo isolado: a página não enxerga). Expõe as funções
      REAIS da juntada para o harness — testar uma cópia é testar a cópia. */
   window.__cratosJuntada = { juntarCertidao, anexarPdfs, filaTemInfojud, ID_INFOJUD,
-    definirVisibilidadePartes, polosDaConfig, escolherEstrutura, linkProcessoLote, escolherPeriodoCensec };
+    definirVisibilidadePartes, polosDaConfig, escolherEstrutura, linkProcessoLote };
 
   /* Gancho do ENCADEAMENTO: o harness monta uma fila, roda, e dispara os pulsos
      de conclusão via Store.set — exercitando o orquestrador REAL, não uma cópia. */

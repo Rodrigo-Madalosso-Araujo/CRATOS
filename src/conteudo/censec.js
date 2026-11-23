@@ -653,7 +653,8 @@
     const cp = canp || { estado: "desligada" };
     const r = cp.parte;
     let canpAtos = 0;
-    linhas.push("ATOS PRATICADOS NO ESTADO DE SÃO PAULO — CANP (Central de Atos Notariais Paulista, consultada no Signo/CNB-SP):");
+    /* em negrito, até os dois pontos (Rodrigo, 23/11) */
+    linhas.push({ t: "ATOS PRATICADOS NO ESTADO DE SÃO PAULO — CANP (Central de Atos Notariais Paulista, consultada no Signo/CNB-SP):", negrito: true });
     if (cp.estado === "desligada") {
       linhas.push("A CANP não foi consultada, por configuração. Esta certidão não abrange os atos praticados no estado de São Paulo.");
     } else if (cp.estado !== "ok" || !r || !r.ok) {

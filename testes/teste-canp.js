@@ -188,6 +188,24 @@ const pedido = (partes) => ({ "cratos:canp_estado": { ativo: true, fase: "aguard
       /case "canp_voltar":\s*\n\s*if \(!sender \|\| !sender\.tab \|\| !\/\^https:\\\/\\\/www\\\.signo\\\.org\\\.br/.test(bg),
       "fundo: só o CENSEC pede o Signo; só o Signo devolve o foco");
     checar(/async function abrirSigno\(\)[\s\S]{0,200}"https:\/\/www\.signo\.org\.br\/#\/interno\/consultas-internas"/.test(bg), "abre direto em Consultar Atos");
+    /* 1.9.8 (Rodrigo, 23/11): terminada a CANP, fecha a aba do Signo — sempre */
+    const ini = bg.indexOf("async function voltarAoCensec(");
+    const ops = [];
+    if (ini >= 0) {
+      const fim = bg.indexOf("\n}\n", ini) + 3;
+      const browser = { tabs: {
+        query: async () => [{ id: 7 }],
+        update: async (id, o) => { ops.push(["foco", id, o.active]); },
+        remove: async (id) => { ops.push(["fecha", id]); },
+      } };
+      await new Function("browser", bg.slice(ini, fim) + "\nreturn voltarAoCensec;")(browser)(42);
+    }
+    checar(JSON.stringify(ops) === JSON.stringify([["foco", 7, true], ["fecha", 42]]) &&
+      /case "canp_voltar":[\s\S]{0,200}return voltarAoCensec\(sender\.tab\.id\)/.test(bg),
+      "⛔ terminada a CANP: foco no CENSEC e a aba do Signo é FECHADA (a que pediu a volta)");
+    const sig = ler("conteudo/signo.js");
+    checar(sig.indexOf('tipo: "canp_voltar"') > sig.indexOf('fase: "concluido"') && !/fase: "erro"[\s\S]{0,300}canp_voltar/.test(sig),
+      "só no sucesso: se a CANP falha, a aba do Signo fica aberta");
     const man = JSON.parse(ler("manifest.json"));
     const cs = (man.content_scripts || []).find((c) => (c.js || []).includes("conteudo/signo.js")) || {};
     checar((man.permissions || []).includes("https://www.signo.org.br/*") && !(man.permissions || []).some((p) => /backend\.signo/.test(p)) &&
