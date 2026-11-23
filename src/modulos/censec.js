@@ -67,6 +67,13 @@ const ModuloCENSEC = {
         return { ok: false, motivo: `Número do processo inesperado (${numero.length} dígitos; esperado 20).` };
       }
 
+      /* 1.9.8 — PERÍODO da consulta (Rodrigo, 23/11): o que foi escolhido no painel antes
+         de executar (ctx.censecPeriodo) ou, sem escolha, o padrão das Preferências. Vale
+         para a CEP e para a CANP, e a certidão diz qual foi. Período inválido = não abre. */
+      const P = globalThis.CratosPeriodo;
+      const periodo = P ? P.resolver(ctx.censecPeriodo || { valor: cfg.periodoPadrao || P.PADRAO }) : { erro: "módulo de período ausente" };
+      if (periodo.erro) return { ok: false, motivo: `CENSEC: ${periodo.erro}.` };
+
       await Store.set("censec_estado", {
         ativo: true,
         operacao: "consulta",
@@ -79,7 +86,10 @@ const ModuloCENSEC = {
           gerarNegativa: cfg.gerarNegativa !== "nao",
           /* toggle salvo como {ativo:bool}; desligado por padrão */
           puxarPartes: !!(cfg.puxarPartes && cfg.puxarPartes.ativo),
+          /* 1.9.8: CANP (atos de São Paulo, no Signo) — ligada de fábrica (Rodrigo, 23/11) */
+          consultarCanp: !(cfg.consultarCanp && cfg.consultarCanp.ativo === false),
         },
+        periodo: { inicio: periodo.inicio, fim: periodo.fim, rotulo: periodo.rotulo, valor: periodo.valor },
         feitos: [],
         fase: "iniciado",
         abertoEm: new Date().toISOString(),
@@ -116,8 +126,16 @@ if (typeof Registro !== "undefined") {
             "aqui é consulta. Uma parte por vez, um PDF por parte — inclusive a " +
             "<b>certidão negativa</b>, quando não há atos.",
           "<b>A certidão é fabricada a partir dos dados da própria busca</b>, não de um " +
-            "print da tela. Isso evita a armadilha da paginação: a tela mostra 10 atos por " +
-            "página, mas a resposta traz todos.",
+            "print da tela. A CEP devolve <b>no máximo 300 atos</b> por busca: quando bate " +
+            "nesse teto, o CRATOS divide o período ao meio e busca de novo (até 10 buscas por " +
+            "parte). Se ainda assim não cobrir tudo, a certidão diz que é parcial e qual " +
+            "período ficou coberto — nunca \"foram encontrados 300\".",
+          "<b>Período:</b> a consulta é sempre delimitada por datas (padrão abaixo; no painel " +
+            "dá para trocar, inclusive por um período personalizado). A certidão informa o período.",
+          "<b>CANP (atos de São Paulo):</b> o próprio CENSEC manda consultar os atos paulistas " +
+            "na CANP, no Signo. Com a opção ligada, o CRATOS consulta lá também e põe o resultado " +
+            "num bloco da certidão. O login no Signo é seu (certificado digital; o CRATOS só " +
+            "deixa o seu certificado escolhido).",
           "<b>Captcha:</b> se o CENSEC pedir um desafio, o CRATOS <b>congela</b> e espera " +
             "você resolver na tela. Não tenta contornar.",
           "<b>Escopo:</b> só CEP (Escrituras e Procurações). CESDI fica para depois.",
@@ -140,6 +158,24 @@ if (typeof Registro !== "undefined") {
         tipo: "toggle",
         padrao: { ativo: false },
         rotulo: "Listar as partes de cada ato na certidão (nome, CPF/CNPJ e qualidade)",
+      },
+      /* 1.9.8 */
+      periodoPadrao: {
+        tipo: "escolha",
+        opcoes: [
+          { valor: "10a", rotulo: "Últimos 10 anos" },
+          { valor: "5a", rotulo: "Últimos 5 anos" },
+          { valor: "3a", rotulo: "Últimos 3 anos" },
+          { valor: "2a", rotulo: "Últimos 2 anos" },
+          { valor: "1a", rotulo: "Último ano" },
+        ],
+        padrao: "10a",
+        rotulo: "Período padrão da consulta (no painel, dá para trocar ou escolher datas)",
+      },
+      consultarCanp: {
+        tipo: "toggle",
+        padrao: { ativo: true },
+        rotulo: "Consultar também a CANP — atos de São Paulo, no Signo (login seu, com certificado)",
       },
     },
   });

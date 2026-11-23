@@ -18,7 +18,23 @@ método que travou todo bug real desta lista.
 
 ## Situação
 
-### As que RODAM hoje (18/11/2026 — 1.9.7: nacionalização (24 TRTs), partes na certidão principal, SNIPER só com as partes marcadas, X-XSRF-TOKEN nas leituras, leituras do PJe pela página): 53 suítes, 1556 asserções
+### As que RODAM hoje (23/11/2026 — 1.9.8: juntada em qualquer TRT, CENSEC com período/teto de 300/CANP, links no lote do SAB): 56 suítes, 1612 asserções
+
+>>> 1.9.8 (23/11): três suítes novas, que reprovam a 1.9.7.
+    · nova `teste-juntada-estrutura.js` (13): estrutura do documento lida dos `parametros` (TRT3 = 95; nenhum 62);
+      escolha pelo título / única padrão / para antes da minuta; sem "Documento Diverso" para antes (sem 115/"80");
+      número do processo com link no relatório do lote do SAB.
+    · nova `teste-censec-periodo.js` (28): CratosPeriodo (10/5/3/2/1 ano, personalizado, dividir); período no estado
+      e nas Preferências; CEP simulada com teto de 300 (79 atos; 700 → refinamento completo; 6.000 → parcial em 10
+      buscas); busca que não sai com o período falha; partes ato a ato com andamento; certidão (período, livro
+      "(Livro de Notas)", parcial nunca "foram encontrados 300", até 300 listados, "partes não obtidas", bloco CANP
+      ok/falhou/desligada, negativa só sem nada e com São Paulo resolvido); pedido à CANP pelo storage.
+    · nova `teste-canp.js` (16): grampo do Signo (token do app ou da sessão, central 8, período, paginação até 300,
+      token não sai da página); login com certificado (escolhe o único, nunca clica em Entrar; dois = não escolhe);
+      fluxo pedido → concluído → volta ao CENSEC; fundo e manifest.
+    · alteradas: `teste-censec-partes.js` (certidão recebe as partes prontas; "partes não obtidas"), `teste-juntada-anexos.js`
+      (sem reserva 115), `teste-sab-respostas.js` (PJe simulado responde `parametros`), `teste-nacionalizacao.js`
+      (permissão do Signo).
 
 >>> 1.9.7 (18/11): duas suítes novas, que reprovam a 1.9.6, e `teste-sniper.js` 100 → 105.
     · nova `teste-nacionalizacao.js` (37): manifest com os 24 TRTs um por um (sem curinga amplo; demais permissões

@@ -149,6 +149,10 @@ function fetchFalso(opc) {
       return resp(200, "", Buffer.from("%PDF-1.4 relatorio ficticio " + m[1]));
     }
     if ((m = caminho.match(/^\/pje-comum-api\/api\/processos\/id\/(\d+)\/timeline$/))) return resp(200, TIMELINE[m[1]] || []);
+    /* 1.9.8: a estrutura do documento vem dos parâmetros do processo (62 no TRT18) */
+    if (/^\/pje-comum-api\/api\/processos\/id\/\d+\/documentos\/minuta\/A\/parametros$/.test(caminho)) {
+      return resp(200, { estruturasDocumento: [{ id: 62, titulo: "Anexar Documentos", padraoFuncionalidade: true }] });
+    }
     if ((m = caminho.match(/^\/pje-comum-api\/api\/processos\/id\/(\d+)\/documentos\/minuta\/A\/metadados$/))) {
       if (metodo === "GET") return resp(m[1] === "556" ? 200 : 204, m[1] === "556" ? { id: 1 } : "");
       return resp(200, { id: 7000 + Number(m[1]), version: 1, md5: "x", idPessoaInclusao: 1 });

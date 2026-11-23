@@ -16,6 +16,14 @@
 
   /* da mais nova para a mais velha */
   const VERSOES = [
+    { versao: "1.9.8", data: "23/11/2026", itens: [
+      "Certidão dos convênios: a juntada passa a funcionar no PJe de qualquer TRT (o TRT3, por exemplo, usa outra numeração interna).",
+      "CENSEC: a consulta passa a ter período — 10, 5, 3, 2 ou 1 ano, ou datas à sua escolha. O padrão fica nas Preferências e dá para trocar na hora de executar.",
+      "CENSEC: a CEP mostra no máximo 300 atos por busca. Quando bate nesse teto, o CRATOS divide o período e busca de novo; se ainda assim não cobrir tudo, a certidão diz que é parcial e qual período ficou de fora.",
+      "CENSEC: consulta também a CANP (atos de São Paulo, no Signo), com o resultado num bloco da mesma certidão. O login no Signo é seu, com o certificado digital.",
+      "CENSEC: uma cortina mostra o andamento da consulta, e as partes de cada ato não somem mais em consultas grandes.",
+      "Coleta em lote do SAB: o número de cada processo no relatório abre o processo no PJe.",
+    ] },
     { versao: "1.9.7", data: "18/11/2026", itens: [
       "O CRATOS passa a funcionar no PJe de todos os TRTs, e não só no da 18ª Região. O SAB continua aparecendo só nos tribunais em que ele existe.",
       "Certidão de convênios: passa a dizer contra quem a diligência foi feita, com nome e CPF/CNPJ — uma vez na abertura, quando as partes são as mesmas em todos os convênios, ou em cada linha, quando são diferentes.",

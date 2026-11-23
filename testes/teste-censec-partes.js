@@ -60,6 +60,7 @@ function montar(puxarPartes, respostaPartes) {
       ativo: false,   // não dispara o fluxo no load; chamamos fabricarCertidao direto
       numProcesso: "0000001-23.2025.5.18.0008",
       config: { pasta: "CRATOS", gerarNegativa: true, puxarPartes: !!puxarPartes },
+      periodo: { inicio: "2016-11-24", fim: "2026-11-23" },   // 1.9.8
     },
   };
   const pdfs = [];
@@ -88,10 +89,24 @@ function montar(puxarPartes, respostaPartes) {
   w.CratosFaixa = { parar() {}, alertar() {}, dizer() {}, mostrar() {} };
   w.console.log = () => {}; w.console.warn = () => {}; w.console.debug = () => {}; w.console.error = () => {};
   w.eval(fs.readFileSync(path.join(SRC, "comum", "storage.js"), "utf8"));
+  const per = path.join(SRC, "comum", "periodo.js");
+  if (fs.existsSync(per)) w.eval(fs.readFileSync(per, "utf8"));       // 1.9.8
   w.eval(fs.readFileSync(path.join(SRC, "conteudo", "censec.js"), "utf8"));
   // fetch já está montado ANTES do grampo, para o fetchOriginal dele capturar o mock
   w.eval(fs.readFileSync(path.join(SRC, "conteudo", "censec-api.js"), "utf8"));
   return { w, pdfs, fetchCalls, mem };
+}
+
+/* 1.9.8: as partes passaram a ser buscadas na CONSULTA (ato por ato), e a certidão
+   recebe o resultado pronto. Até a 1.9.7, fabricarCertidao buscava sozinha. */
+async function certificar(w, atos, puxar) {
+  const C = w.__cratosCensec;
+  if (typeof C.montarCertidao === "function") {
+    const partesPorAto = puxar ? await C.pedirPartes(atos.map((a) => a.id)) : {};
+    return C.fabricarCertidao(PARTE, "52998224725", { ok: true, atos, completo: true, buscas: 1,
+      cobertos: [{ inicio: "2016-11-24", fim: "2026-11-23" }], naoCobertos: [], partesPorAto }, "desligada", null, null, 1);
+  }
+  return C.fabricarCertidao(PARTE, "52998224725", atos, 1);
 }
 
 (async () => {
@@ -113,7 +128,7 @@ function montar(puxarPartes, respostaPartes) {
 {
   const { w, pdfs, fetchCalls } = montar(true, RESP_PARTES);
   await tick();
-  await w.__cratosCensec.fabricarCertidao(PARTE, "52998224725", ATOS, 1);
+  await certificar(w, ATOS, true);
   await tick();
   const linhas = (pdfs[0] && pdfs[0].linhas) || [];
   const texto = linhas.join("\n");
@@ -144,7 +159,7 @@ function montar(puxarPartes, respostaPartes) {
 {
   const { w, pdfs, fetchCalls } = montar(false, RESP_PARTES);
   await tick();
-  await w.__cratosCensec.fabricarCertidao(PARTE, "52998224725", ATOS, 1);
+  await certificar(w, ATOS, false);
   await tick();
   const texto = ((pdfs[0] && pdfs[0].linhas) || []).join("\n");
   checar(pdfs.length === 1, "desligado: a certidão continua sendo gerada");
@@ -157,12 +172,14 @@ function montar(puxarPartes, respostaPartes) {
 {
   const { w, pdfs } = montar(true, null);   // /partes responde 500
   await tick();
-  await w.__cratosCensec.fabricarCertidao(PARTE, "52998224725", ATOS, 1);
+  await certificar(w, ATOS, true);
   await tick();
   const texto = ((pdfs[0] && pdfs[0].linhas) || []).join("\n");
   checar(pdfs.length === 1, "partes falhando: a certidão ainda é gerada");
-  checar(!/Partes do ato:/.test(texto),
-    "partes falhando: sai sem a seção de partes, sem derrubar a certidão");
+  /* 1.9.8: a linha diz que as partes NÃO foram obtidas — antes saía calada, e o leitor
+     não distinguia "não buscou" de "não conseguiu" (regra de ferro). */
+  checar(!/MARIANA/.test(texto) && /Partes do ato: não obtidas nesta consulta\./.test(texto),
+    "partes falhando: a certidão sai e DIZ \"partes não obtidas\" — sem derrubar nada");
 }
 
 console.log("\n=== teste-censec-partes.js ===");

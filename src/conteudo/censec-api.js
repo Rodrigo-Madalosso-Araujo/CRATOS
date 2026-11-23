@@ -30,16 +30,28 @@
     } catch (e) { /* nada a fazer: o content script vai cair no timeout */ }
   }
 
+  /* 1.9.8: o FILTRO que de fato foi ao servidor (documento e datas), para o content
+     script conferir que a busca foi feita com o período pedido — se a data não pegou no
+     formulário, a certidão diria um período que não foi consultado. Só esses três campos
+     saem daqui (o corpo leva também o token do captcha, que fica onde está). */
+  function filtroDoCorpo(corpo) {
+    try {
+      const b = JSON.parse(typeof corpo === "string" ? corpo : "");
+      return { cpfCnpj: b.cpfCnpj || null, dataInicio: b.dataInicio || null, dataFim: b.dataFim || null };
+    } catch (e) { return null; }
+  }
+
   const fetchOriginal = window.fetch;
   window.fetch = async function (entrada, init) {
     const url = typeof entrada === "string" ? entrada : (entrada && entrada.url) || "";
     const resposta = await fetchOriginal.apply(this, arguments);
     if (ALVO.test(url)) {
+      const filtro = filtroDoCorpo(init && init.body);
       try {
         const corpo = await resposta.clone().text();
-        avisar({ ok: resposta.ok, status: resposta.status, corpo });
+        avisar({ ok: resposta.ok, status: resposta.status, corpo, filtro });
       } catch (e) {
-        avisar({ ok: false, status: resposta.status, erro: String(e && e.message || e) });
+        avisar({ ok: false, status: resposta.status, erro: String(e && e.message || e), filtro });
       }
     }
     return resposta;
@@ -51,12 +63,13 @@
     this.__cratosUrl = url;
     return abrirOriginal.apply(this, arguments);
   };
-  XMLHttpRequest.prototype.send = function () {
+  XMLHttpRequest.prototype.send = function (corpoPedido) {
     if (ALVO.test(this.__cratosUrl || "")) {
+      const filtro = filtroDoCorpo(corpoPedido);
       this.addEventListener("loadend", () => {
         let corpo = "";
         try { corpo = typeof this.responseText === "string" ? this.responseText : ""; } catch (e) {}
-        avisar({ ok: this.status >= 200 && this.status < 300, status: this.status, corpo });
+        avisar({ ok: this.status >= 200 && this.status < 300, status: this.status, corpo, filtro });
       });
     }
     return enviarOriginal.apply(this, arguments);
@@ -123,15 +136,34 @@
     }
   }
 
+  /* 1.9.8 — ATO POR ATO, TRÊS POR VEZ, COM ANDAMENTO. Até a 1.9.7 os atos iam um a um
+     e a resposta só saía no fim, inteira — e o content script esperava 45 s pelo TODO.
+     Com 300 procurações passava disso, e a certidão saía sem as partes de NENHUM ato
+     (caso real do Rodrigo, 23/11). Agora cada ato que termina vai logo (EVENTO_ITEM), e o
+     content script só desiste se ficar um tempo sem chegar nada. */
+  const EVENTO_PARTES_ITEM = "cratos:censec:partes:item";
+  const SIMULTANEOS = 3;
+
   window.addEventListener(EVENTO_PARTES_PEDIR, async (ev) => {
     let pedido = null;
     try { pedido = JSON.parse(ev.detail); } catch (e) { return; }
     const reqId = pedido && pedido.reqId;
-    const atoIds = (pedido && Array.isArray(pedido.atoIds)) ? pedido.atoIds : [];
+    const atoIds = (pedido && Array.isArray(pedido.atoIds)) ? pedido.atoIds.slice() : [];
     const resultados = {};
-    for (const atoId of atoIds) {
-      resultados[atoId] = await buscarPartesDeUmAto(atoId);
+    let proximo = 0, feitos = 0;
+    async function trabalhador() {
+      while (proximo < atoIds.length) {
+        const atoId = atoIds[proximo++];
+        const r = await buscarPartesDeUmAto(atoId);
+        resultados[atoId] = r;
+        feitos++;
+        try {
+          window.dispatchEvent(new CustomEvent(EVENTO_PARTES_ITEM,
+            { detail: JSON.stringify({ reqId, atoId, resultado: r, feitos, total: atoIds.length }) }));
+        } catch (e) { /* segue */ }
+      }
     }
+    await Promise.all(Array.from({ length: Math.min(SIMULTANEOS, atoIds.length) }, trabalhador));
     responderPartes({ reqId, resultados });
   });
 

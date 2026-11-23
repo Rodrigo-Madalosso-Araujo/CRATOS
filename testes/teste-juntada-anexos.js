@@ -17,7 +17,7 @@
  *     vai anexo à certidão de inclusão.
  *  4. `numeroOrdem` é 1..N dos que ENTRARAM, sem buraco quando um falha.
  *  5. Falha de um anexo não derruba a minuta (que já existe nos autos).
- *  6. O tipo do anexo sai do catálogo POR NOME; 115/"80" só como último recurso.
+ *  6. O tipo do anexo sai do catálogo POR NOME; sem reserva do TRT18 desde a 1.9.8.
  *  7. O teto de upload é PERGUNTADO ao PJe, não suposto.
  *
  * Rodar: node teste-juntada-anexos.js
@@ -261,7 +261,9 @@ const CERT = {
       "o nome do ARQUIVO segue inteiro — só a descrição é cortada");
   }
 
-  /* 2e. catálogo sem "Documento Diverso" — cai no observado, mas não quebra */
+  /* 2e. catálogo sem "Documento Diverso" — 1.9.8: SEM reserva do TRT18 (115/"80"). O
+     tipo é exigido antes de criar a minuta (teste-juntada-estrutura.js); se mesmo assim
+     faltar aqui, nada é anexado com número de outro tribunal: o anexo falha com o motivo. */
   {
     const cofre = [{ nome: "a CNIB Inclusao.pdf", base64: b64(50), bytes: 50 }];
     const cert = Object.assign({}, CERT, { arquivos: ["a CNIB Inclusao.pdf"] });
@@ -269,9 +271,8 @@ const CERT = {
     const r = await w.__cratosJuntada.anexarPdfs("123", { id: 555, idPessoaInclusao: 77 }, cert, "000",
       [{ id: 57, nomeTipoProcessoDocumento: "Certidão" }]);
     const post = rede.find((x) => x.metodo === "POST" && /\/documentos\/$/.test(x.url.split("?")[0]));
-    checar(r.anexados.length === 1, "sem o tipo no catálogo, ainda assim anexa");
-    checar(post.corpo.idTipo === 115 && post.corpo.codigoTipoDocumento === "80",
-      "cai nos valores observados no TRT18 como ÚLTIMO recurso");
+    checar(!post && r.anexados.length === 0 && r.falharam.length === 1 && /Documento Diverso/.test(r.falharam[0].motivo),
+      "⛔ sem o tipo no catálogo: NÃO anexa com o 115/\"80\" do TRT18 — falha dizendo o motivo");
   }
 
   /* ─────────────────────────────────────────────────────────────────────────

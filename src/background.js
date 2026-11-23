@@ -79,6 +79,14 @@ browser.runtime.onMessage.addListener((msg, sender) => {
       return fecharAbaSab(sender);
     case "orquestra_executar":
       return orquestraExecutar(msg, sender);
+    /* 1.9.8 — CANP (atos de São Paulo, no Signo): o CENSEC pede a aba; o Signo, ao
+       terminar, devolve o foco ao CENSEC. Só quem pode pedir é o próprio content script. */
+    case "canp_abrir":
+      if (!sender || !sender.tab || !/^https:\/\/([a-z0-9-]+\.)*censec\.org\.br\//i.test(sender.tab.url || "")) return { ok: false };
+      return abrirSigno();
+    case "canp_voltar":
+      if (!sender || !sender.tab || !/^https:\/\/www\.signo\.org\.br\//i.test(sender.tab.url || "")) return { ok: false };
+      return voltarAoCensec();
     case "processo_aba":
       /* 1.9.0: a aba do PJe onde o processo está — fechou, apaga os dados dele */
       return { ok: Limpeza.registrar(sender && sender.tab ? sender.tab.id : null, msg.numProcesso) };
@@ -679,6 +687,22 @@ async function abrirCensec() {
   } else {
     await browser.tabs.create({ url, active: true });
   }
+  return { ok: true };
+}
+
+/* 1.9.8 — abre (ou reusa) a aba do Signo DIRETO na consulta de atos da CANP (o Rodrigo
+   viu, 23/11, que o endereço entra direto quando já há login). Sem login, o próprio
+   Signo manda para a tela de entrada, e conteudo/signo.js espera a pessoa entrar. */
+async function abrirSigno() {
+  const url = "https://www.signo.org.br/#/interno/consultas-internas";
+  const abas = await browser.tabs.query({ url: "https://www.signo.org.br/*" });
+  if (abas.length) await browser.tabs.update(abas[0].id, { url, active: true });
+  else await browser.tabs.create({ url, active: true });
+  return { ok: true };
+}
+async function voltarAoCensec() {
+  const abas = await browser.tabs.query({ url: "https://*.censec.org.br/*" });
+  if (abas.length) await browser.tabs.update(abas[0].id, { active: true });
   return { ok: true };
 }
 
