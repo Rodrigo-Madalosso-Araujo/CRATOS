@@ -47,7 +47,7 @@ const ler = (rel) => fs.readFileSync(path.join(SRC, rel), "utf8");
       "⛔ manifest: nada de curinga amplo (*.jus.br) — os 24 TRTs listados um por um");
     const outras = perms.filter((h) => !/^https:\/\/pje\.trt\d{1,2}\.jus\.br\/\*$/.test(h)).sort();
     checar(JSON.stringify(outras) === JSON.stringify([
-      "downloads", "https://*.censec.org.br/*", "https://*.receita.fazenda.gov.br/*", "https://indisponibilidade.onr.org.br/*",
+      "downloads", "https://*.censec.org.br/*", "https://www.signo.org.br/*", "https://*.receita.fazenda.gov.br/*", "https://indisponibilidade.onr.org.br/*",
       "https://previdenciario.pdpj.jus.br/*", "https://renajud.pdpj.jus.br/*", "https://serasa-judicial.serasaexperian.com.br/*",
       "https://sniper.pdpj.jus.br/*", "https://www3.bcb.gov.br/*", "storage", "tabs"].sort()),
       "manifest: as demais permissões ficam exatamente como estavam (nenhuma nova)");

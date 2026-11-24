@@ -51,6 +51,16 @@
               "strict_min_version": "140.0"
             }
           }
+        },
+        {
+          "version": "1.9.9",
+          "update_link": "https://github.com/Rodrigo-Madalosso-Araujo/CRATOS/releases/download/v1.9.9/cratos-1.9.9.xpi",
+          "update_hash": "sha256:ffcec198fb5d9537863d55180e6253455d64d78462bb0c66fcf9bf0b3218fc8c",
+          "browser_specific_settings": {
+            "gecko": {
+              "strict_min_version": "140.0"
+            }
+          }
         }
       ]
     }

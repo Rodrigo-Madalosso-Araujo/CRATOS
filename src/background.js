@@ -79,6 +79,14 @@ browser.runtime.onMessage.addListener((msg, sender) => {
       return fecharAbaSab(sender);
     case "orquestra_executar":
       return orquestraExecutar(msg, sender);
+    /* 1.9.8 — CANP (atos de São Paulo, no Signo): o CENSEC pede a aba; o Signo, ao
+       terminar, devolve o foco ao CENSEC. Só quem pode pedir é o próprio content script. */
+    case "canp_abrir":
+      if (!sender || !sender.tab || !/^https:\/\/([a-z0-9-]+\.)*censec\.org\.br\//i.test(sender.tab.url || "")) return { ok: false };
+      return abrirSigno();
+    case "canp_voltar":
+      if (!sender || !sender.tab || !/^https:\/\/www\.signo\.org\.br\//i.test(sender.tab.url || "")) return { ok: false };
+      return voltarAoCensec(sender.tab.id);
     case "processo_aba":
       /* 1.9.0: a aba do PJe onde o processo está — fechou, apaga os dados dele */
       return { ok: Limpeza.registrar(sender && sender.tab ? sender.tab.id : null, msg.numProcesso) };
@@ -679,6 +687,26 @@ async function abrirCensec() {
   } else {
     await browser.tabs.create({ url, active: true });
   }
+  return { ok: true };
+}
+
+/* 1.9.8 — abre (ou reusa) a aba do Signo DIRETO na consulta de atos da CANP (o Rodrigo
+   viu, 23/11, que o endereço entra direto quando já há login). Sem login, o próprio
+   Signo manda para a tela de entrada, e conteudo/signo.js espera a pessoa entrar. */
+async function abrirSigno() {
+  const url = "https://www.signo.org.br/#/interno/consultas-internas";
+  const abas = await browser.tabs.query({ url: "https://www.signo.org.br/*" });
+  if (abas.length) await browser.tabs.update(abas[0].id, { url, active: true });
+  else await browser.tabs.create({ url, active: true });
+  return { ok: true };
+}
+/* Terminada a CANP: foco no CENSEC e FECHA a aba do Signo — sempre, mesmo que fosse uma
+   aba que a pessoa já tinha aberta (Rodrigo, 23/11). Só acontece no caminho de sucesso: se
+   a CANP falha, o Signo não chama isto e a aba fica aberta para ver o que houve. */
+async function voltarAoCensec(abaSigno) {
+  const abas = await browser.tabs.query({ url: "https://*.censec.org.br/*" });
+  if (abas.length) await browser.tabs.update(abas[0].id, { active: true });
+  if (abaSigno != null) { try { await browser.tabs.remove(abaSigno); } catch (e) { /* já fechada */ } }
   return { ok: true };
 }
 
@@ -2190,12 +2218,17 @@ function gerarPDFTexto(linhas, titulo, extras) {
   const Y_TITULO = 780, Y_CORPO = 750, Y_MIN = 50;
   const porPagina = Math.floor((Y_CORPO - Y_MIN) / lineH) + 1;
 
-  const entrada = (Array.isArray(linhas) ? linhas : [String(linhas == null ? "" : linhas)]).map(paraWinAnsi);
+  /* 1.9.8: uma linha pode vir como { t: "texto", negrito: true } — sai em Helvetica-Bold,
+     quebrada com a largura da fonte negrita (Rodrigo, 23/11: o título do bloco da CANP). */
+  const entrada = (Array.isArray(linhas) ? linhas : [String(linhas == null ? "" : linhas)]).map((l) =>
+    (l && typeof l === "object" && !Array.isArray(l))
+      ? { t: paraWinAnsi(String(l.t == null ? "" : l.t)), b: l.negrito === true }
+      : { t: paraWinAnsi(l), b: false });
 
   // Reflui TUDO na largura útil antes de paginar (uma linha lógica pode virar várias).
   const todas = [];
-  for (const l of entrada) todas.push(...quebrarPorLargura(l, LARGURA_UTIL, CORPO_PT, false));
-  if (!todas.length) todas.push("");
+  for (const l of entrada) for (const p of quebrarPorLargura(l.t, LARGURA_UTIL, CORPO_PT, l.b)) todas.push({ t: p, b: l.b });
+  if (!todas.length) todas.push({ t: "", b: false });
 
   /* Título: em vez de quebrar em duas (o que empurraria o corpo e bagunçaria a
      paginação), diminuímos o corpo até caber. Título de certidão é curto; isso
@@ -2216,8 +2249,10 @@ function gerarPDFTexto(linhas, titulo, extras) {
       sanitizePDF(tit) + ") Tj\n";
     y = Y_CORPO;
     st += "/F1 " + CORPO_PT + " Tf\n";
+    let negrito = false;
     for (const linha of linhasDaPagina) {
-      st += "1 0 0 1 " + marginX + " " + y + " Tm\n(" + sanitizePDF(linha) + ") Tj\n";
+      if (linha.b !== negrito) { negrito = linha.b; st += (negrito ? "/F2 " : "/F1 ") + CORPO_PT + " Tf\n"; }
+      st += "1 0 0 1 " + marginX + " " + y + " Tm\n(" + sanitizePDF(linha.t) + ") Tj\n";
       y -= lineH;
     }
     st += "ET\n";

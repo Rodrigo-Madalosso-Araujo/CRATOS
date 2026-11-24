@@ -107,6 +107,14 @@
         Object.keys(bruto).length !== 2) return { ok: false, motivo: "formato inválido" };
       return { ok: true, v: { ativo: bruto.ativo, anos: bruto.anos } };
     }
+    /* 1.9.8: data de calendário "AAAA-MM-DD" (que exista) ou em branco */
+    if (t === "data") {
+      if (bruto === "") return { ok: true, v: "" };
+      const m = typeof bruto === "string" ? /^(\d{4})-(\d{2})-(\d{2})$/.exec(bruto) : null;
+      const d = m ? new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])) : null;
+      if (!d || d.toISOString().slice(0, 10) !== bruto) return { ok: false, motivo: "data inválida" };
+      return { ok: true, v: bruto };
+    }
     if (t === "numero") {
       const min = Number.isFinite(esp.min) ? esp.min : 0, max = Number.isFinite(esp.max) ? esp.max : 1e6;
       if (!Number.isInteger(bruto) || bruto < min || bruto > max) return { ok: false, motivo: "número fora do limite" };
@@ -229,6 +237,7 @@
     if (esp.tipo === "toggle") return v.ativo ? "sim" : "não";
     if (esp.tipo === "toggle_anos") return v.ativo ? `sim, ${v.anos} ano${v.anos === 1 ? "" : "s"}` : "não";
     if (esp.tipo === "multiselect") return v.length ? v.join(", ") : "(nenhum)";
+    if (esp.tipo === "data") { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(v)); return m ? `${m[3]}/${m[2]}/${m[1]}` : String(v); }
     if (esp.tipo === "escolha" || esp.tipo === "select" || esp.tipo === "lista") {
       const o = (esp.opcoes || []).find((x) => String(valorDe(x)) === String(v));
       return o ? String(rotuloDe(o)) : String(v);

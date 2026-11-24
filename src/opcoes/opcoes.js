@@ -136,6 +136,25 @@
       // campos soltos (vara, tipoProcesso, etc.)
       const campo = document.createElement("div");
       campo.className = "campo";
+      /* 1.9.9 — campos com a mesma "linha" ficam lado a lado (datas do
+         Personalizado do CENSEC). Só muda a moldura: os data-chave/data-tipo
+         são os mesmos, então salvar() não percebe diferença. */
+      if (esp.linha) {
+        let faixa = div.lastElementChild;
+        if (!(faixa && faixa.classList.contains("linha-campos") && faixa.dataset.linha === esp.linha)) {
+          faixa = document.createElement("div");
+          faixa.className = "linha-campos";
+          faixa.dataset.linha = esp.linha;
+          div.appendChild(faixa);
+          if (esp.linhaNota) {
+            const n = document.createElement("div");
+            n.className = "nota linha-nota";
+            n.textContent = esp.linhaNota;
+            faixa.appendChild(n);
+          }
+        }
+        faixa.insertBefore(campo, faixa.querySelector(".linha-nota"));
+      }
       const valor = cfgMod[chave] ?? esp.padrao;
       /* 1.9.2 — lista lida da tela + nota explicativa do campo */
       cfgModAtual = cfgMod;
@@ -201,7 +220,7 @@
         n.textContent = esp.nota;
         campo.appendChild(n);
       }
-      div.appendChild(campo);
+      if (!esp.linha) div.appendChild(campo);
     }
     alvo.appendChild(div);
   }
@@ -515,6 +534,13 @@
           anos: <select class="cx-anos">${anosOptions(anos)}</select></label>
       </div>`;
     }
+    /* 1.9.8: data (AAAA-MM-DD; em branco permitido) — o período personalizado do CENSEC */
+    if (esp.tipo === "data") {
+      /* 1.9.9 — maxOntem: o CENSEC não aceita hoje como data final; o calendário
+         nem oferece, e o salvar() recusa se for digitada à mão. */
+      const max = esp.maxOntem ? _ontemYmd() : "";
+      return html`<input type="date" value="${valor || ""}" ${max ? html`max="${max}"` : ""} data-chave="${chave}" data-tipo="data" style="background:#111;color:#e8e8e8;border:1px solid #444;padding:2px 4px">`;
+    }
     if (esp.tipo === "numero") {
       return html`<input type="number" min="${esp.min ?? ""}" max="${esp.max ?? ""}" value="${valor}" data-chave="${chave}" data-tipo="numero">`;
     }
@@ -572,7 +598,24 @@
     return html`<input type="text" value="${valor}" data-chave="${chave}" data-tipo="texto" style="width:100%;max-width:420px">`;
   }
 
+  function _ontemYmd() {
+    const d = new Date(); d.setHours(12, 0, 0, 0); d.setDate(d.getDate() - 1);
+    const p = (n) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+  }
+
   async function salvar() {
+    /* 1.9.9 — data acima do máximo (data final do CENSEC = hoje ou depois) não salva */
+    for (const el of document.querySelectorAll('[data-tipo="data"][max]')) {
+      if (el.value && el.value > el.getAttribute("max")) {
+        const aviso = document.getElementById("cx-salvo");
+        const [a, m, d] = el.getAttribute("max").split("-");
+        aviso.style.color = "#f87171";
+        aviso.textContent = `\u2717 não salvei: a data final do CENSEC pode ser no máximo ontem (${d}/${m}/${a}).`;
+        el.focus();
+        return;
+      }
+    }
     const config = {};
     for (const divMod of document.querySelectorAll(".modulo")) {
       const nome = divMod.dataset.modulo;
@@ -600,6 +643,10 @@
       for (const el of divMod.querySelectorAll('[data-tipo="texto"]')) {
         if (el.closest(".grupo")) continue;
         config[nome][el.dataset.chave] = el.value;
+      }
+      for (const el of divMod.querySelectorAll('[data-tipo="data"]')) {
+        if (el.closest(".grupo")) continue;
+        config[nome][el.dataset.chave] = /^\d{4}-\d{2}-\d{2}$/.test(el.value) ? el.value : "";
       }
       for (const el of divMod.querySelectorAll('[data-tipo="numero"]')) {
         if (el.closest(".grupo")) continue;
@@ -639,6 +686,7 @@
     }
     await Store.set(CHAVES.config, config);
     const aviso = document.getElementById("cx-salvo");
+    aviso.style.color = "#4ade80";
     aviso.textContent = "\u2713 salvo";
     setTimeout(() => (aviso.textContent = ""), 2000);
   }

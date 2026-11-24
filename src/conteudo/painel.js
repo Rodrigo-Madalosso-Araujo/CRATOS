@@ -1115,11 +1115,22 @@
     renderRelatorioLoteSab(diaBr, rel, assinar, falhasLeitura, grupos.length);
   }
 
+  /* 1.9.8 (Rodrigo, 23/11): no relatório do lote, o número do processo é LINK para o
+     processo no PJe deste tribunal (detalhe), aberto em outra aba. Sem o id do PJe, fica
+     só o número, como antes. O id vem do próprio PJe (só dígitos), nunca de texto livre. */
+  function linkProcessoLote(l) {
+    const num = SAB.numeroCnj(l.numero);
+    const id = String(l.idPJe == null ? "" : l.idPJe);
+    if (!/^\d+$/.test(id)) return num;
+    return html`<a href="${location.origin}/pjekz/processo/${id}/detalhe" target="_blank" rel="noopener noreferrer"
+      title="Abrir o processo no PJe (nova aba)" style="color:#e8e8e8;text-decoration:underline">${num}</a>`;
+  }
+
   function renderRelatorioLoteSab(diaBr, rel, assinar, falhasLeitura, total) {
     const area = corpo.querySelector("#cx-lote-sab-area");
     const juntou = rel.filter((l) => l.minuta);
     const cartao = (l) => html`<div style="border:1px solid #333;border-radius:6px;padding:6px;margin:4px 0">
-      <div style="color:#e8e8e8;font-weight:600">${SAB.numeroCnj(l.numero)}</div>
+      <div style="color:#e8e8e8;font-weight:600">${linkProcessoLote(l)}</div>
       ${l.juntados.length ? html`<div style="color:#4ade80">✓ juntado (minuta): ${l.juntados.join(", ")}</div>` : ""}
       ${!l.minuta && l.obtidos.length ? html`<div style="color:#facc15">NÃO juntado (veja o motivo abaixo; rode de novo depois de resolver): ${l.obtidos.join(", ")}</div>` : ""}
       ${l.ja.length ? html`<div style="color:#9a9a9a">já nos autos: ${l.ja.join(", ")}</div>` : ""}
@@ -2165,6 +2176,20 @@
    * ═══════════════════════════════════════════════════════════════════════ */
   const API = "/pje-comum-api/api";
 
+  /* 1.9.8 — qual estrutura de documento usar, a partir dos `parametros` do PJe. Ordem:
+     o título "Anexar Documentos"; senão, a ÚNICA marcada como padrão; senão, para —
+     antes de criar a minuta. Nunca um número de tribunal. */
+  function escolherEstrutura(parametros) {
+    const lista = ((parametros && parametros.estruturasDocumento) || []).filter((e) => e && e.id != null);
+    const porTitulo = lista.filter((e) => norm(e.titulo) === norm("Anexar Documentos"));
+    if (porTitulo.length === 1) return porTitulo[0];
+    const padrao = lista.filter((e) => e.padraoFuncionalidade === true);
+    if (!porTitulo.length && padrao.length === 1) return padrao[0];
+    throw new Error(lista.length
+      ? `não consegui decidir qual estrutura de documento usar (${lista.length} no PJe deste tribunal, nenhuma só "Anexar Documentos"). Nada foi criado no processo.`
+      : "o PJe deste tribunal não informou a estrutura de documento para anexar. Nada foi criado no processo.");
+  }
+
   async function juntarCertidao(idProcesso, certidao, numProcesso) {
     /* 1) Não atropelar rascunho de outra pessoa (ou meu, de uma tentativa que
           ficou pela metade). 204 = campo livre. */
@@ -2199,13 +2224,22 @@
     const nomeTipo = certidao.tipoDocumento || "Certidão";
     const tipoCert = await acharTipo(nomeTipo);
     if (!tipoCert) throw new Error(`não achei o tipo de documento "${nomeTipo}" no PJe`);
-    if (certidao.tipoAnexo) await acharTipo(certidao.tipoAnexo);   // anexarPdfs procura em `tipos`
-    else await acharTipo("Documento Diverso");
+    /* 1.9.8: o tipo dos anexos é OBRIGATÓRIO e só pelo nome — a reserva 115/"80" do
+       TRT18 saiu. Sem ele, para aqui, antes de existir minuta. */
+    const nomeTipoAnx = certidao.tipoAnexo || "Documento Diverso";
+    if (!(await acharTipo(nomeTipoAnx))) {
+      throw new Error(`não achei o tipo de documento "${nomeTipoAnx}" (para os anexos) no PJe deste tribunal. Nada foi criado no processo.`);
+    }
+
+    /* 2b) 1.9.8 — a ESTRUTURA do documento ("Anexar Documentos") vem dos `parametros`
+          do processo, como a tela de anexar faz: 62 no TRT18, 95 no TRT3 (consultado em
+          23/11). Até a 1.9.7 o 62 era cravado — e o TRT3 respondia 404 "PJE-003". */
+    const estrutura = escolherEstrutura(await getPje(`${API}/processos/id/${idProcesso}/documentos/minuta/A/parametros`));
 
     /* 3) O esqueleto vem do servidor — inclusive os ids dos tópicos. Nada de
           cravar 140/141: noutro tribunal a estrutura é outra. */
     const tpl = await (await postPje(
-      `${API}/processos/id/${idProcesso}/documentos/minuta/A/template?idEstruturaDocumento=62`, undefined)).json();
+      `${API}/processos/id/${idProcesso}/documentos/minuta/A/template?idEstruturaDocumento=${encodeURIComponent(estrutura.id)}`, undefined)).json();
     const topicos = (tpl && tpl.topicos) || [];
     const principal = topicos.find((t) => !t.somenteLeitura) || topicos[0];
     if (!principal) throw new Error("o PJe não devolveu os tópicos do documento");
@@ -2214,7 +2248,7 @@
     /* 4) Cria a minuta. Daqui em diante existe documento nos autos. */
     const meta = await (await postPje(`${API}/processos/id/${idProcesso}/documentos/minuta/A/metadados`, {
       responder: true,
-      estruturaDocumento: { id: 62, titulo: "Anexar Documentos", padraoFuncionalidade: true },
+      estruturaDocumento: { id: estrutura.id, titulo: estrutura.titulo, padraoFuncionalidade: estrutura.padraoFuncionalidade },
       numComentariosNaoLidos: 0,
       tipoArquivo: "HTML",
       tipo: tipoCert.nomeTipoProcessoDocumento,
@@ -2348,18 +2382,16 @@
     } catch (e) { /* fica o padrão */ }
     const teto = tetoMb * 1024 * 1024;
 
-    /* Tipo do anexo pelo NOME, como o da certidão. 115/"80" é o que o TRT18
-       devolve hoje; cravar seria abrir de novo o débito de nacionalização que
-       estamos pagando. Se o catálogo não trouxer, cai no observado e AVISA. */
+    /* Tipo do anexo pelo NOME, como o da certidão. 1.9.8: sem reserva — a juntada já
+       conferiu que o tipo existe antes de criar a minuta (juntarCertidao, passo 2). */
     const nomeTipoAnexo = certidao.tipoAnexo || "Documento Diverso";
-    const tipoAnexo = (tipos || []).find((t) => norm(t.nomeTipoProcessoDocumento) === norm(nomeTipoAnexo)) ||
-      (tipos || []).find((t) => norm(t.nomeTipoProcessoDocumento) === "documento diverso");
+    const tipoAnexo = (tipos || []).find((t) => norm(t.nomeTipoProcessoDocumento) === norm(nomeTipoAnexo));
     if (!tipoAnexo) {
-      console.warn('CRATOS/juntada: não achei o tipo "Documento Diverso" no catálogo ' +
-        "deste processo — usando os valores observados no TRT18 (115/80).");
+      resultado.falharam = escolhidos.map((a) => ({ nome: a.nome, motivo: `tipo "${nomeTipoAnexo}" não encontrado no PJe` }));
+      return resultado;
     }
-    const idTipoAnexo = (tipoAnexo && tipoAnexo.id) || 115;
-    const codTipoAnexo = (tipoAnexo && (tipoAnexo.codigoDocumento || tipoAnexo.codigoTipoDocumento)) || "80";
+    const idTipoAnexo = tipoAnexo.id;
+    const codTipoAnexo = tipoAnexo.codigoDocumento || tipoAnexo.codigoTipoDocumento;
 
     let ordem = 0;
     for (const a of escolhidos) {
@@ -2380,10 +2412,10 @@
           idDocumentoPrincipal: meta.id,
           idProcesso: Number(idProcesso),
           numeroOrdem: ordem,
-          tipo: (tipoAnexo && tipoAnexo.nomeTipoProcessoDocumento) || "Documento Diverso",
+          tipo: tipoAnexo.nomeTipoProcessoDocumento,
           sigiloso: true,
           idTipo: idTipoAnexo,
-          codigoTipoDocumento: String(codTipoAnexo),
+          ...(codTipoAnexo != null && codTipoAnexo !== "" ? { codigoTipoDocumento: String(codTipoAnexo) } : {}),
           mimeType: "application/pdf",
           conteudoBase64: a.base64,
         })).json();
@@ -2616,7 +2648,7 @@
   /* Gancho de teste (mundo isolado: a página não enxerga). Expõe as funções
      REAIS da juntada para o harness — testar uma cópia é testar a cópia. */
   window.__cratosJuntada = { juntarCertidao, anexarPdfs, filaTemInfojud, ID_INFOJUD,
-    definirVisibilidadePartes, polosDaConfig };
+    definirVisibilidadePartes, polosDaConfig, escolherEstrutura, linkProcessoLote };
 
   /* Gancho do ENCADEAMENTO: o harness monta uma fila, roda, e dispara os pulsos
      de conclusão via Store.set — exercitando o orquestrador REAL, não uma cópia. */

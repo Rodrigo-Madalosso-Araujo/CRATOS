@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "CRATOS",
-  "version": "1.9.7",
+  "version": "1.9.9",
   "description": "Captura dados do processo no PJe e automatiza parcialmente a execução de convênios (consultas e registro) para o processo em tela. Quem confirma, assina e envia é sempre você.",
   "browser_specific_settings": {
     "gecko": {
@@ -57,6 +57,7 @@
     "https://renajud.pdpj.jus.br/*",
     "https://indisponibilidade.onr.org.br/*",
     "https://*.censec.org.br/*",
+    "https://www.signo.org.br/*",
     "https://serasa-judicial.serasaexperian.com.br/*",
     "https://www3.bcb.gov.br/*",
     "https://sniper.pdpj.jus.br/*",
@@ -75,6 +76,7 @@
       "modulos/sab.js",
       "modulos/renajud.js",
       "modulos/cnib.js",
+      "comum/periodo.js",
       "modulos/censec.js",
       "modulos/serasajud.js",
       "modulos/ccs.js",
@@ -211,7 +213,21 @@
         "comum/storage.js",
         "comum/relatorio.js",
         "comum/faixa.js",
+        "comum/periodo.js",
         "conteudo/censec.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://www.signo.org.br/*"
+      ],
+      "js": [
+        "comum/storage.js",
+        "comum/relatorio.js",
+        "comum/faixa.js",
+        "comum/periodo.js",
+        "conteudo/signo.js"
       ],
       "run_at": "document_idle"
     },
@@ -292,6 +308,7 @@
     "icones/cratos-96.png",
     "icones/cratos-128.png",
     "conteudo/censec-api.js",
+    "conteudo/signo-api.js",
     "conteudo/serasajud-api.js",
     "conteudo/renajud-api.js",
     "conteudo/ecac-grampo.js",

@@ -78,6 +78,27 @@
     return null;
   }
 
+  /* 1.9.9 — erro que o PRÓPRIO formulário mostra embaixo de um campo (mat-error),
+     ex.: "Digite uma data válida" na Data final quando ela é hoje. Com erro, o
+     "Buscar" nunca libera — esperar por ele era esperar à toa. Devolve
+     { rotulo, valor, erro } do primeiro campo recusado, ou null. */
+  function erroDeCampo(inputs) {
+    for (const el of inputs) {
+      if (!el) continue;
+      const ff = el.closest("mat-form-field, .mat-mdc-form-field");
+      if (!ff) continue;
+      for (const me of ff.querySelectorAll("mat-error, .mat-mdc-form-field-error, .mat-error")) {
+        const txt = (me.textContent || "").replace(/\s+/g, " ").trim();
+        if (txt && visivel(me)) {
+          const rot = ((ff.querySelector("mat-label, label") || {}).textContent || "").replace(/\s+/g, " ").trim();
+          return { rotulo: rot || "campo", valor: el.value || "", erro: txt };
+        }
+      }
+    }
+    return null;
+  }
+  const motivoCampo = (e) => `o CENSEC recusou o campo "${e.rotulo}"${e.valor ? ` (${e.valor})` : ""}: "${e.erro}". Nada foi buscado — confira o período nas Preferências do CENSEC.`;
+
   injetarGrampo();
 
   // Fila de respostas da busca, alimentada pelo grampo no contexto da página.
@@ -91,37 +112,73 @@
   });
 
   /* ═══ CANAL DE PARTES ═══
-   * Pede ao grampo (contexto da página) as partes de uma lista de atos e espera a
-   * resposta. O grampo faz o GET same-origin (cookie); aqui só orquestramos. */
+   * Pede ao grampo (contexto da página) as partes de uma lista de atos. O grampo faz o
+   * GET same-origin (cookie); aqui só orquestramos.
+   *
+   * 1.9.8: até a 1.9.7 havia UM prazo de 45 s para TODOS os atos, e a resposta só vinha
+   * inteira, no fim. Com muitas procurações passava disso e a certidão saía sem as partes
+   * de nenhum ato. Agora cada ato chega sozinho (EVENTO_PARTES_ITEM), o andamento aparece,
+   * e só se desiste depois de ESPERA_PARTES_MS SEM CHEGAR NADA. O que não veio fica de
+   * fora do mapa — e a certidão diz "partes não obtidas", nunca que o ato não tem partes. */
   const EVENTO_PARTES_PEDIR = "cratos:censec:partes:pedir";
   const EVENTO_PARTES_RESP = "cratos:censec:partes:resposta";
-  const ESPERA_PARTES_MS = 45 * 1000;
+  const EVENTO_PARTES_ITEM = "cratos:censec:partes:item";
+  const ESPERA_PARTES_MS = 30 * 1000;      // sem nenhum ato novo nesse tempo → desiste do resto
   let _seqPartes = 0;
-  const _aguardandoPartes = new Map();   // reqId -> resolve
+  const _aguardandoPartes = new Map();     // reqId -> { resolve, parciais, aoAndar, tocado }
+
+  window.addEventListener(EVENTO_PARTES_ITEM, (ev) => {
+    if (!_cratosLigado) return;
+    let d = null;
+    try { d = JSON.parse(ev.detail); } catch (e) { return; }
+    const r = _aguardandoPartes.get(d && d.reqId);
+    if (!r) return;
+    r.parciais[d.atoId] = d.resultado || { ok: false };
+    r.tocado = Date.now();
+    try { if (r.aoAndar) r.aoAndar(d.feitos, d.total); } catch (e) { /* segue */ }
+  });
 
   window.addEventListener(EVENTO_PARTES_RESP, (ev) => {
     if (!_cratosLigado) return;
     let dados = null;
     try { dados = JSON.parse(ev.detail); } catch (e) { return; }
     const r = _aguardandoPartes.get(dados && dados.reqId);
-    if (r) { _aguardandoPartes.delete(dados.reqId); r((dados && dados.resultados) || {}); }
+    if (r) { _aguardandoPartes.delete(dados.reqId); r.resolve(Object.assign({}, r.parciais, (dados && dados.resultados) || {})); }
   });
 
-  /* Devolve { atoId -> {ok, partes:[{nome,documento,qualidade}]} } ou null no timeout. */
-  function pedirPartes(atoIds, timeoutMs) {
+  /* Devolve { atoId -> {ok, partes:[{nome,documento,qualidade}]} } — o que chegou. Se
+     parar de chegar, devolve o que já tinha (nunca null). */
+  function pedirPartes(atoIds, aoAndar, esperaMs) {
     const ids = (atoIds || []).map((x) => String(x || "")).filter(Boolean);
     if (!ids.length) return Promise.resolve({});
     return new Promise((resolve) => {
       const reqId = "p" + (++_seqPartes) + "_" + Date.now();
-      _aguardandoPartes.set(reqId, resolve);
+      const reg = { resolve, parciais: {}, aoAndar, tocado: Date.now() };
+      _aguardandoPartes.set(reqId, reg);
       window.dispatchEvent(new CustomEvent(EVENTO_PARTES_PEDIR, {
         detail: JSON.stringify({ reqId, atoIds: ids }),
       }));
-      setTimeout(() => {
-        if (_aguardandoPartes.has(reqId)) { _aguardandoPartes.delete(reqId); resolve(null); }
-      }, timeoutMs || ESPERA_PARTES_MS);
+      const espera = esperaMs || ESPERA_PARTES_MS;
+      const vigia = setInterval(() => {
+        if (!_aguardandoPartes.has(reqId)) { clearInterval(vigia); return; }
+        if (Date.now() - reg.tocado > espera) {
+          clearInterval(vigia);
+          _aguardandoPartes.delete(reqId);
+          console.warn(`CRATOS/CENSEC: partes pararam de chegar — ${Object.keys(reg.parciais).length} de ${ids.length} atos.`);
+          resolve(Object.assign({}, reg.parciais));
+        }
+      }, 500);
     });
   }
+
+  /* ═══ CORTINA (1.9.8, pedido do Rodrigo) ═══
+   * Com muitas procurações o CENSEC ficava minutos sem dizer nada. A cortina cobre a tela
+   * enquanto o CRATOS trabalha e diz em que pé está. Sai para o captcha (você resolve) e
+   * no fim; o próprio CratosOverlay sai sozinho se ficar 3 min sem ser renovado. */
+  function cortina(texto) {
+    try { if (globalThis.CratosOverlay && !desafioNaTela()) globalThis.CratosOverlay.mostrar("CENSEC: " + texto); } catch (e) { /* segue */ }
+  }
+  function semCortina() { try { if (globalThis.CratosOverlay) globalThis.CratosOverlay.esconder(); } catch (e) { /* segue */ } }
 
   Store.get("censec_estado").then(async (est) => {
     if (!(await Store.ligada())) { console.log("CRATOS/CENSEC: extensão desligada."); return; }
@@ -242,24 +299,32 @@
     const partes = est.partes || [];
     if (!partes.length) return falhar(new Error("nenhuma parte marcada no painel para consultar. Marque as partes no PJe "
       + "e execute de novo."));
+    const periodo = est.periodo;
+    if (!periodo || !periodo.inicio || !periodo.fim) {
+      return falhar(new Error("a consulta chegou sem período (CRATOS antigo no painel?). Execute de novo pelo painel."));
+    }
+    const cfg = est.config || {};
 
     /* UMA PARTE QUE FALHA NÃO MATA A FILA.
-       Antes, qualquer tropeço abortava tudo — e como a fila costuma ter várias
-       partes, perder a última por causa da segunda é caro: você refaz o serviço
-       inteiro. Agora cada parte é uma tentativa independente; no fim, o aviso
-       diz quem entrou e quem não entrou, com o motivo. */
+       Cada parte é uma tentativa independente; no fim, o aviso diz quem entrou e quem
+       não entrou, com o motivo.
+       1.9.8: a certidão NÃO sai mais logo depois da CEP de cada parte. Primeiro a CEP de
+       todas; depois, se ligada, a CANP de todas (no Signo, noutra aba); só então as
+       certidões — cada uma com o bloco de São Paulo. */
     const feitos = [];
     const falhados = [];
+    const resultados = [];   // { parte, doc, ordem, cep }
 
     for (let i = 0; i < partes.length; i++) {
       const parte = partes[i];
       const doc = digitos(parte.cpfcnpj);
       avisar(`consultando ${i + 1} de ${partes.length}: ${parte.nome}`, "#facc15");
+      cortina(`parte ${i + 1} de ${partes.length} — consultando a CEP…`);
       console.log(`CRATOS/CENSEC: [${i + 1}/${partes.length}] ${CratosMascara.nome(parte.nome)} (${CratosMascara.doc(doc)})`);
 
       let r;
       try {
-        r = await consultarUm(parte, doc, i + 1);
+        r = await consultarParte(parte, doc, periodo, cfg, `parte ${i + 1} de ${partes.length}`);
       } catch (e) {
         r = { ok: false, motivo: String((e && e.message) || e) };
       }
@@ -267,9 +332,16 @@
       if (!r.ok) {
         console.error(`CRATOS/CENSEC: ${CratosMascara.nome(parte.nome)} FALHOU — ${r.motivo}`);
         falhados.push({ nome: parte.nome, motivo: r.motivo });
+        /* 1.9.9 — o formulário recusou um campo (o período): as próximas partes
+           bateriam no mesmo muro. Para aqui e diz por quê. */
+        if (r.campoRecusado) {
+          for (const resto of partes.slice(i + 1)) {
+            falhados.push({ nome: resto.nome, motivo: "não consultada — o CENSEC recusou o período (veja a primeira parte)" });
+          }
+          break;
+        }
       } else {
-        feitos.push({ nome: parte.nome, atos: r.atos.length, arquivo: r.arquivo });
-        console.log(`CRATOS/CENSEC: ${CratosMascara.nome(parte.nome)} — ${r.atos.length} ato(s) -> ${r.arquivo ? "PDF gerado" : "(sem PDF)"}`);
+        resultados.push({ parte, doc, ordem: i + 1, cep: r });
       }
 
       // grava o andamento a cada parte: se a aba cair, sabemos onde parou
@@ -277,22 +349,44 @@
         ativo: true, fase: "andando", feitos, falhados, indice: i + 1,
       }));
 
-      /* Entre uma busca e outra o app precisa respirar: some o overlay de
-         carregamento e o Turnstile emite um token novo (o anterior é de uso
-         único). Sem essa pausa a próxima parte encontra o "Buscar" cinza. */
       if (i < partes.length - 1) {
         await esperarSumir(SEL.carregando, 20000);
         await sleep(1200);
       }
     }
 
-    const total = feitos.reduce((s, f) => s + f.atos, 0);
-    const semDoc = est.semDocumento || [];
-
-    let msg = `consulta concluída: ${feitos.length} de ${partes.length} parte(s), ${total} ato(s).`;
-    if (feitos.length) {
-      msg += "\n" + feitos.map((f) => `· ${f.nome}: ${f.atos || "nada encontrado"}`).join("\n");
+    /* CANP — atos de São Paulo (Signo). Só para quem a CEP consultou. */
+    let canp = { estado: "desligada" };
+    if (cfg.consultarCanp && resultados.length) {
+      semCortina();
+      canp = await consultarCanp(est, resultados.map((x) => ({ nome: x.parte.nome, doc: x.doc })), periodo);
     }
+
+    for (const x of resultados) {
+      cortina(`gerando a certidão de ${x.parte.nome}…`);
+      const canpDaParte = canp.estado === "ok"
+        ? (canp.porDoc[x.doc] || { ok: false, motivo: "sem resposta para esta parte" })
+        : null;
+      let arquivo = null;
+      try {
+        arquivo = await fabricarCertidao(x.parte, x.doc, x.cep, canp.estado, canpDaParte, canp.motivo, x.ordem);
+      } catch (e) {
+        falhados.push({ nome: x.parte.nome, motivo: "certidão não gerada: " + String((e && e.message) || e) });
+        continue;
+      }
+      feitos.push({ nome: x.parte.nome, atos: x.cep.atos.length, completo: x.cep.completo, arquivo,
+        canp: canpDaParte && canpDaParte.ok ? canpDaParte.total : null });
+    }
+    semCortina();
+
+    const semDoc = est.semDocumento || [];
+    let msg = `consulta concluída: ${feitos.length} de ${partes.length} parte(s) (${CratosPeriodo.frase(periodo)}).`;
+    if (feitos.length) {
+      msg += "\n" + feitos.map((f) => `· ${f.nome}: CEP ${f.atos || "nada encontrado"}` +
+        (f.completo ? "" : " (PARCIAL — a CEP mostra no máximo 300 por busca)") +
+        (f.canp != null ? ` · CANP ${f.canp || "nada"}` : "")).join("\n");
+    }
+    if (canp.estado === "falhou") msg += `\n\nCANP (São Paulo) NÃO consultada: ${canp.motivo}. As certidões dizem isso.`;
     if (falhados.length) {
       msg += "\n\nNÃO consultei:\n" + falhados.map((f) => `· ${f.nome} — ${f.motivo}`).join("\n");
     }
@@ -300,7 +394,8 @@
       msg += "\n\nSem CPF/CNPJ no processo (não dá para consultar):\n" +
         semDoc.map((n) => `· ${n}`).join("\n");
     }
-    avisar(msg, falhados.length ? "#facc15" : "#4ade80");
+    const alerta = falhados.length || canp.estado === "falhou" || feitos.some((f) => !f.completo);
+    avisar(msg, alerta ? "#facc15" : "#4ade80");
 
     await Store.set("censec_estado", Object.assign({}, est, {
       ativo: false,
@@ -309,7 +404,63 @@
     }));
   }
 
-  async function consultarUm(parte, doc, ordem) {
+  /* ═══ CEP DE UMA PARTE, COM O TETO DE 300 (1.9.8) ═══
+   * A CEP mostra no máximo 300 atos por busca ("Mostrando os primeiros 300 registros.
+   * Favor refine sua busca"). Bateu no teto → divide o período ao meio e busca cada
+   * metade, de novo e de novo, até MAX_BUSCAS buscas por parte. O que cobriu sem teto é
+   * "coberto"; o que ficou de fora vai para a certidão como período NÃO coberto. Ato que
+   * aparece em duas buscas conta uma vez (pelo id). */
+  const TETO_CEP = 300;
+  const MAX_BUSCAS = 10;
+
+  async function consultarParte(parte, doc, periodo, cfg, onde) {
+    const fila = [{ inicio: periodo.inicio, fim: periodo.fim }];
+    const cobertos = [], naoCobertos = [];
+    const atosPorId = new Map();
+    let buscas = 0;
+    while (fila.length) {
+      const trecho = fila.shift();
+      if (buscas >= MAX_BUSCAS) { naoCobertos.push(trecho); continue; }
+      buscas++;
+      cortina(`${onde} — CEP, busca ${buscas} (${CratosPeriodo.dmy(trecho.inicio)} a ${CratosPeriodo.dmy(trecho.fim)})…`);
+      const r = await buscarCep(parte, doc, trecho);
+      if (!r.ok) return r;                       // uma busca falhou: a parte toda falha (regra de ferro)
+      for (const a of r.atos) {
+        const k = String(a.id || a.atoId || JSON.stringify([a.data, a.livro, a.folha, a.cns, a.tipo]));
+        if (!atosPorId.has(k)) atosPorId.set(k, a);
+      }
+      if (!r.noTeto) { cobertos.push(trecho); continue; }
+      const metades = CratosPeriodo.dividir(trecho);
+      if (metades) fila.push(metades[0], metades[1]);
+      else naoCobertos.push(trecho);            // um dia só com 300+: não há como refinar
+      avisar(`${parte.nome}: a CEP bateu no teto de ${TETO_CEP} — refinando pelo período (busca ${buscas} de até ${MAX_BUSCAS})…`, "#facc15");
+      if (fila.length) { await esperarSumir(SEL.carregando, 20000); await sleep(1200); }
+    }
+    const atos = Array.from(atosPorId.values());
+
+    /* PARTES DE CADA ATO — só com a preferência ligada (chamada extra por ato). */
+    let partesPorAto = {};
+    if (cfg.puxarPartes && atos.length) {
+      const ids = atos.map((a) => a.id || a.atoId).filter(Boolean);
+      cortina(`${onde} — buscando as partes dos atos: 0 de ${ids.length}…`);
+      try {
+        partesPorAto = await pedirPartes(ids, (feitos, total) => {
+          cortina(`${onde} — buscando as partes dos atos: ${feitos} de ${total}…`);
+        });
+      } catch (e) { console.warn("CRATOS/CENSEC: falha ao buscar partes:", e && e.message); }
+    }
+
+    return {
+      ok: true, atos, buscas, partesPorAto,
+      completo: !naoCobertos.length,
+      cobertos: CratosPeriodo.juntarTrechos(cobertos),
+      naoCobertos: CratosPeriodo.juntarTrechos(naoCobertos),
+    };
+  }
+
+  /* Uma busca na CEP: documento + período no formulário, clica, escuta a resposta e
+     CONFERE que o servidor recebeu o documento e as datas pedidas. */
+  async function buscarCep(parte, doc, trecho) {
     await esperarSumir(SEL.carregando, 20000);
 
     // limpar e escrever (só dígitos — a máscara do campo formata sozinha)
@@ -317,17 +468,35 @@
     if (!(await escrever(campoDocumento, doc, { porDigitos: true }))) {
       return { ok: false, motivo: "não consegui escrever o CPF/CNPJ" };
     }
+    /* 1.9.8: as datas — dd/mm/aaaa nos campos "Data inicial" e "Data final" */
+    const dataIni = () => campoPorRotulo(["data", "inicial"]);
+    const dataFim = () => campoPorRotulo(["data", "final"]);
+    if (!dataIni() || !dataFim()) return { ok: false, motivo: "não achei os campos de data da CEP" };
+    if (!(await escrever(dataIni, CratosPeriodo.dmy(trecho.inicio), { porDigitos: true })) ||
+        !(await escrever(dataFim, CratosPeriodo.dmy(trecho.fim), { porDigitos: true }))) {
+      return { ok: false, motivo: "não consegui escrever o período nos campos de data" };
+    }
 
     /* PACIÊNCIA COM O BOTÃO. O token do Turnstile é de USO ÚNICO: depois de cada
        busca o widget precisa emitir outro, e enquanto não emite o formulário fica
-       inválido e o "Buscar" volta a ficar cinza. Da segunda parte em diante isso
+       inválido e o "Buscar" volta a ficar cinza. Da segunda busca em diante isso
        é o normal, não a exceção — por isso a espera aqui é generosa. */
+    await sleep(400);
+    const camposDaBusca = () => [campoDocumento(), dataIni(), dataFim()];
+    let recusa = erroDeCampo(camposDaBusca());
+    if (recusa) return { ok: false, motivo: motivoCampo(recusa), campoRecusado: true };
     let botao = await esperarHabilitado(() => botaoBuscar(), 12000);
+    if (!botao && (recusa = erroDeCampo(camposDaBusca()))) {
+      return { ok: false, motivo: motivoCampo(recusa), campoRecusado: true };
+    }
     if (!botao) {
       console.warn("CRATOS/CENSEC: 'Buscar' cinza — digitando caractere a caractere.");
       avisar(`esperando o CENSEC liberar o "Buscar" para ${parte.nome}…`, "#facc15");
       await digitar(campoDocumento, doc);
       botao = await esperarHabilitado(() => botaoBuscar(), ESPERA_BOTAO_MS);
+    }
+    if (!botao && (recusa = erroDeCampo(camposDaBusca()))) {
+      return { ok: false, motivo: motivoCampo(recusa), campoRecusado: true };
     }
     if (!botao) {
       return { ok: false, motivo: "o botão 'Buscar' não habilitou (token do captcha não renovou?)" };
@@ -342,16 +511,62 @@
     if (!dados) return { ok: false, motivo: "o CENSEC não respondeu" };
     if (!dados.ok) return { ok: false, motivo: "o CENSEC respondeu HTTP " + dados.status };
 
-    let atos = [];
-    try {
-      const json = JSON.parse(dados.corpo || "{}");
-      atos = Array.isArray(json.atos) ? json.atos : [];
-    } catch (e) {
-      return { ok: false, motivo: "resposta da busca ilegível" };
+    /* O que foi ao servidor é o que vale: documento e datas conferidos. */
+    const f = dados.filtro || {};
+    if (digitos(f.cpfCnpj) !== doc) return { ok: false, motivo: "a busca saiu com outro CPF/CNPJ — nada certificado" };
+    if (ymdLocal(f.dataInicio) !== trecho.inicio || ymdLocal(f.dataFim) !== trecho.fim) {
+      return { ok: false, motivo: `a busca não saiu com o período pedido (${CratosPeriodo.dmy(trecho.inicio)} a ${CratosPeriodo.dmy(trecho.fim)}) — nada certificado` };
     }
 
-    const arquivo = await fabricarCertidao(parte, doc, atos, ordem);
-    return { ok: true, atos, arquivo };   // arquivo = null quando a negativa está desligada
+    let json;
+    try { json = JSON.parse(dados.corpo || "{}"); } catch (e) { return { ok: false, motivo: "resposta da busca ilegível" }; }
+    const atos = Array.isArray(json.atos) ? json.atos : [];
+    /* Teto: 300 atos, ou o `buscaTicket` preenchido (veio vazio em busca de 79 atos;
+       suspeita de que venha cheio quando corta — confirmar ao vivo). Anotado no console. */
+    const noTeto = atos.length >= TETO_CEP || !!json.buscaTicket;
+    if (json.buscaTicket) console.warn("CRATOS/CENSEC: buscaTicket PREENCHIDO nesta busca (" + atos.length + " atos) — tratado como teto.");
+    return { ok: true, atos, noTeto };
+  }
+
+  /* ISO do servidor ("2026-11-01T15:00:00.000Z") → data local "2026-11-01" */
+  function ymdLocal(iso) {
+    const d = new Date(String(iso || ""));
+    if (isNaN(d.getTime())) return "";
+    const p = (n) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+  }
+
+  /* ═══ CANP — atos de São Paulo, no Signo (1.9.8) ═══
+   * O próprio CENSEC manda consultar os atos paulistas na CANP. O CRATOS abre o Signo
+   * noutra aba (conteudo/signo.js faz a consulta lá) e espera o resultado pelo storage.
+   * Login no Signo é da pessoa; se demorar mais que ESPERA_CANP_MS, segue sem a CANP —
+   * e a certidão DIZ que São Paulo não foi consultado. */
+  const ESPERA_CANP_MS = 10 * 60 * 1000;
+  async function consultarCanp(est, partesDoc, periodo) {
+    const carimbo = new Date().toISOString();
+    await Store.set("canp_estado", {
+      ativo: true, pedidoEm: carimbo, numProcesso: est.numProcesso,
+      partes: partesDoc, periodo: { inicio: periodo.inicio, fim: periodo.fim }, fase: "aguardando",
+    });
+    avisar("consultando a CANP (atos de São Paulo) no Signo, na aba ao lado. Se ele pedir login, entre com o seu certificado — eu sigo sozinho.", "#facc15");
+    try { await browser.runtime.sendMessage({ tipo: "canp_abrir" }); } catch (e) { /* a aba pode ter aberto mesmo assim */ }
+    const t0 = Date.now();
+    while (Date.now() - t0 < ESPERA_CANP_MS) {
+      await sleep(1000);
+      let c = null;
+      try { c = await Store.get("canp_estado"); } catch (e) { c = null; }
+      if (!c || c.pedidoEm !== carimbo) return { estado: "falhou", motivo: "a consulta à CANP foi interrompida" };
+      if (c.fase === "concluido") {
+        await Store.set("canp_estado", { ativo: false, pedidoEm: carimbo, fase: "recolhido" });   // não deixa atos guardados
+        return { estado: "ok", porDoc: c.resultados || {} };
+      }
+      if (c.fase === "erro") {
+        await Store.set("canp_estado", { ativo: false, pedidoEm: carimbo, fase: "recolhido" });
+        return { estado: "falhou", motivo: c.erro || "erro no Signo" };
+      }
+    }
+    await Store.set("canp_estado", { ativo: false, pedidoEm: carimbo, fase: "expirado" });
+    return { estado: "falhou", motivo: "o Signo não respondeu em 10 minutos (login não concluído?)" };
   }
 
   /* ═══ ESPERA DA RESPOSTA, COM PACIÊNCIA PARA O CAPTCHA ═══
@@ -376,6 +591,7 @@
     while (!resolvido && Date.now() < prazo && Date.now() < limite) {
       await sleep(300);
       if (desafioNaTela()) {
+        semCortina();                              // 1.9.8: o desafio é seu — a cortina sai
         prazo = Date.now() + ESPERA_RESPOSTA_MS;   // o relógio só corre sem desafio
         if (!avisado) {
           avisado = true;
@@ -406,13 +622,131 @@
   }
 
   // ── Certidão ──────────────────────────────────────────────────────────────
-  async function fabricarCertidao(parte, doc, atos, ordem) {
+  const LISTA_MAX = 300;   // Rodrigo, 23/11: a certidão relaciona até 300 atos (o teto da própria CEP)
+
+  /* "00000247" + "Livro de Notas" → "00000247 (Livro de Notas)"; "00000142" + "E" →
+     "00000142E". Até a 1.9.7 colava tudo: "00000247Livro de Notas" (certidão real, 23/11). */
+  function livroFolha(num, compl) {
+    const n = String(num == null ? "" : num).trim(), c = String(compl == null ? "" : compl).trim();
+    if (!c) return n;
+    if (!n) return c;
+    return /^[A-Za-z0-9]{1,2}$/.test(c) ? n + c : `${n} (${c})`;
+  }
+  const lista = (itens) => itens.length <= 1 ? (itens[0] || "") : itens.slice(0, -1).join(", ") + " e " + itens[itens.length - 1];
+  const trechosTxt = (ts) => lista(ts.map((t) => `${CratosPeriodo.dmy(t.inicio)} a ${CratosPeriodo.dmy(t.fim)}`));
+
+  /* Monta a certidão (puro: sem DOM, sem rede). `cep` = resultado de consultarParte;
+     `canp` = { estado: "ok"|"falhou"|"desligada", parte?: {ok,total,atos,motivo}, motivo? }.
+     Devolve { titulo, linhas, negativa, temAtos }. */
+  function montarCertidao(o) {
+    const { parte, doc, periodo, cep, canp, puxarPartes, hoje } = o;
+    const P = CratosPeriodo;
+    const atos = (cep.atos || []).slice().sort((x, y) => String(y.data || "").localeCompare(String(x.data || "")));
+    const n = atos.length;
+    const listados = atos.slice(0, LISTA_MAX);
+    const quem = `em nome de ${parte.nome}, inscrito(a) no CPF/CNPJ sob o nº ${formatarDoc(doc)}`;
+    let cab = `Certifico e dou fé que, nesta data (${hoje}), procedi à consulta à Central de Escrituras e ` +
+      `Procurações (CEP), da CENSEC, ${quem}, abrangendo os ${P.frase(periodo)}`;
+    if (cep.completo) {
+      if (!n) cab += ", e que NÃO foram encontrados atos notariais registrados em seu nome nesse período.";
+      else if (n > LISTA_MAX) cab += `, e que foram encontrados ${n} atos notariais, dos quais se relacionam abaixo os ${LISTA_MAX} mais recentes (os demais podem ser consultados na CENSEC):`;
+      else cab += `, e que foram encontrados ${n} ato(s) notarial(is), abaixo relacionado(s):`;
+    } else {
+      cab += `. A CEP exibe no máximo ${TETO_CEP} atos por consulta e, mesmo com a consulta dividida em ` +
+        `${cep.buscas} buscas por período, não foi possível cobrir todo o período: ` +
+        (cep.cobertos.length ? `os atos de ${trechosTxt(cep.cobertos)} foram consultados integralmente, mas ` : "") +
+        `nos períodos de ${trechosTxt(cep.naoCobertos)} podem existir outros atos, NÃO relacionados nesta certidão. ` +
+        `Foram exibidos ${n} ato(s)` + (n > LISTA_MAX ? `, dos quais se relacionam abaixo os ${LISTA_MAX} mais recentes:` : ", abaixo relacionado(s):");
+    }
+
+    /* NÃO quebramos o parágrafo aqui: quem decide onde a linha cabe é o gerarPDFTexto. */
+    const linhas = ["", cab, ""];
+    listados.forEach((a, i) => {
+      const livro = livroFolha(a.livro, a.livroComplemento);
+      const folha = livroFolha(a.folha, a.folhaComplemento);
+      linhas.push(`${i + 1}) ${dataDoAto(a.data)} - ${a.tipo || "?"} - ${a.qualidade || "?"}` +
+        (livro ? ` - Livro ${livro}` : "") + (folha ? `, Fl. ${folha}` : ""));
+      linhas.push(`     ${a.cartorioNome || ""}` +
+        (a.cartorioMunicipio ? ` - ${a.cartorioMunicipio}/${a.cartorioUf || ""}` : "") +
+        (a.cns ? ` - CNS ${formatarCns(a.cns)}` : ""));
+      if (puxarPartes) {
+        const idAto = a.id || a.atoId;
+        const rp = idAto ? (cep.partesPorAto || {})[idAto] : null;
+        if (rp && rp.ok && Array.isArray(rp.partes) && rp.partes.length) {
+          linhas.push("     Partes do ato:");
+          rp.partes.forEach((p) => {
+            const docFmt = p.documento ? formatarDoc(p.documento) : "sem CPF/CNPJ";
+            const qual = p.qualidade ? ` - ${p.qualidade}` : "";
+            linhas.push(`       - ${(p.nome || "(sem nome)")} - ${docFmt}${qual}`);
+          });
+        } else if (rp && rp.ok) {
+          linhas.push("     Partes do ato: a CEP não informou partes.");
+        } else {
+          linhas.push("     Partes do ato: não obtidas nesta consulta.");   // 1.9.8: nunca "sem partes"
+        }
+      }
+      linhas.push("");
+    });
+
+    /* CANP — atos de São Paulo */
+    const cp = canp || { estado: "desligada" };
+    const r = cp.parte;
+    let canpAtos = 0;
+    /* em negrito, até os dois pontos (Rodrigo, 23/11) */
+    linhas.push({ t: "ATOS PRATICADOS NO ESTADO DE SÃO PAULO — CANP (Central de Atos Notariais Paulista, consultada no Signo/CNB-SP):", negrito: true });
+    if (cp.estado === "desligada") {
+      linhas.push("A CANP não foi consultada, por configuração. Esta certidão não abrange os atos praticados no estado de São Paulo.");
+    } else if (cp.estado !== "ok" || !r || !r.ok) {
+      const mot = (r && r.motivo) || cp.motivo || "motivo não informado";
+      linhas.push(`A CANP não pôde ser consultada nesta oportunidade (${mot}). Esta certidão não abrange os atos praticados no estado de São Paulo.`);
+    } else {
+      const total = Number(r.total) || 0;
+      const lc = (r.atos || []).slice(0, LISTA_MAX);
+      canpAtos = total;
+      if (!total) {
+        linhas.push(`Consultada a CANP no mesmo período, NÃO foram encontrados atos em nome da parte.`);
+      } else {
+        linhas.push(`Consultada a CANP no mesmo período, foram encontrados ${total} ato(s)` +
+          (lc.length < total ? `, dos quais se relacionam abaixo os ${lc.length} primeiros (os demais podem ser consultados na CANP):` : ", abaixo relacionado(s):"));
+        linhas.push("");
+        lc.forEach((a, i) => {
+          const livro = String(a.livroComplemento || a.livroInicial || "").trim();
+          const folha = String(a.folhaComplemento || a.folhaInicial || "").trim();
+          linhas.push(`${i + 1}) ${dataDoAto(a.dataAto)} - ${a.nomeTipoAto || "?"}` +
+            (livro ? ` - Livro ${livro}` : "") + (folha ? `, Fl. ${folha}` : ""));
+          linhas.push(`     ${a.nomeCartorio || ""}` + (a.municipio ? ` - ${a.municipio}/${a.uf || "SP"}` : "") +
+            (a.numeroCns ? ` - CNS ${a.numeroCns}` : ""));
+          linhas.push("");
+        });
+      }
+    }
+    linhas.push("");
+
+    /* STI, 21/08: sem "Emitido pelo sistema CRATOS" enquanto não homologar. */
+    linhas.push("Era o que me cumpria certificar.");
+
+    const temAtos = n > 0 || canpAtos > 0;
+    /* Negativa só quando NADA foi achado, a CEP foi completa e São Paulo foi consultado
+       (ou deliberadamente não consultado, por configuração). CANP que falhou → não é
+       negativa: não sabemos de São Paulo. */
+    const negativa = !temAtos && cep.completo && (cp.estado === "desligada" || (cp.estado === "ok" && r && r.ok));
+    return {
+      titulo: negativa ? "CERTIDÃO NEGATIVA DE CONSULTA À CENSEC - CEP" : "CERTIDÃO DE CONSULTA À CENSEC - CEP",
+      linhas, negativa, temAtos,
+    };
+  }
+
+  async function fabricarCertidao(parte, doc, cep, canpEstado, canpParte, canpMotivo, ordem) {
     const est = (await Store.get("censec_estado")) || {};
     const cfg = est.config || {};
+    const cert = montarCertidao({
+      parte, doc, periodo: est.periodo, cep, puxarPartes: !!cfg.puxarPartes, hoje: dataBR(),
+      canp: { estado: canpEstado, parte: canpParte, motivo: canpMotivo },
+    });
 
     /* Negativa desligada nas Preferências: não gera arquivo, mas a consulta
        continua contando como feita (o usuário viu na tela). */
-    if (!atos.length && cfg.gerarNegativa === false) {
+    if (cert.negativa && cfg.gerarNegativa === false) {
       console.log("CRATOS/CENSEC: sem atos e negativa desligada — nenhum PDF para", CratosMascara.nome(parte.nome));
       return null;
     }
@@ -420,80 +754,16 @@
     const proc = digitos(est.numProcesso);
     const nomeArq = doisPrimeiros(parte.nome);
     const pasta = String(cfg.pasta || "CRATOS").replace(/[\\:*?"<>|]/g, "").trim() || "CRATOS";
-    /* ⛔ ORDINAL DA PARTE NO NOME (1E, 2E…). Duas partes homônimas (ex.: matriz e
-       filial, mesmo nome, CPF/CNPJ diferentes) geravam o MESMO nome de arquivo —
-       e aí (a) o Cofre, que guarda por nome, sobrescrevia uma certidão pela outra
-       (PERDA de documento na juntada) e (b) o painel travava em "1 de 2". O
-       ordinal por ordem de consulta torna cada arquivo único. (Campo, 03-04/09.) */
+    /* ⛔ ORDINAL DA PARTE NO NOME (1E, 2E…): homônimos (matriz e filial) não colidem. */
     const ne = Number(ordem) > 0 ? `${ordem}E_` : "";
     const filename = `${pasta}/${proc}_${ne}${nomeArq} CENSEC CEP.pdf`;
-
-    const cab = atos.length
-      ? `Certifico e dou fé que, nesta data (${dataBR()}), procedi à consulta à Central ` +
-        `de Escrituras e Procurações (CEP), da CENSEC, em nome de ${parte.nome}, inscrito(a) ` +
-        `no CPF/CNPJ sob o nº ${formatarDoc(doc)}, e que foram encontrados ${atos.length} ` +
-        `ato(s) notarial(is), abaixo relacionado(s):`
-      : `Certifico e dou fé que, nesta data (${dataBR()}), procedi à consulta à Central ` +
-        `de Escrituras e Procurações (CEP), da CENSEC, em nome de ${parte.nome}, inscrito(a) ` +
-        `no CPF/CNPJ sob o nº ${formatarDoc(doc)}, e que NÃO foram encontrados atos ` +
-        `notariais registrados em seu nome.`;
-
-    /* PARTES DE CADA ATO — só quando a preferência está ligada (chamada extra por
-       ato). Uma falha aqui NÃO derruba a certidão: a linha do ato sai sem as
-       partes e o resto segue. As partes vêm do grampo (fetch same-origin). */
-    let partesPorAto = {};
-    if (cfg.puxarPartes && atos.length) {
-      const ids = atos.map((a) => a.id || a.atoId).filter(Boolean);
-      if (ids.length) {
-        try {
-          const res = await pedirPartes(ids, ESPERA_PARTES_MS);
-          if (res) partesPorAto = res;
-          else console.warn("CRATOS/CENSEC: partes não vieram no prazo — certidão sai sem elas.");
-        } catch (e) { console.warn("CRATOS/CENSEC: falha ao buscar partes:", e && e.message); }
-      }
-    }
-
-    /* NÃO quebramos o parágrafo aqui. Cada item desta lista é uma linha LÓGICA;
-       quem decide onde ela cabe é o gerarPDFTexto, que mede a largura real.
-       Quebrar aqui por contagem de caractere e deixar o gerador reparticionar o
-       resto produzia órfã: o pedaço de 90 caracteres dava 506pt numa caixa de
-       495pt, o gerador cortava, e sobrava um "no" sozinho no meio da certidão. */
-    const linhas = ["", cab, ""];
-
-    atos.forEach((a, i) => {
-      const livro = [a.livro, a.livroComplemento].filter(Boolean).join("");
-      const folha = [a.folha, a.folhaComplemento].filter(Boolean).join("");
-      linhas.push(`${i + 1}) ${dataDoAto(a.data)} - ${a.tipo || "?"} - ${a.qualidade || "?"}` +
-        (livro ? ` - Livro ${livro}` : "") + (folha ? `, Fl. ${folha}` : ""));
-      linhas.push(`     ${a.cartorioNome || ""}` +
-        (a.cartorioMunicipio ? ` - ${a.cartorioMunicipio}/${a.cartorioUf || ""}` : "") +
-        (a.cns ? ` - CNS ${formatarCns(a.cns)}` : ""));
-
-      /* Partes do ato, quando pedidas e obtidas: nome, CPF/CNPJ formatado e
-         qualidade. Cada parte é uma linha lógica (o gerarPDFTexto mede e quebra). */
-      const idAto = a.id || a.atoId;
-      const rp = idAto ? partesPorAto[idAto] : null;
-      if (rp && rp.ok && Array.isArray(rp.partes) && rp.partes.length) {
-        linhas.push("     Partes do ato:");
-        rp.partes.forEach((p) => {
-          const docFmt = p.documento ? formatarDoc(p.documento) : "sem CPF/CNPJ";
-          const qual = p.qualidade ? ` - ${p.qualidade}` : "";
-          linhas.push(`       - ${(p.nome || "(sem nome)")} - ${docFmt}${qual}`);
-        });
-      }
-      linhas.push("");
-    });
-
-    /* STI, 21/08: sem "Emitido pelo sistema CRATOS" enquanto não homologar. */
-    linhas.push("Era o que me cumpria certificar.");
 
     await browser.runtime.sendMessage({
       tipo: "fabricar_pdf",
       convenio: "CENSEC",
       numProcesso: est.numProcesso,
-      titulo: atos.length ? "CERTIDÃO DE CONSULTA À CENSEC - CEP"
-                          : "CERTIDÃO NEGATIVA DE CONSULTA À CENSEC - CEP",
-      linhas,
+      titulo: cert.titulo,
+      linhas: cert.linhas,
       filename,
     }).catch(() => { /* Promise rejeita no FF mesmo baixando; presunção de sucesso */ });
 
@@ -661,5 +931,5 @@
      é o gerarPDFTexto, no background — um lugar só, com as métricas da fonte. */
 
   /* Gancho de teste (jsdom): expõe o que a suíte exercita sem DOM real. */
-  try { window.__cratosCensec = { fabricarCertidao, pedirPartes }; } catch (e) {}
+  try { window.__cratosCensec = { fabricarCertidao, pedirPartes, montarCertidao, consultarParte, buscarCep, livroFolha, consultarCanp }; } catch (e) {}
 })();
