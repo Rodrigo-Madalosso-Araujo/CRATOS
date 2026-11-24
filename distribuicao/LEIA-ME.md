@@ -42,6 +42,7 @@ Pôr `updates.json` na raiz do `main` do repositório. Pode ir vazio (`"updates"
 | 1.9.3 | 11/11/2026 | `3093f079068ae11e8773f9fe2f3a808c049769464058138d94a1bab5aa041181` | #5 (junto com src/testes/manual da 1.9.3) | `v1.9.3` — a criar pelo Rodrigo, antes do merge |
 | 1.9.6 | 16/11/2026 | `f0e5131a93b767fde2c86be7336d7e02969e31d532fec5df18725bc89105d398` | #6 (junto com src/testes/manual da 1.9.6) | `v1.9.6` — antes do merge |
 | 1.9.7 | 18/11/2026 | `b427fe147ecc1f50177aff5311831f5df0278d0c9abc7d4cd5529683da49f49c` | junto com src/testes da 1.9.7 | `v1.9.7` — antes do merge |
+| 1.9.9 | 24/11/2026 | `ffcec198fb5d9537863d55180e6253455d64d78462bb0c66fcf9bf0b3218fc8c` | junto com src/testes da 1.9.8 e da 1.9.9 | `v1.9.9` — antes do merge |
 
 A 1.9.1 é a primeira versão entregue pela atualização automática. Ela foi publicada para testar o mecanismo, com só o Rodrigo na 1.9.0. Daqui em diante vale o portão: versão homologada.
 
@@ -56,3 +57,7 @@ A 1.9.6 também foi publicada por decisão do Rodrigo (13/11, confirmada em 16/1
 A 1.9.7 (18/11) leva o CRATOS ao PJe dos 24 TRTs. O uso nos demais tribunais está autorizado pelo CSJT, por requisição direta entre as presidências (informado pelo Rodrigo em 18/11). Como a lista de hosts muda, o Firefox pede a quem atualizar que autorize as permissões novas.
 
 A 1.9.7 também foi publicada por decisão do Rodrigo (18/11), antes da homologação pela STI, depois do teste ao vivo no TRT19 (captura, terceiros, SAB ausente) e no TRT18 (certidão com "em face de", SNIPER só com a parte marcada, SAB na inclusão e na baixa, verificação de disponibilidade). Sem manual em PDF nesta versão: o manual não mudou, só o carimbo de versão.
+
+A **1.9.8 foi assinada (24/11) mas não publicada**: logo depois, o Rodrigo achou que o CENSEC recusa a data final igual a hoje, e a consulta ficava parada. A correção saiu como 1.9.9, que leva tudo o que a 1.9.8 trazia (juntada em qualquer TRT, CENSEC com período, teto de 300 e CANP, links no lote do SAB). O número 1.9.8 fica queimado; quem atualiza da 1.9.7 vai direto para a 1.9.9. Como a 1.9.9 pede uma permissão nova (`www.signo.org.br`, da CANP), o Firefox pede a quem atualizar que autorize.
+
+A 1.9.9 foi publicada por decisão do Rodrigo (24/11), antes da homologação pela STI, depois do teste ao vivo do CENSEC com CEP e CANP no TRT18 e da juntada aprovada no TRT3 por um servidor de lá. No mesmo teste, o servidor do TRT3 relatou o INFOJUD parado depois do 10º registro; o código do INFOJUD não muda desde a 1.9.6, e o caso está em diagnóstico para uma próxima versão.
