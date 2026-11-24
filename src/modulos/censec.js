@@ -136,7 +136,7 @@ if (typeof Registro !== "undefined") {
             "parte). Se ainda assim não cobrir tudo, a certidão diz que é parcial e qual " +
             "período ficou coberto — nunca \"foram encontrados 300\".",
           "<b>Período:</b> a consulta é sempre delimitada por datas, escolhidas abaixo (10, 5, 3, 2 " +
-            "ou 1 ano até hoje, ou Personalizado). A certidão informa o período.",
+            "ou 1 ano até ontem, ou Personalizado — o CENSEC não aceita o dia de hoje como data final). A certidão informa o período.",
           "<b>CANP (atos de São Paulo):</b> o próprio CENSEC manda consultar os atos paulistas " +
             "na CANP, no Signo. Com a opção ligada, o CRATOS consulta lá também e põe o resultado " +
             "num bloco da certidão. O login no Signo é seu (certificado digital; o CRATOS só " +
@@ -181,12 +181,16 @@ if (typeof Registro !== "undefined") {
       periodoInicio: {
         tipo: "data",
         padrao: "",
-        rotulo: "Personalizado — data inicial (só vale com \"Personalizado\" marcado; fica valendo até você mudar)",
+        rotulo: "Personalizado — data inicial",
+        linha: "personalizado",
+        linhaNota: "Só vale com \"Personalizado\" marcado e fica valendo até você mudar. A data final pode ser no máximo ontem: o CENSEC não aceita o dia de hoje.",
       },
       periodoFim: {
         tipo: "data",
         padrao: "",
         rotulo: "Personalizado — data final",
+        linha: "personalizado",
+        maxOntem: true,
       },
       consultarCanp: {
         tipo: "toggle",

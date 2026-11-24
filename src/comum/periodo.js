@@ -2,8 +2,8 @@
  * comum/periodo.js — o PERÍODO das consultas do CENSEC (CEP) e da CANP (1.9.8).
  *
  * Pedido do Rodrigo (23/11/2026): delimitar a consulta por datas. Opções prontas de
- * 10, 5, 3, 2 e 1 ano (contadas até HOJE) e o PERSONALIZADO, com início e fim. O padrão
- * fica nas Preferências do CENSEC; no painel, antes de executar, dá para trocar.
+ * 10, 5, 3, 2 e 1 ano (contadas até ONTEM, desde a 1.9.9) e o PERSONALIZADO, com início e fim. O padrão
+ * fica SÓ nas Preferências do CENSEC.
  *
  * Por que importa além do conforto: a CEP mostra NO MÁXIMO 300 atos por busca ("Mostrando
  * os primeiros 300 registros. Favor refine sua busca"). O período é o que permite refinar
@@ -35,11 +35,21 @@
     return ymdDe(d) === ymd ? d : null;
   }
   const dmy = (ymd) => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(ymd || "")); return m ? `${m[3]}/${m[2]}/${m[1]}` : ""; };
-  const hojeYmd = (agora) => ymdDe(agora instanceof Date ? agora : new Date());
+  const hojeYmd = (agora) => ymdDe((agora && typeof agora.getTime === "function") ? agora : new Date());
 
-  /* "N anos até hoje": de (hoje − N anos + 1 dia) a hoje. 29/02 cai em 28/02. */
+  /* 1.9.9 — o CENSEC NÃO aceita a data final igual a hoje ("Digite uma data válida",
+     e o "Buscar" não libera): o limite é ONTEM. Achado do Rodrigo em 24/11/2026. */
+  function ontemDe(agora) {
+    const d = (agora && typeof agora.getTime === "function") ? new Date(agora.getTime()) : new Date();
+    const o = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 12, 0, 0);
+    o.setDate(o.getDate() - 1);
+    return o;
+  }
+  const ontemYmd = (agora) => ymdDe(ontemDe(agora));
+
+  /* "N anos até ontem": de (ontem − N anos + 1 dia) a ontem. 29/02 cai em 28/02. */
   function anosAte(anos, agora) {
-    const h = agora instanceof Date ? new Date(agora.getTime()) : new Date();
+    const h = ontemDe(agora);
     const ini = new Date(h.getFullYear() - anos, h.getMonth(), h.getDate(), 12, 0, 0);
     if (ini.getMonth() !== h.getMonth()) ini.setDate(0);          // 29/02 → 28/02
     ini.setDate(ini.getDate() + 1);
@@ -57,7 +67,7 @@
     const di = paraData(e.inicio), df = paraData(e.fim);
     if (!di || !df) return { erro: "informe as duas datas do período" };
     if (di.getTime() > df.getTime()) return { erro: "a data inicial é depois da final" };
-    if (e.fim > hojeYmd(agora)) return { erro: "a data final é depois de hoje" };
+    if (e.fim > ontemYmd(agora)) return { erro: "a data final pode ser no máximo ontem — o CENSEC não aceita o dia de hoje" };
     return { inicio: e.inicio, fim: e.fim, valor, rotulo: `De ${dmy(e.inicio)} a ${dmy(e.fim)}` };
   }
 
@@ -92,7 +102,7 @@
     return out;
   }
 
-  const api = { OPCOES, PADRAO, resolver, dividir, frase, dmy, paraData, juntarTrechos, hojeYmd };
+  const api = { OPCOES, PADRAO, resolver, dividir, frase, dmy, paraData, juntarTrechos, hojeYmd, ontemYmd };
   globalThis.CratosPeriodo = Object.freeze(api);
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 })();

@@ -104,15 +104,15 @@ const PER = { inicio: "2016-11-24", fim: "2026-11-23" };
   {
     let P = null;
     if (existe("comum/periodo.js")) { const c = {}; vm.createContext(c); vm.runInContext(ler("comum/periodo.js"), c); P = c.CratosPeriodo; }
-    const hoje = new Date(2026, 10, 23, 10);
+    const hoje = new Date(2026, 10, 24, 10);   // 1.9.9: períodos até ONTEM
     const r = (e) => (P ? P.resolver(e, hoje) : { erro: "sem módulo" });
     checar(JSON.stringify([r({ valor: "10a" }), r({ valor: "5a" }), r({ valor: "1a" })].map((x) => [x.inicio, x.fim])) ===
       JSON.stringify([["2016-11-24", "2026-11-23"], ["2021-11-24", "2026-11-23"], ["2025-11-24", "2026-11-23"]]),
-      "⛔ períodos prontos: 10, 5 e 1 ano contados até hoje");
+      "⛔ períodos prontos: 10, 5 e 1 ano contados até ontem");
     checar(r({ valor: "personalizado", inicio: "2020-01-01", fim: "2020-12-31" }).inicio === "2020-01-01" &&
       /depois da final/.test(r({ valor: "personalizado", inicio: "2021-01-01", fim: "2020-12-31" }).erro || "") &&
       /duas datas/.test(r({ valor: "personalizado", inicio: "2020-02-30", fim: "2020-12-31" }).erro || "") &&
-      /depois de hoje/.test(r({ valor: "personalizado", inicio: "2020-01-01", fim: "2027-01-01" }).erro || ""),
+      /ontem/.test(r({ valor: "personalizado", inicio: "2020-01-01", fim: "2027-01-01" }).erro || ""),
       "personalizado: datas válidas; início depois do fim, data inexistente e fim no futuro são recusados");
     const m = P ? P.dividir({ inicio: "2016-11-24", fim: "2026-11-23" }) : null;
     checar(m && m[0].inicio === "2016-11-24" && m[1].fim === "2026-11-23" && m[0].fim < m[1].inicio &&
@@ -167,7 +167,7 @@ const PER = { inicio: "2016-11-24", fim: "2026-11-23" };
       ok2.ok && !("periodoInicio" in (ok2.aceitos.censec || {})) && ok2.descartados.length === 2,
       "exportar/importar: as datas do Personalizado entram; data inexistente ou com marcação é descartada");
     const op = ler("opcoes/opcoes.js");
-    checar(/esp\.tipo === "data"[\s\S]{0,200}type="date"[\s\S]{0,120}data-tipo="data"/.test(op) && /\[data-tipo="data"\]/.test(op),
+    checar(/esp\.tipo === "data"[\s\S]{0,600}type="date"[\s\S]{0,120}data-tipo="data"/.test(op) && /\[data-tipo="data"\]/.test(op),
       "Preferências: campo de data (desenhado e salvo)");
   }
 

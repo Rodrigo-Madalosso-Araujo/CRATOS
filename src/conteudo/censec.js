@@ -78,6 +78,27 @@
     return null;
   }
 
+  /* 1.9.9 — erro que o PRÓPRIO formulário mostra embaixo de um campo (mat-error),
+     ex.: "Digite uma data válida" na Data final quando ela é hoje. Com erro, o
+     "Buscar" nunca libera — esperar por ele era esperar à toa. Devolve
+     { rotulo, valor, erro } do primeiro campo recusado, ou null. */
+  function erroDeCampo(inputs) {
+    for (const el of inputs) {
+      if (!el) continue;
+      const ff = el.closest("mat-form-field, .mat-mdc-form-field");
+      if (!ff) continue;
+      for (const me of ff.querySelectorAll("mat-error, .mat-mdc-form-field-error, .mat-error")) {
+        const txt = (me.textContent || "").replace(/\s+/g, " ").trim();
+        if (txt && visivel(me)) {
+          const rot = ((ff.querySelector("mat-label, label") || {}).textContent || "").replace(/\s+/g, " ").trim();
+          return { rotulo: rot || "campo", valor: el.value || "", erro: txt };
+        }
+      }
+    }
+    return null;
+  }
+  const motivoCampo = (e) => `o CENSEC recusou o campo "${e.rotulo}"${e.valor ? ` (${e.valor})` : ""}: "${e.erro}". Nada foi buscado — confira o período nas Preferências do CENSEC.`;
+
   injetarGrampo();
 
   // Fila de respostas da busca, alimentada pelo grampo no contexto da página.
@@ -311,6 +332,14 @@
       if (!r.ok) {
         console.error(`CRATOS/CENSEC: ${CratosMascara.nome(parte.nome)} FALHOU — ${r.motivo}`);
         falhados.push({ nome: parte.nome, motivo: r.motivo });
+        /* 1.9.9 — o formulário recusou um campo (o período): as próximas partes
+           bateriam no mesmo muro. Para aqui e diz por quê. */
+        if (r.campoRecusado) {
+          for (const resto of partes.slice(i + 1)) {
+            falhados.push({ nome: resto.nome, motivo: "não consultada — o CENSEC recusou o período (veja a primeira parte)" });
+          }
+          break;
+        }
       } else {
         resultados.push({ parte, doc, ordem: i + 1, cep: r });
       }
@@ -452,12 +481,22 @@
        busca o widget precisa emitir outro, e enquanto não emite o formulário fica
        inválido e o "Buscar" volta a ficar cinza. Da segunda busca em diante isso
        é o normal, não a exceção — por isso a espera aqui é generosa. */
+    await sleep(400);
+    const camposDaBusca = () => [campoDocumento(), dataIni(), dataFim()];
+    let recusa = erroDeCampo(camposDaBusca());
+    if (recusa) return { ok: false, motivo: motivoCampo(recusa), campoRecusado: true };
     let botao = await esperarHabilitado(() => botaoBuscar(), 12000);
+    if (!botao && (recusa = erroDeCampo(camposDaBusca()))) {
+      return { ok: false, motivo: motivoCampo(recusa), campoRecusado: true };
+    }
     if (!botao) {
       console.warn("CRATOS/CENSEC: 'Buscar' cinza — digitando caractere a caractere.");
       avisar(`esperando o CENSEC liberar o "Buscar" para ${parte.nome}…`, "#facc15");
       await digitar(campoDocumento, doc);
       botao = await esperarHabilitado(() => botaoBuscar(), ESPERA_BOTAO_MS);
+    }
+    if (!botao && (recusa = erroDeCampo(camposDaBusca()))) {
+      return { ok: false, motivo: motivoCampo(recusa), campoRecusado: true };
     }
     if (!botao) {
       return { ok: false, motivo: "o botão 'Buscar' não habilitou (token do captcha não renovou?)" };

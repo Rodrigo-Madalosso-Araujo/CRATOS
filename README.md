@@ -5,7 +5,7 @@ Extensão Firefox (Manifest V2) que captura os dados do processo no PJe e
 **prepara** a execução de convênios (consultas e registro) para o processo em
 tela, no âmbito do TRT da 18ª Região.
 
-> Versão: **1.9.8** · Compatibilidade: Firefox 140+ (ESR 140 ou superior) · Este repositório é
+> Versão: **1.9.9** · Compatibilidade: Firefox 140+ (ESR 140 ou superior) · Este repositório é
 > disponibilizado para fins de **homologação** pelo Tribunal.
 > Última versão **homologada** pela STI: **1.6.5** (release `v1.6.5`). As versões 1.7 a 1.9 estão
 > descritas abaixo e no cartão "Novidades" da própria extensão.
@@ -122,7 +122,8 @@ o CRATOS gera certidão desse fato em vez de terminar calado.
   desligado some da fila, dos botões de coleta, do lote, da disponibilidade e dos
   Primeiros passos. O SAB só aparece nos TRTs que o usam (3, 10 e 18).
 - **CENSEC com período, teto de 300 e CANP (desde a 1.9.8).** A consulta à CEP tem
-  período (10, 5, 3, 2 ou 1 ano, ou personalizado), escolhido nas Preferências. A CEP mostra no máximo 300 atos por
+  período (10, 5, 3, 2 ou 1 ano até ontem, ou personalizado), escolhido nas Preferências; desde
+  a 1.9.9 a data final é no máximo ontem, porque o CENSEC não aceita o dia de hoje. A CEP mostra no máximo 300 atos por
   busca: o CRATOS divide o período e busca de novo (até 10 buscas por parte) e, se não
   cobrir tudo, a certidão diz que é parcial. A CANP (atos de São Paulo, no Signo) entra
   num bloco da mesma certidão; o login no Signo é da pessoa (certificado digital).

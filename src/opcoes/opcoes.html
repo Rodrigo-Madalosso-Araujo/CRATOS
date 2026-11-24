@@ -34,6 +34,11 @@
        só — a tela de opções abre em aba, e o usuário pode estreitá-la. */
     .grupos { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 12px 0; }
     @media (max-width: 720px) { .grupos { grid-template-columns: 1fr; } }
+    /* 1.9.9 — campos lado a lado (datas do Personalizado do CENSEC); a nota
+       ocupa a linha inteira embaixo. */
+    .linha-campos { display: flex; flex-wrap: wrap; gap: 6px 24px; align-items: flex-end; margin: 8px 0; }
+    .linha-campos > .campo { margin: 0; }
+    .linha-campos > .linha-nota { flex-basis: 100%; }
     .grupo { border: 1px solid #333; border-radius: 8px; padding: 12px; margin: 0; }
     .grupo h3 { margin: 0 0 10px; font-size: 14px; color: var(--vermelho); }
 

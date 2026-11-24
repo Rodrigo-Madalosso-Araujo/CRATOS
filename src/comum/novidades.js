@@ -16,6 +16,11 @@
 
   /* da mais nova para a mais velha */
   const VERSOES = [
+    { versao: "1.9.9", data: "24/11/2026", itens: [
+      "CENSEC: o período da consulta termina ONTEM — o CENSEC não aceita o dia de hoje como data final, e a busca ficava parada esperando o \"Buscar\".",
+      "CENSEC: se o formulário recusar algum campo, o CRATOS para na hora e diz qual campo e por quê, em vez de esperar.",
+      "Preferências do CENSEC: as datas do Personalizado ficam lado a lado, e a data final só aceita até ontem.",
+    ] },
     { versao: "1.9.8", data: "23/11/2026", itens: [
       "Certidão dos convênios: a juntada passa a funcionar no PJe de qualquer TRT (o TRT3, por exemplo, usa outra numeração interna).",
       "CENSEC: a consulta passa a ter período — 10, 5, 3, 2 ou 1 ano, ou datas à sua escolha (Personalizado). Escolha nas Preferências do CENSEC.",

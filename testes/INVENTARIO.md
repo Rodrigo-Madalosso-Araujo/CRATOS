@@ -18,7 +18,19 @@ método que travou todo bug real desta lista.
 
 ## Situação
 
-### As que RODAM hoje (23/11/2026 — 1.9.8: juntada em qualquer TRT, CENSEC com período/teto de 300/CANP, links no lote do SAB): 56 suítes, 1618 asserções
+### As que RODAM hoje (24/11/2026 — 1.9.9: CENSEC com data final até ontem; para quando o formulário recusa um campo): 57 suítes, 1633 asserções
+
+>>> 1.9.9 (24/11): uma suíte nova, que reprova a 1.9.8.
+    · nova `teste-censec-ontem.js` (15): períodos prontos até ONTEM (N anos exatos; 29/02 e virada do ano);
+      Personalizado recusa data final = hoje; "Digite uma data válida" embaixo de um campo → a busca para na hora,
+      diz campo/valor/resposta e nada é buscado; fila de partes para na primeira recusa; Preferências com as datas
+      lado a lado, max = ontem na data final e salvar recusando hoje.
+    · `teste-censec-periodo.js`: "hoje" do teste passa a 24/11 (períodos até ontem); janela da conferência do campo
+      de data alargada (comentário novo no opcoes.js).
+    · periodo.js: o "agora" é reconhecido por getTime (não por instanceof Date) — vindo de outro contexto (vm,
+      outra aba), o instanceof falhava e a conta usava o relógio da máquina.
+
+### RODARAM na 1.9.8 (23/11/2026 — juntada em qualquer TRT, CENSEC com período/teto de 300/CANP, links no lote do SAB): 56 suítes, 1618 asserções
 
 >>> 1.9.8 (23/11): três suítes novas, que reprovam a 1.9.7.
     · nova `teste-juntada-estrutura.js` (13): estrutura do documento lida dos `parametros` (TRT3 = 95; nenhum 62);
